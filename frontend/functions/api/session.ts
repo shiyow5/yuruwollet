@@ -1,6 +1,7 @@
 import { createRemoteJWKSet } from 'jose';
 import {
   createSession,
+  resolveSigningKey,
   SessionError,
   type Member,
   type SessionConfig,
@@ -10,6 +11,9 @@ interface Env {
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
   SUPABASE_URL?: string;
+  /** ES256 秘密 JWK JSON (新規プロジェクト推奨) */
+  SUPABASE_SIGNING_KEY?: string;
+  /** HS256 secret (旧来プロジェクト) */
   SUPABASE_JWT_SECRET?: string;
   EMAIL_YURURI?: string;
   EMAIL_SHIYOWO?: string;
@@ -64,14 +68,21 @@ export const onRequest = async (context: PagesContext): Promise<Response> => {
   }
 
   try {
-    if (!env.SUPABASE_JWT_SECRET || !env.SUPABASE_URL) {
+    if (!env.SUPABASE_URL) {
       throw new SessionError('server not configured', 500);
     }
+
+    // ES256(SUPABASE_SIGNING_KEY) を優先し HS256(SUPABASE_JWT_SECRET) にフォールバック。
+    // どちらも無ければ resolveSigningKey が 500 を投げる。
+    const signingKey = await resolveSigningKey({
+      signingKeyJwk: env.SUPABASE_SIGNING_KEY,
+      jwtSecret: env.SUPABASE_JWT_SECRET,
+    });
 
     const cfg: SessionConfig = {
       accessAud: env.ACCESS_AUD ?? '',
       accessIssuer: env.ACCESS_TEAM_DOMAIN ?? '',
-      supabaseJwtSecret: env.SUPABASE_JWT_SECRET,
+      signingKey,
       supabaseIssuer: `${env.SUPABASE_URL}/auth/v1`,
       members: buildMembers(env),
       ttlSeconds: env.SESSION_TTL_SECONDS ? Number(env.SESSION_TTL_SECONDS) : DEFAULT_TTL_SECONDS,

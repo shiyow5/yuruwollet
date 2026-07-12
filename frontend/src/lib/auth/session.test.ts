@@ -1,27 +1,31 @@
 // @vitest-environment node
 import { describe, expect, it, beforeAll } from 'vitest';
-import { SignJWT, jwtVerify, generateKeyPair } from 'jose';
-
-type KeyPair = Awaited<ReturnType<typeof generateKeyPair>>;
+import { SignJWT, jwtVerify, generateKeyPair, exportJWK } from 'jose';
 import {
   extractAccessToken,
   verifyAccessEmail,
   mapEmailToMember,
   mintSupabaseJwt,
+  resolveSigningKey,
   createSession,
   SessionError,
   type SessionConfig,
+  type SigningKey,
 } from './session';
+
+type KeyPair = Awaited<ReturnType<typeof generateKeyPair>>;
 
 const members = {
   'yururi@example.com': { memberId: 'yururi', householdId: 'main', displayName: 'ゆるり' },
   'shiyowo@example.com': { memberId: 'shiyowo', householdId: 'main', displayName: 'しよを' },
 };
 
+const HS256_SECRET = 'test-secret-at-least-32-characters-long-xxxx';
+
 const cfg: SessionConfig = {
   accessAud: 'test-aud-tag',
   accessIssuer: 'https://team.cloudflareaccess.com',
-  supabaseJwtSecret: 'test-secret-at-least-32-characters-long-xxxx',
+  signingKey: { alg: 'HS256', key: new TextEncoder().encode(HS256_SECRET) },
   supabaseIssuer: 'https://ref.supabase.co/auth/v1',
   members,
   ttlSeconds: 2700,
@@ -116,17 +120,46 @@ describe('mapEmailToMember', () => {
   });
 });
 
+describe('resolveSigningKey', () => {
+  it('SUPABASE_JWT_SECRET から HS256 を解決', async () => {
+    const sk = await resolveSigningKey({ jwtSecret: HS256_SECRET });
+    expect(sk.alg).toBe('HS256');
+  });
+  it('ES256 秘密 JWK から ES256 を解決 (kid 付き)', async () => {
+    const { privateKey } = await generateKeyPair('ES256');
+    const jwk = { ...(await exportJWK(privateKey)), alg: 'ES256', kid: 'kid-123' };
+    const sk = await resolveSigningKey({ signingKeyJwk: JSON.stringify(jwk) });
+    expect(sk.alg).toBe('ES256');
+    expect(sk.kid).toBe('kid-123');
+  });
+  it('どちらも無ければ SessionError(500)', async () => {
+    await expect(resolveSigningKey({})).rejects.toMatchObject({ status: 500 });
+  });
+});
+
 describe('mintSupabaseJwt', () => {
-  it('Supabase が期待するクレームで署名される', async () => {
+  it('HS256: Supabase が期待するクレームで署名される', async () => {
     const { token, expiresAt } = await mintSupabaseJwt(members['yururi@example.com'], cfg);
-    const secret = new TextEncoder().encode(cfg.supabaseJwtSecret);
-    const { payload } = await jwtVerify(token, secret, { audience: 'authenticated' });
+    const { payload } = await jwtVerify(token, new TextEncoder().encode(HS256_SECRET), {
+      audience: 'authenticated',
+    });
     expect(payload.role).toBe('authenticated');
     expect(payload.household_id).toBe('main');
     expect(payload.member_id).toBe('yururi');
     expect(payload.sub).toBe('yururi');
     expect(payload.iss).toBe(cfg.supabaseIssuer);
     expect(payload.exp).toBe(expiresAt);
+  });
+
+  it('ES256: 公開鍵で検証でき kid ヘッダを含む', async () => {
+    const { publicKey, privateKey } = await generateKeyPair('ES256');
+    const jwk = { ...(await exportJWK(privateKey)), alg: 'ES256', kid: 'kid-xyz' };
+    const signingKey: SigningKey = await resolveSigningKey({ signingKeyJwk: JSON.stringify(jwk) });
+    const { token } = await mintSupabaseJwt(members['shiyowo@example.com'], { ...cfg, signingKey });
+    const { payload, protectedHeader } = await jwtVerify(token, publicKey);
+    expect(protectedHeader.alg).toBe('ES256');
+    expect(protectedHeader.kid).toBe('kid-xyz');
+    expect(payload.member_id).toBe('shiyowo');
   });
 });
 
@@ -140,8 +173,10 @@ describe('createSession', () => {
     });
     expect(session.member).toEqual({ id: 'yururi', displayName: 'ゆるり' });
     expect(session.householdId).toBe('main');
-    const secret = new TextEncoder().encode(cfg.supabaseJwtSecret);
-    const { payload } = await jwtVerify(session.supabaseJwt, secret);
+    const { payload } = await jwtVerify(
+      session.supabaseJwt,
+      new TextEncoder().encode(HS256_SECRET),
+    );
     expect(payload.member_id).toBe('yururi');
   });
 

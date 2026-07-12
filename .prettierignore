@@ -8,3 +8,4 @@ test-results
 docs/templates
 *.md
 supabase/migrations
+frontend/src/lib/database.types.ts

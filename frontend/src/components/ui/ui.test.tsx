@@ -222,4 +222,24 @@ describe('Modal', () => {
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Tab', shiftKey: true });
     expect(last).toHaveFocus();
   });
+  it('親再レンダー（onClose の identity 変化）でフォーカスを奪わない', () => {
+    const { rerender } = render(
+      <Modal open onClose={() => {}} label="t">
+        <button>a</button>
+        <button>b</button>
+      </Modal>,
+    );
+    const last = screen.getByRole('button', { name: 'b' });
+    last.focus();
+    expect(last).toHaveFocus();
+    // 親が別の onClose 関数で再レンダー（open/locked は不変）
+    rerender(
+      <Modal open onClose={() => {}} label="t">
+        <button>a</button>
+        <button>b</button>
+      </Modal>,
+    );
+    // effect が再実行されて先頭へフォーカスを戻していない
+    expect(last).toHaveFocus();
+  });
 });

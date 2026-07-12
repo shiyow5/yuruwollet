@@ -60,9 +60,10 @@ export function jstToday(now: Date = new Date()): string {
 export function relativeDay(isoDate: string, now: Date = new Date()): string {
   const occurredDay = Math.floor(new Date(`${isoDate}T00:00:00Z`).getTime() / 86_400_000);
   const diffDays = jstEpochDay(now) - occurredDay;
-  if (diffDays <= 0) return '今日';
+  if (diffDays === 0) return '今日';
   if (diffDays === 1) return '昨日';
-  if (diffDays < 7) return `${diffDays}日前`;
+  if (diffDays >= 2 && diffDays < 7) return `${diffDays}日前`;
+  // 7日以上前 or 未来日付（diffDays<0）は実日付を表示
   const parts = isoDate.split('-');
   return `${Number(parts[1])}月${Number(parts[2])}日`;
 }

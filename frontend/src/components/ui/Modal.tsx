@@ -16,6 +16,10 @@ const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabi
 
 export function Modal({ open, onClose, children, className, locked = false, label }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
+  // onClose は親の再レンダーで identity が変わりやすい。ref 経由で参照し、
+  // フォーカス管理 effect の依存に含めない（開いている間に再フォーカスで入力を奪わないため）。
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
@@ -29,7 +33,7 @@ export function Modal({ open, onClose, children, className, locked = false, labe
 
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape' && !locked) {
-        onClose?.();
+        onCloseRef.current?.();
         return;
       }
       if (e.key !== 'Tab' || !panel) return;
@@ -58,7 +62,7 @@ export function Modal({ open, onClose, children, className, locked = false, labe
       document.removeEventListener('keydown', handleKeyDown);
       previouslyFocused?.focus?.();
     };
-  }, [open, locked, onClose]);
+  }, [open, locked]);
 
   if (!open) return null;
   return (

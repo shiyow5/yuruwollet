@@ -87,8 +87,9 @@ describe('relativeDay', () => {
     expect(relativeDay('2026-07-03', now)).toBe('7月3日');
     expect(relativeDay('2026-01-05', now)).toBe('1月5日');
   });
-  it('未来日付でも「今日」に丸める（diff<=0）', () => {
-    expect(relativeDay('2026-07-20', now)).toBe('今日');
+  it('未来日付は実日付を表示（「今日」に丸めない）', () => {
+    expect(relativeDay('2026-07-20', now)).toBe('7月20日');
+    expect(relativeDay('2026-08-01', now)).toBe('8月1日');
   });
 });
 

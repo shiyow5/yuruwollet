@@ -52,7 +52,15 @@ export function TransactionForm({
   const [values, setValues] = useState<TransactionFormValues>(() => initialValues(initial));
   const [errors, setErrors] = useState<FieldErrors<TransactionDraft>>({});
 
-  const options = selectableCategories(categories, values.type);
+  const selectable = selectableCategories(categories, values.type);
+  // 編集時、現在のカテゴリが後からアーカイブされていても選択肢に残す
+  // （表示値と送信値を一致させ、金額/メモのみ編集で意図せずカテゴリが変わらないように）
+  const current =
+    values.categoryId !== ''
+      ? categories.find((c) => c.id === values.categoryId && c.kind === values.type)
+      : undefined;
+  const options =
+    current && !selectable.some((c) => c.id === current.id) ? [...selectable, current] : selectable;
 
   function update<K extends keyof TransactionFormValues>(key: K, value: TransactionFormValues[K]) {
     setValues((prev) => ({ ...prev, [key]: value }));
@@ -109,6 +117,7 @@ export function TransactionForm({
           {options.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
+              {c.is_archived ? '（アーカイブ済）' : ''}
             </option>
           ))}
         </Select>

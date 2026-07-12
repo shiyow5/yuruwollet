@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router';
 import { Button, Card, Fab, Icon, Modal } from '../../components/ui';
 import { addMonths, formatMonthLabel, jstMonthStart, jstToday } from '../../lib/format';
 import type { Transaction, TransactionDraft } from '../../lib/ledger/types';
@@ -23,7 +24,9 @@ type ModalState =
 
 export function LedgerPage() {
   const { options, selfId } = useMemberOptions();
-  const [viewMemberId, setViewMemberId] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  // ダッシュボードの「すべて見る」から来た場合、その member で初期化する
+  const [viewMemberId, setViewMemberId] = useState<string | null>(() => searchParams.get('member'));
   const [month, setMonth] = useState(() => jstMonthStart());
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
 

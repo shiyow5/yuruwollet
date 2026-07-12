@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router';
 import { createQueryClient } from '../../lib/queryClient';
 import { SessionContext } from '../../lib/auth/session-context';
 import type { SessionState } from '../../lib/auth/useSession';
@@ -81,6 +82,8 @@ vi.mock('../../lib/data/transactions', () => ({
 
 const CATEGORY_ID = '11111111-1111-1111-1111-111111111111';
 
+const ARCHIVED_CATEGORY_ID = '22222222-2222-2222-2222-222222222222';
+
 vi.mock('../../lib/data/categories', () => ({
   listCategories: vi.fn(async () => [
     {
@@ -92,6 +95,18 @@ vi.mock('../../lib/data/categories', () => ({
       sort_order: 0,
       is_system: false,
       is_archived: false,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    },
+    {
+      id: '22222222-2222-2222-2222-222222222222',
+      household_id: 'main',
+      kind: 'expense',
+      name: '旧カテゴリ',
+      icon: 'label',
+      sort_order: 1,
+      is_system: false,
+      is_archived: true,
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-01-01T00:00:00Z',
     },
@@ -160,12 +175,14 @@ const authedSession: SessionState = {
   },
 };
 
-function renderLedger(session: SessionState = authedSession) {
+function renderLedger(session: SessionState = authedSession, route = '/ledger') {
   const qc = createQueryClient();
   return render(
     <QueryClientProvider client={qc}>
       <SessionContext.Provider value={session}>
-        <LedgerPage />
+        <MemoryRouter initialEntries={[route]}>
+          <LedgerPage />
+        </MemoryRouter>
       </SessionContext.Provider>
     </QueryClientProvider>,
   );
@@ -346,6 +363,34 @@ describe('LedgerPage 統合', () => {
     const dialog = await screen.findByRole('dialog');
     const nextMonthFirst = addMonths(jstMonthStart(), 1);
     expect(within(dialog).getByDisplayValue(nextMonthFirst)).toBeInTheDocument();
+  });
+
+  it('編集: アーカイブ済カテゴリでも選択肢に残り現在値が表示される', async () => {
+    state.rows = [row({ id: 'seed-1', memo: '旧支出', category_id: ARCHIVED_CATEGORY_ID })];
+    renderLedger();
+    fireEvent.click(await screen.findByRole('button', { name: '編集' }));
+    const dialog = await screen.findByRole('dialog');
+    const combobox = within(dialog).getByRole('combobox');
+    // 現在のアーカイブ済カテゴリが選択値として保持され、選択肢にも出る
+    expect(combobox).toHaveValue(ARCHIVED_CATEGORY_ID);
+    expect(
+      within(dialog).getByRole('option', { name: /旧カテゴリ（アーカイブ済）/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('?member=shiyowo で開くと相手ビューで初期化される', async () => {
+    state.rows = [row({ id: 'y1', owner_member_id: 'yururi', memo: 'ゆるり分' })];
+    renderLedger(authedSession, '/ledger?member=shiyowo');
+    // 相手(しよを)ビューなので FAB は出ず、自分の記録も出ない
+    expect(await screen.findByRole('tab', { name: 'しよを' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    await waitFor(() => expect(screen.queryByRole('button', { name: '収支を追加' })).toBeNull());
+    expect(listTransactions).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ memberId: 'shiyowo' }),
+    );
   });
 
   it('金額未入力ではエラーを出し送信しない', async () => {

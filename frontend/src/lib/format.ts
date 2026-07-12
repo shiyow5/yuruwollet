@@ -1,17 +1,68 @@
 const yenNumber = new Intl.NumberFormat('ja-JP', { maximumFractionDigits: 0 });
 
+const JST = 'Asia/Tokyo';
+const jstTime = new Intl.DateTimeFormat('ja-JP', {
+  timeZone: JST,
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+const jstMonthDay = new Intl.DateTimeFormat('ja-JP', {
+  timeZone: JST,
+  month: 'long',
+  day: 'numeric',
+});
+const jstIsoDay = new Intl.DateTimeFormat('en-CA', {
+  timeZone: JST,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
 /**
  * JPY 金額を「¥1,234」形式に整形する。JPY は小数を持たないため四捨五入する。
- * 通貨記号は環境非依存にするため自前で付与する（Intl の currency 表示は ICU 差がある）。
+ * 通貨記号は環境非依存にするため自前で付与する。
  */
 export function formatYen(amount: number): string {
   return `¥${yenNumber.format(Math.round(amount))}`;
 }
 
-/**
- * 収入/支出の符号付き表示（例: 支出 → 「- ¥4,500」, 収入 → 「+ ¥280,000」）。
- */
+/** 収入/支出の符号付き表示（例: 支出 → 「- ¥4,500」, 収入 → 「+ ¥280,000」）。 */
 export function formatSignedYen(amount: number, type: 'income' | 'expense'): string {
   const sign = type === 'income' ? '+' : '-';
   return `${sign} ${formatYen(Math.abs(amount))}`;
+}
+
+/** 「¥1,234」等の入力文字列を数値に。無効なら NaN。 */
+export function parseAmount(input: string): number {
+  const cleaned = input.replace(/[¥￥,\s]/g, '');
+  if (cleaned === '' || !/^-?\d+(\.\d+)?$/.test(cleaned)) {
+    return NaN;
+  }
+  return Number(cleaned);
+}
+
+/** JST 基準の暦日を epoch day 連番に変換（日差分計算用） */
+function jstEpochDay(d: Date): number {
+  const iso = jstIsoDay.format(d); // YYYY-MM-DD
+  return Math.floor(new Date(`${iso}T00:00:00Z`).getTime() / 86_400_000);
+}
+
+/**
+ * タイムライン用の相対日付（JST）。
+ * 今日→「今日, HH:MM」, 昨日→「昨日, HH:MM」, 7日未満→「N日前」, それ以前→「M月D日」。
+ */
+export function relativeDate(input: Date | string, now: Date = new Date()): string {
+  const d = typeof input === 'string' ? new Date(input) : input;
+  const diffDays = jstEpochDay(now) - jstEpochDay(d);
+  if (diffDays <= 0) {
+    return `今日, ${jstTime.format(d)}`;
+  }
+  if (diffDays === 1) {
+    return `昨日, ${jstTime.format(d)}`;
+  }
+  if (diffDays < 7) {
+    return `${diffDays}日前`;
+  }
+  return jstMonthDay.format(d);
 }

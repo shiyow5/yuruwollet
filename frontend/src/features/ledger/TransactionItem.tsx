@@ -1,5 +1,5 @@
 import { Icon } from '../../components/ui';
-import { formatSignedYen, relativeDate } from '../../lib/format';
+import { formatSignedYen, relativeDay } from '../../lib/format';
 import { resolveCategory } from '../../lib/ledger/categories';
 import { isOptimisticId } from '../../lib/ledger/optimistic';
 import type { Category, Transaction } from '../../lib/ledger/types';
@@ -18,6 +18,8 @@ export function TransactionItem({ txn, categories, onEdit, onDelete, now }: Prop
   const title = txn.memo.trim() !== '' ? txn.memo : name;
   const isIncome = txn.type === 'income';
   const pending = isOptimisticId(txn.id);
+  // 残高調整(is_system_generated)は RLS で更新/削除不可のため操作ボタンを出さない
+  const actionable = !pending && !txn.is_system_generated;
 
   return (
     <div className="flex items-center justify-between gap-4">
@@ -30,7 +32,7 @@ export function TransactionItem({ txn, categories, onEdit, onDelete, now }: Prop
             {title}
           </h4>
           <span className="font-label-sm text-label-sm text-custom-text/50">
-            {pending ? '保存中…' : `${name} · ${relativeDate(txn.created_at, now)}`}
+            {pending ? '保存中…' : `${name} · ${relativeDay(txn.occurred_on, now)}`}
           </span>
         </div>
       </div>
@@ -45,24 +47,22 @@ export function TransactionItem({ txn, categories, onEdit, onDelete, now }: Prop
         >
           {formatSignedYen(txn.amount, txn.type)}
         </span>
-        {onEdit && (
+        {onEdit && actionable && (
           <button
             type="button"
             aria-label="編集"
-            disabled={pending}
             onClick={() => onEdit(txn)}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-custom-text/50 transition hover:bg-black/5 disabled:opacity-40"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-custom-text/50 transition hover:bg-black/5"
           >
             <Icon name="edit" size={20} />
           </button>
         )}
-        {onDelete && (
+        {onDelete && actionable && (
           <button
             type="button"
             aria-label="削除"
-            disabled={pending}
             onClick={() => onDelete(txn)}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-custom-text/50 transition hover:bg-error/10 hover:text-error disabled:opacity-40"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-custom-text/50 transition hover:bg-error/10 hover:text-error"
           >
             <Icon name="delete" size={20} />
           </button>

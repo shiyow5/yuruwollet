@@ -38,6 +38,9 @@ export function CategoryManager() {
         setName('');
         setIcon('');
       },
+      onError: () => {
+        setError('追加できませんでした。同じ名前のカテゴリが既にあるかもしれません。');
+      },
     });
   }
 

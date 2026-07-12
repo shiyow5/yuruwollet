@@ -2,12 +2,15 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '../database.types';
 import type { Category, CategoryDraft } from '../ledger/types';
 
-/** household 共有のカテゴリ（非archived）を kind→sort_order→name 順で取得する。 */
+/**
+ * household 共有のカテゴリを kind→sort_order→name 順で取得する。
+ * archived も含めて返す（過去の取引が参照するカテゴリ名を履歴表示で解決するため）。
+ * フォーム/管理の選択肢は selectableCategories / CategoryManager 側で archived を除外する。
+ */
 export async function listCategories(client: SupabaseClient<Database>): Promise<Category[]> {
   const { data, error } = await client
     .from('categories')
     .select('*')
-    .eq('is_archived', false)
     .order('kind', { ascending: true })
     .order('sort_order', { ascending: true })
     .order('name', { ascending: true });

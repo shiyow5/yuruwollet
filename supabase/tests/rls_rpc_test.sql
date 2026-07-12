@@ -1,6 +1,6 @@
 -- pgTAP: RLS の cross-household 分離 + per-member 書込強制 + confirm_balance_checkpoint RPC
 begin;
-select plan(21);
+select plan(22);
 
 -- ============================================================
 -- Block A: ゆるり @ main として認証
@@ -136,6 +136,13 @@ select is(
   (select count(*) from public.transactions where owner_member_id = 'shiyowo' and is_system_generated)::int,
   1,
   '残高調整 transaction が 1 件生成される'
+);
+
+-- v_monthly_summary は残高調整(system)を除外する（しよをの当月は調整のみ→行なし）
+select is(
+  (select count(*) from public.v_monthly_summary where member_id = 'shiyowo')::int,
+  0,
+  'v_monthly_summary は残高調整のみの月を集計しない (is_system_generated 除外)'
 );
 
 -- ============================================================

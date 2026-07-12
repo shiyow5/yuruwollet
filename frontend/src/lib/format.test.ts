@@ -4,6 +4,7 @@ import {
   formatSignedYen,
   parseAmount,
   relativeDate,
+  relativeDay,
   jstToday,
   jstMonthStart,
   monthStartOf,
@@ -68,6 +69,26 @@ describe('relativeDate', () => {
   });
   it('now 省略でも文字列を返す', () => {
     expect(typeof relativeDate(new Date())).toBe('string');
+  });
+});
+
+describe('relativeDay', () => {
+  const now = new Date('2026-07-13T12:00:00+09:00');
+  it('同日は「今日」（時刻なし）', () => {
+    expect(relativeDay('2026-07-13', now)).toBe('今日');
+  });
+  it('前日は「昨日」', () => {
+    expect(relativeDay('2026-07-12', now)).toBe('昨日');
+  });
+  it('7日未満は「N日前」', () => {
+    expect(relativeDay('2026-07-10', now)).toBe('3日前');
+  });
+  it('7日以上前は「M月D日」', () => {
+    expect(relativeDay('2026-07-03', now)).toBe('7月3日');
+    expect(relativeDay('2026-01-05', now)).toBe('1月5日');
+  });
+  it('未来日付でも「今日」に丸める（diff<=0）', () => {
+    expect(relativeDay('2026-07-20', now)).toBe('今日');
   });
 });
 

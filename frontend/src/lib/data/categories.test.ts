@@ -20,12 +20,17 @@ function cat(over: Partial<Category> = {}): Category {
 }
 
 describe('listCategories', () => {
-  it('非archived のみ取得（is_archived=false でフィルタ）', async () => {
-    const rows = [cat(), cat({ id: 'c2', name: '住宅' })];
+  it('archived も含め kind→sort_order→name 順で取得（履歴解決のため）', async () => {
+    const rows = [
+      cat(),
+      cat({ id: 'c2', name: '住宅' }),
+      cat({ id: 'c3', name: '旧', is_archived: true }),
+    ];
     const { client, queries } = makeSupabaseMock({ categories: { data: rows, error: null } });
     const result = await listCategories(client);
     expect(result).toEqual(rows);
-    expect(argsOf(queries.categories, 'eq')).toEqual(['is_archived', false]);
+    // is_archived フィルタは付けない（archived も返す）
+    expect(queries.categories.calls.some((c) => c.method === 'eq')).toBe(false);
     expect(queries.categories.calls.filter((c) => c.method === 'order')).toHaveLength(3);
   });
 

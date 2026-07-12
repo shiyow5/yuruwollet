@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button, Card, Fab, Icon, Modal } from '../../components/ui';
-import { addMonths, formatMonthLabel, jstMonthStart } from '../../lib/format';
+import { addMonths, formatMonthLabel, jstMonthStart, jstToday } from '../../lib/format';
 import type { Transaction, TransactionDraft } from '../../lib/ledger/types';
 import { MemberTabs } from '../../features/ledger/MemberTabs';
 import { TransactionForm, type TransactionFormValues } from '../../features/ledger/TransactionForm';
@@ -29,6 +29,9 @@ export function LedgerPage() {
 
   const activeMember = viewMemberId ?? selfId ?? '';
   const canWrite = activeMember !== '' && activeMember === selfId;
+  // 追加フォームの既定日付: 選択中の月が当月なら今日、それ以外はその月の初日
+  // （過去/未来の月を見ているときに当月へ書き込んで「消える」のを防ぐ）
+  const createDefaultDate = month === jstMonthStart() ? jstToday() : month;
 
   const { data: categories = [] } = useCategories();
   const { data: transactions = [], isLoading } = useMonthTransactions(activeMember, month);
@@ -96,6 +99,7 @@ export function LedgerPage() {
         <h3 className="mb-6 font-headline-md text-headline-md text-custom-text">収支を追加</h3>
         <TransactionForm
           categories={categories}
+          initial={{ occurredOn: createDefaultDate }}
           submitLabel="追加"
           submitting={createTransaction.isPending}
           onSubmit={handleCreate}

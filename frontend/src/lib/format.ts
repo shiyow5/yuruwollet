@@ -53,6 +53,20 @@ export function jstToday(now: Date = new Date()): string {
   return jstIsoDay.format(now);
 }
 
+/**
+ * occurred_on（'YYYY-MM-DD' の日付のみ・JST 暦日）の相対表示。時刻は持たない。
+ * 今日/昨日/N日前/M月D日。台帳の実日付（記録時刻ではなく）を見せるために使う。
+ */
+export function relativeDay(isoDate: string, now: Date = new Date()): string {
+  const occurredDay = Math.floor(new Date(`${isoDate}T00:00:00Z`).getTime() / 86_400_000);
+  const diffDays = jstEpochDay(now) - occurredDay;
+  if (diffDays <= 0) return '今日';
+  if (diffDays === 1) return '昨日';
+  if (diffDays < 7) return `${diffDays}日前`;
+  const parts = isoDate.split('-');
+  return `${Number(parts[1])}月${Number(parts[2])}日`;
+}
+
 /** 'YYYY-MM-DD'（または ISO 文字列先頭）から、その月の初日 'YYYY-MM-01' を返す純関数。 */
 export function monthStartOf(isoDate: string): string {
   return `${isoDate.slice(0, 7)}-01`;

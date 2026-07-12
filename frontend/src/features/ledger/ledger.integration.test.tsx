@@ -325,6 +325,29 @@ describe('LedgerPage 統合', () => {
     });
   });
 
+  it('残高調整(system)行は編集/削除ボタンを出さない', async () => {
+    state.rows = [
+      row({ id: 'seed-1', memo: '通常', is_system_generated: false }),
+      row({ id: 'sys-1', memo: '残高調整', is_system_generated: true }),
+    ];
+    renderLedger();
+    expect(await screen.findByText('残高調整')).toBeInTheDocument();
+    expect(screen.getByText('通常')).toBeInTheDocument();
+    // 編集/削除ボタンは通常行の分のみ（system 行には出ない）
+    expect(screen.getAllByRole('button', { name: '編集' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: '削除' })).toHaveLength(1);
+  });
+
+  it('過去/未来月で追加する際、日付が選択中の月の初日に既定される', async () => {
+    renderLedger();
+    await screen.findByRole('button', { name: '収支を追加' });
+    fireEvent.click(screen.getByRole('button', { name: '次の月' }));
+    fireEvent.click(screen.getByRole('button', { name: '収支を追加' }));
+    const dialog = await screen.findByRole('dialog');
+    const nextMonthFirst = addMonths(jstMonthStart(), 1);
+    expect(within(dialog).getByDisplayValue(nextMonthFirst)).toBeInTheDocument();
+  });
+
   it('金額未入力ではエラーを出し送信しない', async () => {
     renderLedger();
     fireEvent.click(await screen.findByRole('button', { name: '収支を追加' }));

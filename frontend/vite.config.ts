@@ -14,7 +14,8 @@ export default defineConfig({
       reporter: ['text', 'html'],
       // Phase が進むごとに include を広げる。現状はロジックのある層のみ 80% ゲート。
       include: ['src/lib/**', 'functions/**'],
-      exclude: ['**/*.types.ts'],
+      // 生成物・薄い配線 (client 生成 / React hook) は単体テスト対象外
+      exclude: ['**/*.types.ts', 'src/lib/supabase.ts', 'src/lib/auth/useSession.ts'],
       thresholds: { lines: 80, functions: 80, branches: 80, statements: 80 },
     },
   },

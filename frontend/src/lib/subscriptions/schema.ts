@@ -4,6 +4,11 @@ import type { SubscriptionDraft } from './types';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** numeric(12,2) 列に合わせ、小数第2位までの通貨額か判定する。 */
+function hasAtMostTwoDecimals(v: number): boolean {
+  return Math.abs(v * 100 - Math.round(v * 100)) < 1e-6;
+}
+
 export const subscriptionDraftSchema = z.object({
   name: z
     .string()
@@ -11,7 +16,10 @@ export const subscriptionDraftSchema = z.object({
     .min(1, 'サービス名を入力してください')
     .max(40, 'サービス名は40文字以内です'),
   currency: z.enum(['JPY', 'USD']),
-  originalAmount: z.number().positive('金額は0より大きい値を入力してください'),
+  originalAmount: z
+    .number()
+    .positive('金額は0より大きい値を入力してください')
+    .refine(hasAtMostTwoDecimals, '金額は小数第2位までで入力してください'),
   cycle: z.enum(['monthly', 'yearly']),
   nextRenewalDate: z.string().regex(ISO_DATE, '次回更新日が正しくありません'),
   status: z.enum(['active', 'trial', 'considering_cancel']),

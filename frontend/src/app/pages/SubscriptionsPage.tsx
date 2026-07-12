@@ -29,8 +29,16 @@ export function SubscriptionsPage() {
   const canWrite = activeMember !== '' && activeMember === selfId;
 
   const { data: subscriptions = [], isLoading, isError } = useSubscriptions(activeMember);
-  const { data: monthlyTotal = 0 } = useSubscriptionMonthlyTotal(activeMember);
+  const {
+    data: monthlyTotal = 0,
+    isLoading: totalLoading,
+    isError: totalError,
+  } = useSubscriptionMonthlyTotal(activeMember);
   const { data: fxRate = null } = useLatestFxRate();
+
+  // 取得失敗/読み込み中は 0円/0件 を「実データ」として見せず — 表示
+  const totalDisplay = totalError || totalLoading ? '—' : formatYen(monthlyTotal);
+  const countDisplay = isError || isLoading ? '—' : `${subscriptions.length}件`;
   const createSub = useCreateSubscription();
   const updateSub = useUpdateSubscription();
   const deleteSub = useDeleteSubscription();
@@ -71,8 +79,8 @@ export function SubscriptionsPage() {
       </header>
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-        <StatTile label="今月の合計（月換算）" value={formatYen(monthlyTotal)} />
-        <StatTile label="登録中のサービス" value={`${subscriptions.length}件`} />
+        <StatTile label="今月の合計（月換算）" value={totalDisplay} />
+        <StatTile label="登録中のサービス" value={countDisplay} />
       </div>
 
       <Card className="flex flex-col gap-6">

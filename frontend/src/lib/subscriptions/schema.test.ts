@@ -41,6 +41,16 @@ describe('validateSubscriptionForm', () => {
     if (r.ok) expect(r.value.name).toBe('Spotify');
   });
 
+  it('小数第3位以上の金額を弾く（numeric(12,2) 整合）', () => {
+    const r = validateSubscriptionForm({ ...base, currency: 'USD', amount: '9.996' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.originalAmount).toContain('小数第2位');
+  });
+
+  it('小数第2位までは許可', () => {
+    expect(validateSubscriptionForm({ ...base, currency: 'USD', amount: '9.99' }).ok).toBe(true);
+  });
+
   it('金額 0 以下を弾く', () => {
     const r = validateSubscriptionForm({ ...base, amount: '0' });
     expect(r.ok).toBe(false);

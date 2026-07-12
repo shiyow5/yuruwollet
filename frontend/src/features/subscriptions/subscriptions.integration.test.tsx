@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
-import { QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createQueryClient } from '../../lib/queryClient';
 import { SessionContext } from '../../lib/auth/session-context';
 import type { SessionState } from '../../lib/auth/useSession';
@@ -117,6 +117,7 @@ import {
   updateSubscription,
   deleteSubscription,
   listSubscriptions,
+  getSubscriptionMonthlyTotal,
 } from '../../lib/data/subscriptions';
 
 type OnceMock = { mockImplementationOnce: (fn: () => Promise<unknown>) => void };
@@ -258,6 +259,31 @@ describe('SubscriptionsPage 統合', () => {
     expect(await screen.findByText('消せない')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '削除' }));
     expect(await screen.findByText(/削除に失敗しました/)).toBeInTheDocument();
+  });
+
+  it('取得失敗時は合計/件数を ¥0・0件 と見せず — にする', async () => {
+    (listSubscriptions as unknown as OnceMock).mockImplementationOnce(async () => {
+      throw new Error('net');
+    });
+    (getSubscriptionMonthlyTotal as unknown as OnceMock).mockImplementationOnce(async () => {
+      throw new Error('net');
+    });
+    // retry を無効にした client で高速にエラー状態へ
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <SessionContext.Provider value={authedSession}>
+          <SubscriptionsPage />
+        </SessionContext.Provider>
+      </QueryClientProvider>,
+    );
+    // 一覧はエラー表示
+    expect(await screen.findByText('サブスクを読み込めませんでした')).toBeInTheDocument();
+    // タイルは — （¥0 / 0件 を出さない）
+    const totalTile = screen.getByText('今月の合計（月換算）').closest('div') as HTMLElement;
+    expect(within(totalTile).getByText('—')).toBeInTheDocument();
+    expect(screen.queryByText('¥0')).toBeNull();
+    expect(screen.queryByText('0件')).toBeNull();
   });
 
   it('相手ビューでは FAB を出さず相手のデータを取得', async () => {

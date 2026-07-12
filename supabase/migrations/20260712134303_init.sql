@@ -202,6 +202,22 @@ $$;
 create trigger guard_system_category before delete on public.categories
   for each row execute function public.guard_system_category();
 
+-- ---- wishlist の registrant_id は更新で変更不可 (登録者属性を保全) ----
+create or replace function public.guard_wishlist_registrant()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if new.registrant_id is distinct from old.registrant_id then
+    raise exception 'registrant_id は変更できません';
+  end if;
+  return new;
+end;
+$$;
+create trigger guard_wishlist_registrant before update on public.wishlist_items
+  for each row execute function public.guard_wishlist_registrant();
+
 -- ============================================================
 -- RLS
 -- クレーム: auth.jwt()->>'household_id' / 'member_id'
@@ -242,8 +258,8 @@ create policy categories_select on public.categories for select to authenticated
 create policy categories_insert on public.categories for insert to authenticated
   with check (household_id = (select auth.jwt() ->> 'household_id') and is_system = false);
 create policy categories_update on public.categories for update to authenticated
-  using (household_id = (select auth.jwt() ->> 'household_id'))
-  with check (household_id = (select auth.jwt() ->> 'household_id'));
+  using (household_id = (select auth.jwt() ->> 'household_id') and is_system = false)
+  with check (household_id = (select auth.jwt() ->> 'household_id') and is_system = false);
 create policy categories_delete on public.categories for delete to authenticated
   using (household_id = (select auth.jwt() ->> 'household_id') and is_system = false);
 
@@ -255,6 +271,16 @@ create policy transactions_insert on public.transactions for insert to authentic
     household_id = (select auth.jwt() ->> 'household_id')
     and owner_member_id = (select auth.jwt() ->> 'member_id')
     and is_system_generated = false
+    and (
+      category_id is null
+      or exists (
+        select 1 from public.categories c
+        where c.id = category_id
+          and c.household_id = (select auth.jwt() ->> 'household_id')
+          and c.is_system = false
+          and c.kind::text = type::text
+      )
+    )
   );
 create policy transactions_update on public.transactions for update to authenticated
   using (
@@ -266,6 +292,16 @@ create policy transactions_update on public.transactions for update to authentic
     household_id = (select auth.jwt() ->> 'household_id')
     and owner_member_id = (select auth.jwt() ->> 'member_id')
     and is_system_generated = false
+    and (
+      category_id is null
+      or exists (
+        select 1 from public.categories c
+        where c.id = category_id
+          and c.household_id = (select auth.jwt() ->> 'household_id')
+          and c.is_system = false
+          and c.kind::text = type::text
+      )
+    )
   );
 create policy transactions_delete on public.transactions for delete to authenticated
   using (
@@ -334,22 +370,25 @@ create policy savings_delete on public.savings_goals for delete to authenticated
     and member_id = (select auth.jwt() ->> 'member_id')
   );
 
--- balance_checkpoints (per-member; confirm は RPC, skip は直接 upsert)
+-- balance_checkpoints (per-member; confirm は RPC のみ, skip だけ直接 upsert 可)
 create policy checkpoints_select on public.balance_checkpoints for select to authenticated
   using (household_id = (select auth.jwt() ->> 'household_id'));
 create policy checkpoints_insert on public.balance_checkpoints for insert to authenticated
   with check (
     household_id = (select auth.jwt() ->> 'household_id')
     and member_id = (select auth.jwt() ->> 'member_id')
+    and status = 'skipped'
   );
 create policy checkpoints_update on public.balance_checkpoints for update to authenticated
   using (
     household_id = (select auth.jwt() ->> 'household_id')
     and member_id = (select auth.jwt() ->> 'member_id')
+    and status = 'skipped'
   )
   with check (
     household_id = (select auth.jwt() ->> 'household_id')
     and member_id = (select auth.jwt() ->> 'member_id')
+    and status = 'skipped'
   );
 
 -- fx_rates (認証ユーザは読み取りのみ; 書込は service_role が RLS バイパス)
@@ -528,3 +567,11 @@ grant select on public.v_monthly_summary to authenticated;
 grant select on public.v_category_breakdown to authenticated;
 grant select on public.v_subscription_monthly_total to authenticated;
 grant select on public.v_savings_progress to authenticated;
+
+-- ============================================================
+-- service_role (Go Cron Worker: fx_rates / サブスク保守 の書込)
+-- RLS はバイパスするが Supabase Data API の grant は RLS より前に評価されるため必須。
+-- ============================================================
+grant usage on schema public to service_role;
+grant all on all tables in schema public to service_role;
+grant execute on function public.confirm_balance_checkpoint(integer) to service_role;

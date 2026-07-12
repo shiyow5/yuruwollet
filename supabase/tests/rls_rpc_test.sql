@@ -1,6 +1,6 @@
 -- pgTAP: RLS の cross-household 分離 + per-member 書込強制 + confirm_balance_checkpoint RPC
 begin;
-select plan(14);
+select plan(21);
 
 -- ============================================================
 -- Block A: ゆるり @ main として認証
@@ -41,6 +41,61 @@ select throws_ok(
      values ('main', 'yururi', 'income', 500, current_date, true) $$,
   null, null,
   'is_system_generated=true の直接書込は拒否 (残高調整は RPC 経由のみ)'
+);
+
+-- 取引 type とカテゴリ kind の不一致 (支出に収入カテゴリ) は拒否
+select throws_ok(
+  $$ insert into public.transactions (household_id, owner_member_id, type, amount, category_id, occurred_on)
+     values ('main', 'yururi', 'expense', 300,
+             (select id from public.categories where household_id = 'main' and kind = 'income' and name = 'バイト代'),
+             current_date) $$,
+  null, null,
+  '取引 type とカテゴリ kind の不一致は拒否'
+);
+
+-- system カテゴリ (残高調整) を通常取引に使うのは拒否
+select throws_ok(
+  $$ insert into public.transactions (household_id, owner_member_id, type, amount, category_id, occurred_on)
+     values ('main', 'yururi', 'expense', 300,
+             (select id from public.categories where household_id = 'main' and is_system and name = '残高調整'),
+             current_date) $$,
+  null, null,
+  'system カテゴリの通常取引利用は拒否'
+);
+
+-- system カテゴリの改変 (is_system=false 化) は RLS using で対象外 → 変更されない
+update public.categories set is_system = false
+where household_id = 'main' and name = '残高調整';
+select is(
+  (select is_system from public.categories where household_id = 'main' and name = '残高調整'),
+  true,
+  'system カテゴリは update ポリシーの対象外で変更されない (is_system=true のまま)'
+);
+
+-- checkpoint: confirmed の直接書込は拒否, skipped は許可
+select throws_ok(
+  $$ insert into public.balance_checkpoints (household_id, member_id, checkpoint_month, status)
+     values ('main', 'yururi', date_trunc('month', now())::date, 'confirmed') $$,
+  null, null,
+  'confirmed checkpoint の直接書込は拒否 (RPC 経由のみ)'
+);
+select lives_ok(
+  $$ insert into public.balance_checkpoints (household_id, member_id, checkpoint_month, status)
+     values ('main', 'yururi', date_trunc('month', now())::date, 'skipped') $$,
+  'skipped checkpoint の直接書込は許可'
+);
+
+-- wishlist: 自分名義で挿入可, registrant_id の書換は拒否
+select lives_ok(
+  $$ insert into public.wishlist_items (household_id, registrant_id, genre, title)
+     values ('main', 'yururi', 'want', 'テスト') $$,
+  'wishlist を自分名義で挿入できる'
+);
+select throws_ok(
+  $$ update public.wishlist_items set registrant_id = 'shiyowo'
+     where household_id = 'main' and registrant_id = 'yururi' $$,
+  null, null,
+  'wishlist の registrant_id 変更は拒否'
 );
 
 -- ============================================================

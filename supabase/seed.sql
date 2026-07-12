@@ -1,34 +1,12 @@
 -- ============================================================
--- yuruwollet seed: household 1 + メンバー 2 (ゆるり/しよを) + デフォルトカテゴリ
--- email はローカル開発用プレースホルダ。本番の Gmail は Phase 11 で反映。
+-- ローカル開発用 seed（`supabase start` / `db reset` 時のみ実行）。
+-- 必須ベースライン行（household / profiles / categories）は
+-- migration (20260712141714_seed_baseline.sql) で管理しているため、
+-- ここには開発用の補助データだけを置く。
 -- ============================================================
 
-insert into public.households (id, name) values ('main', 'yuruwollet')
-on conflict (id) do nothing;
-
-insert into public.profiles (member_id, household_id, display_name, email, opening_balance) values
-  ('yururi', 'main', 'ゆるり', 'yururi@example.com', 0),
-  ('shiyowo', 'main', 'しよを', 'shiyowo@example.com', 0)
-on conflict (member_id) do nothing;
-
--- system カテゴリ: 残高調整 (household ごとに 1 件)
-insert into public.categories (household_id, kind, name, icon, is_system, sort_order) values
-  ('main', 'system', '残高調整', 'sync_alt', true, 999)
-on conflict (household_id, kind, name) do nothing;
-
--- デフォルト支出カテゴリ
-insert into public.categories (household_id, kind, name, icon, sort_order) values
-  ('main', 'expense', '食費', 'restaurant', 10),
-  ('main', 'expense', '友好費', 'local_cafe', 20),
-  ('main', 'expense', '交通費', 'directions_subway', 30),
-  ('main', 'expense', '学祭関連', 'celebration', 40),
-  ('main', 'expense', '光熱費', 'bolt', 50),
-  ('main', 'expense', 'その他', 'more_horiz', 60)
-on conflict (household_id, kind, name) do nothing;
-
--- デフォルト収入カテゴリ
-insert into public.categories (household_id, kind, name, icon, sort_order) values
-  ('main', 'income', 'バイト代', 'work', 10),
-  ('main', 'income', '仕送り', 'volunteer_activism', 20),
-  ('main', 'income', 'その他', 'more_horiz', 30)
-on conflict (household_id, kind, name) do nothing;
+-- ローカル開発用のプレースホルダ email（本番は Cloudflare Access 側で管理）
+update public.profiles set email = 'yururi@example.com'
+  where member_id = 'yururi' and email is null;
+update public.profiles set email = 'shiyowo@example.com'
+  where member_id = 'shiyowo' and email is null;

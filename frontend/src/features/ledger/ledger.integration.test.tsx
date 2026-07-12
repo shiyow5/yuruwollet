@@ -193,6 +193,9 @@ function renderLedger(session: SessionState = authedSession, route = '/ledger') 
 const mockCreate = createTransaction as unknown as {
   mockImplementationOnce: (fn: () => Promise<unknown>) => void;
 };
+const mockDelete = deleteTransaction as unknown as {
+  mockImplementationOnce: (fn: () => Promise<unknown>) => void;
+};
 
 describe('LedgerPage 統合', () => {
   beforeEach(() => {
@@ -418,6 +421,45 @@ describe('LedgerPage 統合', () => {
     );
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(screen.queryByRole('button', { name: '収支を追加' })).toBeNull();
+  });
+
+  it('追加が失敗するとフォームにエラーを表示（モーダルは開いたまま）', async () => {
+    mockCreate.mockImplementationOnce(async () => {
+      throw new Error('rls denied');
+    });
+    renderLedger();
+    fireEvent.click(await screen.findByRole('button', { name: '収支を追加' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByPlaceholderText('0'), { target: { value: '3,000' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '追加' }));
+    expect(await within(dialog).findByText(/保存に失敗しました/)).toBeInTheDocument();
+    // モーダルは開いたまま（ユーザーが再試行できる）
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('削除失敗時はエラーバナーを表示する', async () => {
+    state.rows = [row({ id: 'seed-1', memo: '消せない' })];
+    mockDelete.mockImplementationOnce(async () => {
+      throw new Error('network');
+    });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderLedger();
+    expect(await screen.findByText('消せない')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '削除' }));
+    expect(await screen.findByText(/削除に失敗しました/)).toBeInTheDocument();
+  });
+
+  it('相手→自分へタブ切替すると残った add モーダル意図がクリアされる', async () => {
+    renderLedger(authedSession, '/ledger?member=shiyowo&add=expense');
+    // 相手ビューではモーダルは開かない
+    expect(await screen.findByRole('tab', { name: 'しよを' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    // 自分タブへ切替 → 勝手に作成モーダルが開かない
+    fireEvent.click(screen.getByRole('tab', { name: 'ゆるり' }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: '収支を追加' })).toBeInTheDocument(),
+    );
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('金額未入力ではエラーを出し送信しない', async () => {

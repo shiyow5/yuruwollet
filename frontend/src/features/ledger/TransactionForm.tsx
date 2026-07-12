@@ -18,6 +18,8 @@ interface Props {
   initial?: Partial<TransactionFormValues>;
   submitting?: boolean;
   submitLabel?: string;
+  /** 保存 mutation が失敗したときに表示するメッセージ */
+  submitError?: string | null;
   onSubmit: (draft: TransactionDraft) => void;
   onCancel?: () => void;
 }
@@ -46,6 +48,7 @@ export function TransactionForm({
   initial,
   submitting = false,
   submitLabel = '保存',
+  submitError,
   onSubmit,
   onCancel,
 }: Props) {
@@ -149,6 +152,12 @@ export function TransactionForm({
         />
         {errors.memo && <FieldError id="txn-memo-error">{errors.memo}</FieldError>}
       </div>
+
+      {submitError && (
+        <p role="alert" className="font-label-sm text-label-sm text-error">
+          {submitError}
+        </p>
+      )}
 
       <div className="flex gap-3 pt-2">
         {onCancel && (

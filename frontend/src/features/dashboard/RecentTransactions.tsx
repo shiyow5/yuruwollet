@@ -12,7 +12,7 @@ interface Props {
 
 /** 直近の履歴（読み取り専用。編集は家計簿ページで）。 */
 export function RecentTransactions({ memberId, className, limit = 5 }: Props) {
-  const { data: transactions = [], isLoading } = useRecentTransactions(memberId, limit);
+  const { data: transactions = [], isLoading, isError } = useRecentTransactions(memberId, limit);
   const { data: categories = [] } = useCategories();
 
   return (
@@ -30,6 +30,7 @@ export function RecentTransactions({ memberId, className, limit = 5 }: Props) {
         transactions={transactions}
         categories={categories}
         loading={isLoading}
+        error={isError}
         emptyMessage="まだ記録がありません"
       />
     </Card>

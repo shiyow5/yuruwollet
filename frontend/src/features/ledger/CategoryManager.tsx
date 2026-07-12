@@ -26,12 +26,27 @@ export function CategoryManager() {
   const [name, setName] = useState('');
   const [icon, setIcon] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const userCats = userCategories(categories);
   const active = userCats.filter((c) => !c.is_archived);
   const archived = userCats.filter((c) => c.is_archived);
   const expense = active.filter((c) => c.kind === 'expense');
   const income = active.filter((c) => c.kind === 'income');
+
+  function archive(id: string) {
+    setActionError(null);
+    archiveCategory.mutate(id, {
+      onError: () => setActionError('アーカイブに失敗しました。再度お試しください。'),
+    });
+  }
+
+  function restore(id: string) {
+    setActionError(null);
+    unarchiveCategory.mutate(id, {
+      onError: () => setActionError('復元に失敗しました。再度お試しください。'),
+    });
+  }
 
   function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -80,13 +95,19 @@ export function CategoryManager() {
         </Button>
       </form>
 
+      {actionError && (
+        <p role="alert" className="font-label-sm text-label-sm text-error">
+          {actionError}
+        </p>
+      )}
+
       <CategoryGroup
         title="支出カテゴリ"
         categories={expense}
         actionIcon="archive"
         actionVerb="アーカイブ"
         actionHover="hover:bg-error/10 hover:text-error"
-        onAction={(id) => archiveCategory.mutate(id)}
+        onAction={archive}
       />
       <CategoryGroup
         title="収入カテゴリ"
@@ -94,7 +115,7 @@ export function CategoryManager() {
         actionIcon="archive"
         actionVerb="アーカイブ"
         actionHover="hover:bg-error/10 hover:text-error"
-        onAction={(id) => archiveCategory.mutate(id)}
+        onAction={archive}
       />
       {archived.length > 0 && (
         <CategoryGroup
@@ -103,7 +124,7 @@ export function CategoryManager() {
           actionIcon="unarchive"
           actionVerb="復元"
           actionHover="hover:bg-custom-accent/10 hover:text-custom-accent"
-          onAction={(id) => unarchiveCategory.mutate(id)}
+          onAction={restore}
         />
       )}
     </div>

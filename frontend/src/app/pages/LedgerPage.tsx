@@ -44,12 +44,18 @@ export function LedgerPage() {
   const createDefaultDate = month === jstMonthStart() ? jstToday() : month;
 
   const { data: categories = [] } = useCategories();
-  const { data: transactions = [], isLoading } = useMonthTransactions(activeMember, month);
+  const { data: transactions = [], isLoading, isError } = useMonthTransactions(activeMember, month);
   const createTransaction = useCreateTransaction();
   const updateTransaction = useUpdateTransaction();
   const deleteTransaction = useDeleteTransaction();
 
   function closeModal() {
+    setModal({ kind: 'none' });
+  }
+
+  // 相手/自分の切替時は、URL 由来などで残った作成/編集モーダルの意図をクリアする
+  function handleMemberChange(id: string) {
+    setViewMemberId(id);
     setModal({ kind: 'none' });
   }
 
@@ -72,7 +78,7 @@ export function LedgerPage() {
       <header className="flex flex-col gap-4">
         <h2 className="font-headline-md text-headline-md font-bold text-custom-text">家計簿</h2>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <MemberTabs options={options} value={activeMember} onChange={setViewMemberId} />
+          <MemberTabs options={options} value={activeMember} onChange={handleMemberChange} />
           <MonthNav
             month={month}
             onPrev={() => setMonth((m) => addMonths(m, -1))}
@@ -91,10 +97,16 @@ export function LedgerPage() {
             カテゴリ
           </Button>
         </div>
+        {deleteTransaction.isError && (
+          <p role="alert" className="font-label-sm text-label-sm text-error">
+            削除に失敗しました。通信環境を確認して再度お試しください。
+          </p>
+        )}
         <TransactionList
           transactions={transactions}
           categories={categories}
           loading={isLoading}
+          error={isError}
           emptyMessage={
             canWrite ? 'まだ記録がありません。右下の＋から追加してね' : 'この月の記録はありません'
           }
@@ -112,6 +124,11 @@ export function LedgerPage() {
           initial={{ occurredOn: createDefaultDate, type: initialType }}
           submitLabel="追加"
           submitting={createTransaction.isPending}
+          submitError={
+            createTransaction.isError
+              ? '保存に失敗しました。通信環境を確認して再度お試しください。'
+              : null
+          }
           onSubmit={handleCreate}
           onCancel={closeModal}
         />
@@ -126,6 +143,11 @@ export function LedgerPage() {
               initial={toFormValues(modal.txn)}
               submitLabel="更新"
               submitting={updateTransaction.isPending}
+              submitError={
+                updateTransaction.isError
+                  ? '更新に失敗しました。通信環境を確認して再度お試しください。'
+                  : null
+              }
               onSubmit={(draft) => handleUpdate(modal.txn.id, draft)}
               onCancel={closeModal}
             />

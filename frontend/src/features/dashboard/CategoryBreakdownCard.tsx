@@ -12,7 +12,7 @@ interface Props {
 
 /** カテゴリ別支出（v_category_breakdown → 最大値基準のバー）。 */
 export function CategoryBreakdownCard({ memberId, month, className }: Props) {
-  const { data: rows = [], isLoading } = useCategoryBreakdown(memberId, month);
+  const { data: rows = [], isLoading, isError } = useCategoryBreakdown(memberId, month);
   const bars = toCategoryBars(rows, 'expense');
 
   return (
@@ -28,6 +28,8 @@ export function CategoryBreakdownCard({ memberId, month, className }: Props) {
             <Skeleton key={i} className="h-10 w-full" />
           ))}
         </div>
+      ) : isError ? (
+        <EmptyState icon="cloud_off" title="カテゴリ別支出を読み込めませんでした" />
       ) : bars.length === 0 ? (
         <EmptyState icon="donut_small" title="今月の支出はまだありません" />
       ) : (

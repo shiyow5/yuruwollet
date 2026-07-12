@@ -115,6 +115,15 @@ describe('CategoryManager 統合', () => {
     );
   });
 
+  it('アーカイブ失敗時はエラーを表示する', async () => {
+    (
+      archiveCategory as unknown as { mockRejectedValueOnce: (e: Error) => void }
+    ).mockRejectedValueOnce(new Error('network'));
+    renderManager();
+    fireEvent.click(await screen.findByRole('button', { name: '食費 をアーカイブ' }));
+    expect(await screen.findByText(/アーカイブに失敗しました/)).toBeInTheDocument();
+  });
+
   it('アーカイブ済カテゴリが復元セクションに出て、復元で unarchiveCategory が呼ばれる', async () => {
     renderManager();
     // アーカイブ済セクションに旧カテゴリが見える

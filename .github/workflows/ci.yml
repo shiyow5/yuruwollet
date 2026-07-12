@@ -63,6 +63,34 @@ jobs:
           echo "WASM gzip size: ${SIZE} bytes (free plan limit: 3145728)"
           test "${SIZE}" -lt 3145728 || (echo 'WASM exceeds free-plan 3MB gzip limit'; exit 1)
 
+  supabase:
+    name: supabase (schema / rls / rpc)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: start supabase (local stack)
+        run: npx supabase start
+      - name: db reset (migrations + seed)
+        run: npx supabase db reset
+      - name: pgTAP tests (RLS / RPC)
+        run: npx supabase test db
+      - name: verify generated types are up to date
+        run: |
+          npx supabase gen types typescript --local > /tmp/database.types.ts
+          if ! diff -q frontend/src/lib/database.types.ts /tmp/database.types.ts; then
+            echo 'database.types.ts が古いです。`make gen-types` を実行してコミットしてください。'
+            diff -u frontend/src/lib/database.types.ts /tmp/database.types.ts || true
+            exit 1
+          fi
+      - name: stop supabase
+        if: always()
+        run: npx supabase stop
+
   e2e:
     name: e2e (playwright)
     runs-on: ubuntu-latest

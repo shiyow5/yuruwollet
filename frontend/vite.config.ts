@@ -14,6 +14,7 @@ export default defineConfig({
       reporter: ['text', 'html'],
       // Phase が進むごとに include を広げる。現状はロジックのある層のみ 80% ゲート。
       include: ['src/lib/**', 'functions/**'],
+      exclude: ['**/*.types.ts'],
       thresholds: { lines: 80, functions: 80, branches: 80, statements: 80 },
     },
   },

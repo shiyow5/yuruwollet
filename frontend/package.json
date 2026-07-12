@@ -14,11 +14,13 @@
   "dependencies": {
     "@fontsource-variable/plus-jakarta-sans": "^5.2.8",
     "@supabase/supabase-js": "^2.47.10",
+    "@tanstack/react-query": "^5.101.2",
     "jose": "^5.9.6",
     "material-symbols": "^0.45.7",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router": "^8.2.0"
+    "react-router": "^8.2.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

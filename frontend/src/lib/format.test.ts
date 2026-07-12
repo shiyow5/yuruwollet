@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { formatYen, formatSignedYen, parseAmount, relativeDate } from './format';
+import {
+  formatYen,
+  formatSignedYen,
+  parseAmount,
+  relativeDate,
+  jstToday,
+  jstMonthStart,
+  monthStartOf,
+  addMonths,
+  formatMonthLabel,
+} from './format';
 
 describe('formatYen', () => {
   it('千区切り付きで整形する', () => {
@@ -58,5 +68,50 @@ describe('relativeDate', () => {
   });
   it('now 省略でも文字列を返す', () => {
     expect(typeof relativeDate(new Date())).toBe('string');
+  });
+});
+
+describe('jstToday', () => {
+  it('JST の暦日を YYYY-MM-DD で返す', () => {
+    // 2026-07-13T23:30Z は JST では翌日 07-14 の 08:30
+    expect(jstToday(new Date('2026-07-13T23:30:00Z'))).toBe('2026-07-14');
+  });
+  it('UTC 深夜でも JST 日付になる', () => {
+    // 2026-07-13T14:59Z は JST 07-13 の 23:59（まだ同日）
+    expect(jstToday(new Date('2026-07-13T14:59:00Z'))).toBe('2026-07-13');
+  });
+});
+
+describe('monthStartOf', () => {
+  it('日付から当月初日を返す', () => {
+    expect(monthStartOf('2026-07-13')).toBe('2026-07-01');
+  });
+});
+
+describe('jstMonthStart', () => {
+  it('JST 当月の初日を返す', () => {
+    expect(jstMonthStart(new Date('2026-07-13T12:00:00+09:00'))).toBe('2026-07-01');
+  });
+});
+
+describe('addMonths', () => {
+  it('翌月へ繰り上がる', () => {
+    expect(addMonths('2026-07-01', 1)).toBe('2026-08-01');
+  });
+  it('年をまたいで繰り上がる', () => {
+    expect(addMonths('2026-12-01', 1)).toBe('2027-01-01');
+  });
+  it('前月へ繰り下がる（年またぎ）', () => {
+    expect(addMonths('2026-01-01', -1)).toBe('2025-12-01');
+  });
+  it('複数月ずらせる', () => {
+    expect(addMonths('2026-07-01', 6)).toBe('2027-01-01');
+  });
+});
+
+describe('formatMonthLabel', () => {
+  it('YYYY年M月 に整形（ゼロ埋めなし）', () => {
+    expect(formatMonthLabel('2026-07-01')).toBe('2026年7月');
+    expect(formatMonthLabel('2026-12-01')).toBe('2026年12月');
   });
 });

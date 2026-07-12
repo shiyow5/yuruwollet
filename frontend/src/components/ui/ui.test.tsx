@@ -6,6 +6,7 @@ import {
   Card,
   Chip,
   Input,
+  Select,
   SegmentedControl,
   ProgressBar,
   StatTile,
@@ -45,6 +46,21 @@ describe('Input', () => {
     const input = screen.getByPlaceholderText('0');
     fireEvent.change(input, { target: { value: '5000' } });
     expect(input).toHaveValue('5000');
+  });
+});
+
+describe('Select', () => {
+  it('label と options を描画し選択できる', () => {
+    const onChange = vi.fn();
+    render(
+      <Select label="カテゴリ" value="" onChange={onChange}>
+        <option value="">未選択</option>
+        <option value="c1">食費</option>
+      </Select>,
+    );
+    expect(screen.getByText('カテゴリ')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'c1' } });
+    expect(onChange).toHaveBeenCalled();
   });
 });
 

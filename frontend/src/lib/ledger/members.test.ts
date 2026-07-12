@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { selectBalance, partnerOf, displayNameOf } from './members';
+import { selectBalance, partnerOf, displayNameOf, buildMemberOptions } from './members';
 import type { MemberBalance, Profile } from './types';
 
 const balances: MemberBalance[] = [
@@ -56,5 +56,23 @@ describe('displayNameOf', () => {
   });
   it('無ければ null', () => {
     expect(displayNameOf(profiles, 'nobody')).toBeNull();
+  });
+});
+
+describe('buildMemberOptions', () => {
+  it('自分→相手 の順で並べ isSelf を付ける', () => {
+    const opts = buildMemberOptions(profiles, 'shiyowo');
+    expect(opts).toEqual([
+      { memberId: 'shiyowo', label: 'しよを', isSelf: true },
+      { memberId: 'yururi', label: 'ゆるり', isSelf: false },
+    ]);
+  });
+  it('自分の profile が無ければ空', () => {
+    expect(buildMemberOptions(profiles, 'nobody')).toEqual([]);
+  });
+  it('相手が居なければ自分のみ', () => {
+    expect(buildMemberOptions([profiles[0]], 'yururi')).toEqual([
+      { memberId: 'yururi', label: 'ゆるり', isSelf: true },
+    ]);
   });
 });

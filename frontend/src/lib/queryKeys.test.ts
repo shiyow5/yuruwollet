@@ -17,6 +17,13 @@ describe('queryKeys', () => {
     expect(queryKeys.transactions('yururi')).toEqual(['transactions', 'yururi', 'all']);
   });
 
+  it('recentTransactions は transactions 接頭辞を共有する', () => {
+    const key = queryKeys.recentTransactions('yururi', 5);
+    expect(key).toEqual(['transactions', 'yururi', 'recent', 5]);
+    // 一括 invalidate 用に接頭辞が transactions で揃っている
+    expect(key[0]).toBe('transactions');
+  });
+
   it('monthlySummary / categoryBreakdown は memberId×月', () => {
     expect(queryKeys.monthlySummary('shiyowo', '2026-07-01')).toEqual([
       'monthlySummary',

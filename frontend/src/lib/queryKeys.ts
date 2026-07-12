@@ -9,9 +9,12 @@ export const queryKeys = {
   memberBalances: () => ['memberBalances'] as const,
   /** household 共有のカテゴリ一覧 (非archived) */
   categories: () => ['categories'] as const,
-  /** member (+任意の月) の取引一覧 */
+  /** member×月 の取引一覧（家計簿ページ） */
   transactions: (memberId: string, month?: string) =>
     ['transactions', memberId, month ?? 'all'] as const,
+  /** member の直近 N 件（ダッシュボード履歴）。transactions と同じ接頭辞で一括 invalidate 可能 */
+  recentTransactions: (memberId: string, limit: number) =>
+    ['transactions', memberId, 'recent', limit] as const,
   /** member×月 の収入/支出サマリ (v_monthly_summary) */
   monthlySummary: (memberId: string, month: string) =>
     ['monthlySummary', memberId, month] as const,

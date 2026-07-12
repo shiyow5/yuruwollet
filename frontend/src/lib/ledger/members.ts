@@ -16,3 +16,26 @@ export function partnerOf(profiles: Profile[], selfId: string): Profile | null {
 export function displayNameOf(profiles: Profile[], memberId: string): string | null {
   return profiles.find((p) => p.member_id === memberId)?.display_name ?? null;
 }
+
+export interface MemberOption {
+  memberId: string;
+  label: string;
+  isSelf: boolean;
+}
+
+/**
+ * 自分/相手タブ用の選択肢を「自分→相手」の順で組み立てる純関数。
+ * 自分の profile が無ければ空。相手が居なければ自分のみ。
+ */
+export function buildMemberOptions(profiles: Profile[], selfId: string): MemberOption[] {
+  const self = profiles.find((p) => p.member_id === selfId);
+  if (!self) return [];
+  const options: MemberOption[] = [
+    { memberId: self.member_id, label: self.display_name, isSelf: true },
+  ];
+  const partner = partnerOf(profiles, selfId);
+  if (partner) {
+    options.push({ memberId: partner.member_id, label: partner.display_name, isSelf: false });
+  }
+  return options;
+}

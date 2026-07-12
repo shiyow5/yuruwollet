@@ -3,6 +3,7 @@ export { Button } from './Button';
 export { Card } from './Card';
 export { Chip, type ChipTone } from './Chip';
 export { Input } from './Input';
+export { Select } from './Select';
 export { SegmentedControl } from './SegmentedControl';
 export { ProgressBar } from './ProgressBar';
 export { StatTile } from './StatTile';

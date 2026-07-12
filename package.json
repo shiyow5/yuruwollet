@@ -1,0 +1,24 @@
+{
+  "name": "yuruwollet",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "workspaces": [
+    "frontend",
+    "e2e"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "lint": "npm run lint --workspace frontend",
+    "fmt": "prettier --write .",
+    "fmt:check": "prettier --check .",
+    "typecheck": "npm run typecheck --workspace frontend",
+    "test:frontend": "npm run test --workspace frontend",
+    "build:frontend": "npm run build --workspace frontend"
+  },
+  "devDependencies": {
+    "prettier": "^3.4.2"
+  }
+}

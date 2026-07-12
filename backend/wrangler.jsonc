@@ -1,0 +1,17 @@
+{
+  "name": "yuruwollet-cron",
+  "main": "./build/worker.mjs",
+  "compatibility_date": "2026-07-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "build": {
+    "command": "go run github.com/syumai/workers/cmd/workers-assets-gen -mode=go && GOOS=js GOARCH=wasm go build -o ./build/app.wasm .",
+  },
+  // JST 24日 00:00 = 前日 15:00 UTC。日次処理も兼ねる想定で Phase 10 で確定。
+  "triggers": {
+    "crons": ["0 15 23 * *"],
+  },
+  "vars": {
+    "SUPABASE_URL": "",
+  },
+  // secrets は `wrangler secret put` で: SUPABASE_SERVICE_ROLE_KEY / (FX_API_KEY は frankfurter.dev のため不要)
+}

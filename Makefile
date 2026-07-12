@@ -1,0 +1,93 @@
+.DEFAULT_GOAL := help
+SHELL := /usr/bin/env bash
+
+# ---- Meta -----------------------------------------------------------------
+.PHONY: help
+help: ## このヘルプを表示
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
+	 | sort | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
+
+# ---- Setup ----------------------------------------------------------------
+.PHONY: setup
+setup: ## 依存をすべて導入 (node + go)
+	npm install
+	cd backend && go mod download
+
+# ---- Local dev ------------------------------------------------------------
+.PHONY: dev
+dev: ## フロント開発サーバ (Phase 2 以降で supabase + worker も同時起動)
+	npm run dev --workspace frontend
+
+.PHONY: dev-db
+dev-db: ## ローカル Supabase を起動 (Docker)
+	npx supabase start
+
+.PHONY: dev-worker
+dev-worker: build-backend ## Go Cron Worker をローカル起動 (wrangler dev)
+	cd backend && npx wrangler dev
+
+# ---- Supabase (Phase 1 以降) ----------------------------------------------
+.PHONY: db-reset migrate seed gen-types
+db-reset: ## ローカル DB をマイグレーション + seed で初期化
+	npx supabase db reset
+migrate: ## マイグレーションを適用
+	npx supabase migration up
+seed: ## seed を投入
+	npx supabase db reset --no-seed=false
+gen-types: ## Supabase から TS 型を生成
+	npx supabase gen types typescript --local > frontend/src/lib/database.types.ts
+
+# ---- Quality --------------------------------------------------------------
+.PHONY: lint fmt fmt-check
+lint: ## lint (frontend + backend)
+	npm run lint
+	cd backend && go vet ./internal/... && GOOS=js GOARCH=wasm go vet . && (command -v golangci-lint >/dev/null 2>&1 && golangci-lint run ./internal/... || echo "golangci-lint 未導入のためスキップ")
+
+fmt: ## フォーマット適用 (prettier + gofmt)
+	npm run fmt
+	cd backend && gofmt -w . && (command -v goimports >/dev/null 2>&1 && goimports -w . || true)
+
+fmt-check: ## フォーマット差分チェック (CI 用)
+	npm run fmt:check
+	cd backend && test -z "$$(gofmt -l .)" || (echo "gofmt 差分あり:"; gofmt -l .; exit 1)
+
+# ---- Tests ----------------------------------------------------------------
+.PHONY: test test-frontend test-functions test-backend test-e2e
+test: test-frontend test-backend ## 単体/統合テスト一括
+
+test-frontend: ## フロント Vitest (+coverage)
+	npm run test:frontend
+
+test-functions: ## Pages Functions のテスト (frontend の vitest に内包)
+	npm run test:frontend
+
+test-backend: ## Go テスト (race + coverage)
+	cd backend && go test -race -cover ./internal/...
+
+test-e2e: ## Playwright E2E
+	npm run test --workspace e2e
+
+# ---- Build ----------------------------------------------------------------
+.PHONY: build build-frontend build-backend
+build: build-frontend build-backend ## 全ビルド
+
+build-frontend: ## フロントを本番ビルド
+	npm run build:frontend
+
+build-backend: ## Go Worker を WASM ビルド
+	cd backend && go run github.com/syumai/workers/cmd/workers-assets-gen -mode=go && GOOS=js GOARCH=wasm go build -o ./build/app.wasm .
+
+# ---- Deploy (手動 / CI) ---------------------------------------------------
+.PHONY: deploy deploy-frontend deploy-backend
+deploy: deploy-frontend deploy-backend ## 本番デプロイ
+
+deploy-frontend: build-frontend ## Cloudflare Pages へデプロイ
+	cd frontend && npx wrangler pages deploy dist
+
+deploy-backend: build-backend ## Go Cron Worker をデプロイ
+	cd backend && npx wrangler deploy
+
+# ---- Clean ----------------------------------------------------------------
+.PHONY: clean
+clean: ## 生成物を削除
+	rm -rf frontend/dist frontend/coverage backend/build e2e/playwright-report e2e/test-results

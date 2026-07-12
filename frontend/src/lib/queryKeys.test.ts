@@ -36,4 +36,13 @@ describe('queryKeys', () => {
       '2026-07-01',
     ]);
   });
+
+  it('subscriptions / total / fxRate', () => {
+    expect(queryKeys.subscriptions('yururi')).toEqual(['subscriptions', 'yururi']);
+    expect(queryKeys.subscriptionMonthlyTotal('yururi')).toEqual([
+      'subscriptionMonthlyTotal',
+      'yururi',
+    ]);
+    expect(queryKeys.fxRate()).toEqual(['fxRate']);
+  });
 });

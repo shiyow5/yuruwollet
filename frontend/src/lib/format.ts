@@ -33,9 +33,9 @@ export function formatSignedYen(amount: number, type: 'income' | 'expense'): str
   return `${sign} ${formatYen(Math.abs(amount))}`;
 }
 
-/** 「¥1,234」等の入力文字列を数値に。無効なら NaN。 */
+/** 「¥1,234」「$9.99」等の入力文字列を数値に。無効なら NaN。 */
 export function parseAmount(input: string): number {
-  const cleaned = input.replace(/[¥￥,\s]/g, '');
+  const cleaned = input.replace(/[¥￥$＄,\s]/g, '');
   if (cleaned === '' || !/^-?\d+(\.\d+)?$/.test(cleaned)) {
     return NaN;
   }
@@ -86,6 +86,12 @@ export function addMonths(monthStart: string, n: number): string {
   const y = Math.floor(zeroBased / 12);
   const m = (zeroBased % 12) + 1;
   return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-01`;
+}
+
+/** 'YYYY-MM-DD' を「M月D日」表示に整形する（次回更新日など、絶対日付表示用）。 */
+export function formatMonthDay(isoDate: string): string {
+  const parts = isoDate.split('-');
+  return `${Number(parts[1])}月${Number(parts[2])}日`;
 }
 
 /** 'YYYY-MM-01' を「YYYY年M月」表示に整形する。 */

@@ -10,3 +10,9 @@ update public.profiles set email = 'yururi@example.com'
   where member_id = 'yururi' and email is null;
 update public.profiles set email = 'shiyowo@example.com'
   where member_id = 'shiyowo' and email is null;
+
+-- USD/JPY 為替のブートストラップ（本番は Go cron が日次 upsert=Phase 10）。
+-- ローカル/CI で USD サブスクの amount_jpy 換算を成立させるための開発用シード。
+insert into public.fx_rates (rate_date, base, quote, rate)
+values (current_date, 'USD', 'JPY', 150.000000)
+on conflict (rate_date, base, quote) do nothing;

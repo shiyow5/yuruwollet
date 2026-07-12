@@ -20,4 +20,10 @@ export const queryKeys = {
   /** member×月 のカテゴリ別内訳 (v_category_breakdown) */
   categoryBreakdown: (memberId: string, month: string) =>
     ['categoryBreakdown', memberId, month] as const,
+  /** member のサブスク一覧 */
+  subscriptions: (memberId: string) => ['subscriptions', memberId] as const,
+  /** member のサブスク月換算合計 (v_subscription_monthly_total) */
+  subscriptionMonthlyTotal: (memberId: string) => ['subscriptionMonthlyTotal', memberId] as const,
+  /** USD/JPY 最新為替 (fx_rates) */
+  fxRate: () => ['fxRate'] as const,
 } as const;

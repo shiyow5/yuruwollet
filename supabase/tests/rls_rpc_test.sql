@@ -1,6 +1,6 @@
 -- pgTAP: RLS の cross-household 分離 + per-member 書込強制 + confirm_balance_checkpoint RPC
 begin;
-select plan(22);
+select plan(27);
 
 -- ============================================================
 -- Block A: ゆるり @ main として認証
@@ -83,6 +83,43 @@ select lives_ok(
   $$ insert into public.balance_checkpoints (household_id, member_id, checkpoint_month, status)
      values ('main', 'yururi', date_trunc('month', now())::date, 'skipped') $$,
   'skipped checkpoint の直接書込は許可'
+);
+
+-- subscriptions: 自分名義で挿入可 (JPY)
+select lives_ok(
+  $$ insert into public.subscriptions
+       (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+     values ('main', 'yururi', 'Netflix', 'JPY', 1490, 1490, 'monthly', current_date, 'active') $$,
+  'サブスクを自分名義で挿入できる'
+);
+
+-- subscriptions: 相手名義(owner=shiyowo)の挿入は拒否 (RLS with check)
+select throws_ok(
+  $$ insert into public.subscriptions
+       (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+     values ('main', 'shiyowo', 'Spotify', 'JPY', 1280, 1280, 'monthly', current_date, 'active') $$,
+  null, null,
+  'サブスクを相手名義で挿入するのは拒否'
+);
+
+-- v_subscription_monthly_total: 月換算合計に反映
+select is(
+  (select monthly_total_jpy from public.v_subscription_monthly_total where member_id = 'yururi'),
+  1490::bigint,
+  'サブスク月換算合計が反映される'
+);
+
+-- 解約検討中(considering_cancel)は月換算合計から除外
+select lives_ok(
+  $$ insert into public.subscriptions
+       (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+     values ('main', 'yururi', 'OldService', 'JPY', 500, 500, 'monthly', current_date, 'considering_cancel') $$,
+  '解約検討中サブスクを挿入できる'
+);
+select is(
+  (select monthly_total_jpy from public.v_subscription_monthly_total where member_id = 'yururi'),
+  1490::bigint,
+  '解約検討中は月換算合計から除外される'
 );
 
 -- wishlist: 自分名義で挿入可, registrant_id の書換は拒否

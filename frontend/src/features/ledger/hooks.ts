@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
 import { queryKeys } from '../../lib/queryKeys';
-import { useSessionContext } from '../../lib/auth/session-context';
+import { useWriteContext } from '../shared/session';
 import {
   listTransactions,
   createTransaction,
@@ -15,7 +15,6 @@ import {
   unarchiveCategory,
 } from '../../lib/data/categories';
 import {
-  listProfiles,
   getMemberBalances,
   getMonthlySummary,
   getCategoryBreakdown,
@@ -26,18 +25,7 @@ import {
   prependTransaction,
   keyAcceptsTransaction,
 } from '../../lib/ledger/optimistic';
-import { buildMemberOptions, type MemberOption } from '../../lib/ledger/members';
 import type { Transaction, TransactionDraft, CategoryDraft } from '../../lib/ledger/types';
-
-/** 書込コンテキスト（自分の household_id / member_id）。未認証なら null。 */
-function useWriteContext(): { householdId: string; memberId: string } | null {
-  const session = useSessionContext();
-  if (session.status !== 'authenticated') return null;
-  return {
-    householdId: session.session.householdId,
-    memberId: session.session.member.id,
-  };
-}
 
 /**
  * 台帳系（残高・月次・カテゴリ内訳・取引一覧）を無効化する。
@@ -59,19 +47,6 @@ function invalidateLedger(qc: QueryClient, memberId?: string): void {
 }
 
 // ---- Queries ----
-
-export function useProfiles() {
-  return useQuery({ queryKey: queryKeys.profiles(), queryFn: () => listProfiles(supabase) });
-}
-
-/** 自分/相手タブの選択肢と自分の member_id を返す（profiles + session を合成）。 */
-export function useMemberOptions(): { options: MemberOption[]; selfId: string | null } {
-  const session = useSessionContext();
-  const { data: profiles = [] } = useProfiles();
-  const selfId = session.status === 'authenticated' ? session.session.member.id : null;
-  const options = selfId ? buildMemberOptions(profiles, selfId) : [];
-  return { options, selfId };
-}
 
 export function useMemberBalances() {
   return useQuery({

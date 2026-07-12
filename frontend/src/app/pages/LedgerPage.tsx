@@ -3,7 +3,8 @@ import { useSearchParams } from 'react-router';
 import { Button, Card, Fab, Icon, Modal } from '../../components/ui';
 import { addMonths, formatMonthLabel, jstMonthStart, jstToday } from '../../lib/format';
 import type { Transaction, TransactionDraft, TxnType } from '../../lib/ledger/types';
-import { MemberTabs } from '../../features/ledger/MemberTabs';
+import { MemberTabs } from '../../features/shared/MemberTabs';
+import { useMemberOptions } from '../../features/shared/members';
 import { TransactionForm, type TransactionFormValues } from '../../features/ledger/TransactionForm';
 import { TransactionList } from '../../features/ledger/TransactionList';
 import { CategoryManager } from '../../features/ledger/CategoryManager';
@@ -11,7 +12,6 @@ import {
   useCategories,
   useCreateTransaction,
   useDeleteTransaction,
-  useMemberOptions,
   useMonthTransactions,
   useUpdateTransaction,
 } from '../../features/ledger/hooks';

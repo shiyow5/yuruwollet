@@ -35,7 +35,10 @@ describe('selectBalance', () => {
   });
   it('balance が null なら 0', () => {
     expect(
-      selectBalance([{ household_id: 'main', member_id: 'x', display_name: 'X', balance: null }], 'x'),
+      selectBalance(
+        [{ household_id: 'main', member_id: 'x', display_name: 'X', balance: null }],
+        'x',
+      ),
     ).toBe(0);
   });
 });

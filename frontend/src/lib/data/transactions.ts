@@ -17,9 +17,7 @@ export async function listTransactions(
 ): Promise<Transaction[]> {
   let filter = client.from('transactions').select('*').eq('owner_member_id', params.memberId);
   if (params.month) {
-    filter = filter
-      .gte('occurred_on', params.month)
-      .lt('occurred_on', addMonths(params.month, 1));
+    filter = filter.gte('occurred_on', params.month).lt('occurred_on', addMonths(params.month, 1));
   }
   let query = filter
     .order('occurred_on', { ascending: false })

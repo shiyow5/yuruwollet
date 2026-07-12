@@ -37,7 +37,11 @@ describe('listTransactions', () => {
   it('member と月で絞り込み、limit を付ける', async () => {
     const rows = [txn(), txn({ id: 't2' })];
     const { client, queries } = makeSupabaseMock({ transactions: { data: rows, error: null } });
-    const result = await listTransactions(client, { memberId: 'yururi', month: '2026-07-01', limit: 5 });
+    const result = await listTransactions(client, {
+      memberId: 'yururi',
+      month: '2026-07-01',
+      limit: 5,
+    });
 
     expect(result).toEqual(rows);
     const q = queries.transactions;

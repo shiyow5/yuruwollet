@@ -39,7 +39,5 @@ export function toCategoryBars(
 
 /** 指定 type の合計金額を返す純関数。 */
 export function totalByType(rows: CategoryBreakdownRow[], type: TxnType): number {
-  return rows
-    .filter((r) => r.type === type)
-    .reduce((sum, r) => sum + (r.total ?? 0), 0);
+  return rows.filter((r) => r.type === type).reduce((sum, r) => sum + (r.total ?? 0), 0);
 }

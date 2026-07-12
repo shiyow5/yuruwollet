@@ -19,7 +19,11 @@ export const transactionDraftSchema = z.object({
 /** 検証後のカテゴリドラフトのスキーマ。 */
 export const categoryDraftSchema = z.object({
   kind: z.enum(['income', 'expense']),
-  name: z.string().trim().min(1, 'カテゴリ名を入力してください').max(20, 'カテゴリ名は20文字以内です'),
+  name: z
+    .string()
+    .trim()
+    .min(1, 'カテゴリ名を入力してください')
+    .max(20, 'カテゴリ名は20文字以内です'),
   icon: z.string().trim().max(40).default('label'),
 });
 
@@ -41,9 +45,7 @@ export interface RawCategoryForm {
 
 export type FieldErrors<T> = Partial<Record<keyof T, string>>;
 
-export type ValidationResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; errors: FieldErrors<T> };
+export type ValidationResult<T> = { ok: true; value: T } | { ok: false; errors: FieldErrors<T> };
 
 function collectErrors<T>(issues: z.ZodIssue[]): FieldErrors<T> {
   const errors: FieldErrors<T> = {};

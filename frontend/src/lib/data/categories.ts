@@ -41,10 +41,7 @@ export async function createCategory(
 }
 
 /** カテゴリをソフトアーカイブする（取引の参照を壊さないよう削除ではなく非表示化）。 */
-export async function archiveCategory(
-  client: SupabaseClient<Database>,
-  id: string,
-): Promise<void> {
+export async function archiveCategory(client: SupabaseClient<Database>, id: string): Promise<void> {
   const { error } = await client
     .from('categories')
     .update({ is_archived: true })

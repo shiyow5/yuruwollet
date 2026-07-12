@@ -82,7 +82,9 @@ export function LedgerPage() {
           transactions={transactions}
           categories={categories}
           loading={isLoading}
-          emptyMessage={canWrite ? 'まだ記録がありません。右下の＋から追加してね' : 'この月の記録はありません'}
+          emptyMessage={
+            canWrite ? 'まだ記録がありません。右下の＋から追加してね' : 'この月の記録はありません'
+          }
           onEdit={canWrite ? (txn) => setModal({ kind: 'edit', txn }) : undefined}
           onDelete={canWrite ? handleDelete : undefined}
         />

@@ -1,11 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '../database.types';
-import type {
-  MemberBalance,
-  MonthlySummary,
-  CategoryBreakdownRow,
-  Profile,
-} from '../ledger/types';
+import type { MemberBalance, MonthlySummary, CategoryBreakdownRow, Profile } from '../ledger/types';
 
 /** 二人の profile を member_id 昇順で取得する（household スコープで両者返る）。 */
 export async function listProfiles(client: SupabaseClient<Database>): Promise<Profile[]> {

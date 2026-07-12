@@ -76,11 +76,7 @@ describe('toCategoryBars', () => {
 
 describe('totalByType', () => {
   it('type 別の合計', () => {
-    const rows = [
-      row({ total: 1000 }),
-      row({ total: 500 }),
-      row({ type: 'income', total: 9999 }),
-    ];
+    const rows = [row({ total: 1000 }), row({ total: 500 }), row({ type: 'income', total: 9999 })];
     expect(totalByType(rows, 'expense')).toBe(1500);
     expect(totalByType(rows, 'income')).toBe(9999);
   });

@@ -150,7 +150,12 @@ describe('LedgerPage 統合', () => {
     await waitFor(() => expect(createTransaction).toHaveBeenCalledTimes(1));
     const [, draft, ctx] = (createTransaction as unknown as { mock: { calls: unknown[][] } }).mock
       .calls[0];
-    expect(draft).toMatchObject({ type: 'expense', amount: 3000, categoryId: CATEGORY_ID, memo: '' });
+    expect(draft).toMatchObject({
+      type: 'expense',
+      amount: 3000,
+      categoryId: CATEGORY_ID,
+      memo: '',
+    });
     expect(ctx).toEqual({ householdId: 'main', ownerMemberId: 'yururi' });
 
     // 一覧に金額が反映（楽観 + 再取得）
@@ -162,9 +167,7 @@ describe('LedgerPage 統合', () => {
   it('相手表示に切り替えると追加 FAB は消える（書込不可）', async () => {
     renderWithProviders(<LedgerPage />);
     fireEvent.click(await screen.findByRole('tab', { name: 'しよを' }));
-    await waitFor(() =>
-      expect(screen.queryByRole('button', { name: '収支を追加' })).toBeNull(),
-    );
+    await waitFor(() => expect(screen.queryByRole('button', { name: '収支を追加' })).toBeNull());
   });
 
   it('金額未入力ではエラーを出し送信しない', async () => {

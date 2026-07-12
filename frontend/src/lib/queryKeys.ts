@@ -16,8 +16,7 @@ export const queryKeys = {
   recentTransactions: (memberId: string, limit: number) =>
     ['transactions', memberId, 'recent', limit] as const,
   /** member×月 の収入/支出サマリ (v_monthly_summary) */
-  monthlySummary: (memberId: string, month: string) =>
-    ['monthlySummary', memberId, month] as const,
+  monthlySummary: (memberId: string, month: string) => ['monthlySummary', memberId, month] as const,
   /** member×月 のカテゴリ別内訳 (v_category_breakdown) */
   categoryBreakdown: (memberId: string, month: string) =>
     ['categoryBreakdown', memberId, month] as const,

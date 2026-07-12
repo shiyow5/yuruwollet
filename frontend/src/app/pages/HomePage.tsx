@@ -1,8 +1,8 @@
-import { useSession } from '../../lib/auth/useSession';
+import { useSessionContext } from '../../lib/auth/session-context';
 import { EmptyState } from '../../components/ui/EmptyState';
 
 export function HomePage() {
-  const session = useSession();
+  const session = useSessionContext();
   const name = session.status === 'authenticated' ? session.session.member.displayName : null;
 
   return (

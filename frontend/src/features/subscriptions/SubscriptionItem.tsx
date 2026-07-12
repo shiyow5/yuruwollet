@@ -6,7 +6,7 @@ import type { Subscription, SubStatus } from '../../lib/subscriptions/types';
 
 const STATUS_TONES: Record<SubStatus, ChipTone> = {
   active: 'accent',
-  trial: 'success',
+  trial: 'caution',
   considering_cancel: 'warning',
 };
 

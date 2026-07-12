@@ -61,7 +61,26 @@ vi.mock('../../lib/data/subscriptions', () => ({
       return row;
     },
   ),
-  updateSubscription: vi.fn(),
+  updateSubscription: vi.fn(
+    async (
+      _c: unknown,
+      id: string,
+      draft: { name: string; originalAmount: number; currency: 'JPY' | 'USD' },
+    ) => {
+      state.subs = state.subs.map((s) =>
+        s.id === id
+          ? {
+              ...s,
+              name: draft.name,
+              original_amount: draft.originalAmount,
+              amount_jpy: Math.round(draft.originalAmount),
+              monthly_amount_jpy: Math.round(draft.originalAmount),
+            }
+          : s,
+      );
+      return state.subs.find((s) => s.id === id)!;
+    },
+  ),
   deleteSubscription: vi.fn(async (_c: unknown, id: string) => {
     state.subs = state.subs.filter((s) => s.id !== id);
   }),
@@ -93,7 +112,14 @@ vi.mock('../../lib/data/aggregates', () => ({
   getCategoryBreakdown: vi.fn(async () => []),
 }));
 
-import { createSubscription, listSubscriptions } from '../../lib/data/subscriptions';
+import {
+  createSubscription,
+  updateSubscription,
+  deleteSubscription,
+  listSubscriptions,
+} from '../../lib/data/subscriptions';
+
+type OnceMock = { mockImplementationOnce: (fn: () => Promise<unknown>) => void };
 
 function subRow(over: Partial<Subscription> = {}): Subscription {
   return {
@@ -172,6 +198,66 @@ describe('SubscriptionsPage 統合', () => {
     // 一覧に出る
     expect(await screen.findByText('Spotify')).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // 合計 StatTile にも反映（¥1,280）
+    const totalTile = screen.getByText('今月の合計（月換算）').closest('div') as HTMLElement;
+    await waitFor(() => expect(within(totalTile).getByText('¥1,280')).toBeInTheDocument());
+  });
+
+  it('編集: 初期値がプリフィルされ更新すると反映される', async () => {
+    state.subs = [subRow({ id: 'seed-1', name: 'Netflix', original_amount: 1490 })];
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: '編集' }));
+    const dialog = await screen.findByRole('dialog');
+    const amountInput = within(dialog).getByPlaceholderText('1490');
+    expect(amountInput).toHaveValue('1490'); // プリフィル
+    fireEvent.change(amountInput, { target: { value: '1600' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '更新' }));
+
+    await waitFor(() => expect(updateSubscription).toHaveBeenCalledTimes(1));
+    const [, id, draft] = (updateSubscription as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls[0];
+    expect(id).toBe('seed-1');
+    expect(draft).toMatchObject({ originalAmount: 1600 });
+    // 更新後の金額が反映（一覧の項目と合計の両方に出るため複数一致でよい）
+    expect((await screen.findAllByText('¥1,600')).length).toBeGreaterThan(0);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('削除: confirm=false では削除しない', async () => {
+    state.subs = [subRow({ id: 'seed-1', name: '残す' })];
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    renderPage();
+    expect(await screen.findByText('残す')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '削除' }));
+    expect(deleteSubscription).not.toHaveBeenCalled();
+    expect(screen.getByText('残す')).toBeInTheDocument();
+  });
+
+  it('追加失敗時はフォームにエラーを表示', async () => {
+    (createSubscription as unknown as OnceMock).mockImplementationOnce(async () => {
+      throw new Error('rls');
+    });
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'サブスクを追加' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByPlaceholderText('Netflix など'), {
+      target: { value: 'X' },
+    });
+    fireEvent.change(within(dialog).getByPlaceholderText('1490'), { target: { value: '500' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '追加' }));
+    expect(await within(dialog).findByText(/保存に失敗しました/)).toBeInTheDocument();
+  });
+
+  it('削除失敗時はエラーバナーを表示', async () => {
+    state.subs = [subRow({ id: 'seed-1', name: '消せない' })];
+    (deleteSubscription as unknown as OnceMock).mockImplementationOnce(async () => {
+      throw new Error('network');
+    });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    renderPage();
+    expect(await screen.findByText('消せない')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '削除' }));
+    expect(await screen.findByText(/削除に失敗しました/)).toBeInTheDocument();
   });
 
   it('相手ビューでは FAB を出さず相手のデータを取得', async () => {

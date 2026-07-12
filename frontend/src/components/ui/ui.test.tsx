@@ -37,6 +37,10 @@ describe('Chip', () => {
     render(<Chip tone="accent">利用中</Chip>);
     expect(screen.getByText('利用中')).toHaveClass('text-custom-accent');
   });
+  it('caution tone は amber', () => {
+    render(<Chip tone="caution">無料体験中</Chip>);
+    expect(screen.getByText('無料体験中')).toHaveClass('text-amber-700');
+  });
 });
 
 describe('Input', () => {
@@ -76,6 +80,12 @@ describe('SegmentedControl', () => {
     expect(screen.getByRole('tab', { name: 'ほしい物' })).toHaveAttribute('aria-selected', 'true');
     fireEvent.click(screen.getByRole('tab', { name: '行きたい場所' }));
     expect(onChange).toHaveBeenCalledWith('place');
+  });
+  it('ariaLabel でグループにアクセシブルネームを付与', () => {
+    render(
+      <SegmentedControl options={[...options]} value="want" onChange={vi.fn()} ariaLabel="通貨" />,
+    );
+    expect(screen.getByRole('tablist', { name: '通貨' })).toBeInTheDocument();
   });
 });
 

@@ -1,6 +1,6 @@
 -- pgTAP: RLS の cross-household 分離 + per-member 書込強制 + confirm_balance_checkpoint RPC
 begin;
-select plan(27);
+select plan(30);
 
 -- ============================================================
 -- Block A: ゆるり @ main として認証
@@ -120,6 +120,34 @@ select is(
   (select monthly_total_jpy from public.v_subscription_monthly_total where member_id = 'yururi'),
   1490::bigint,
   '解約検討中は月換算合計から除外される'
+);
+
+-- USD で fx_rate/fx_rate_date 欠落は fx_fields_consistent 制約で拒否
+select throws_ok(
+  $$ insert into public.subscriptions
+       (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+     values ('main', 'yururi', 'ChatGPT', 'USD', 20, 3000, 'monthly', current_date, 'active') $$,
+  null, null,
+  'USD で fx フィールド欠落は拒否 (fx_fields_consistent)'
+);
+
+-- JPY に fx を混入するのも拒否
+select throws_ok(
+  $$ insert into public.subscriptions
+       (household_id, owner_member_id, name, currency, original_amount, amount_jpy, fx_rate, fx_rate_date, cycle, next_renewal_date, status)
+     values ('main', 'yururi', 'BadJPY', 'JPY', 1000, 1000, 150, current_date, 'monthly', current_date, 'active') $$,
+  null, null,
+  'JPY に fx を混入するのは拒否 (fx_fields_consistent)'
+);
+
+-- yearly の生成列 monthly_amount_jpy = round(amount_jpy/12)
+insert into public.subscriptions
+  (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+values ('main', 'yururi', 'YearlyPlan', 'JPY', 12000, 12000, 'yearly', current_date, 'active');
+select is(
+  (select monthly_amount_jpy from public.subscriptions where household_id = 'main' and name = 'YearlyPlan'),
+  1000,
+  'yearly の月換算生成列 = round(amount_jpy/12)'
 );
 
 -- wishlist: 自分名義で挿入可, registrant_id の書換は拒否

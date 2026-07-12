@@ -115,8 +115,11 @@ export function SubscriptionForm({
       </div>
 
       <div className="flex flex-col gap-2">
-        <span className="font-label-sm text-label-sm text-custom-text/60">通貨</span>
+        <span id="sub-currency-label" className="font-label-sm text-label-sm text-custom-text/60">
+          通貨
+        </span>
         <SegmentedControl
+          ariaLabelledby="sub-currency-label"
           options={CURRENCY_OPTIONS}
           value={values.currency}
           onChange={(c) => update('currency', c)}
@@ -151,8 +154,11 @@ export function SubscriptionForm({
       </div>
 
       <div className="flex flex-col gap-2">
-        <span className="font-label-sm text-label-sm text-custom-text/60">支払いサイクル</span>
+        <span id="sub-cycle-label" className="font-label-sm text-label-sm text-custom-text/60">
+          支払いサイクル
+        </span>
         <SegmentedControl
+          ariaLabelledby="sub-cycle-label"
           options={CYCLE_OPTIONS}
           value={values.cycle}
           onChange={(c) => update('cycle', c)}

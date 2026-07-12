@@ -1,0 +1,9 @@
+# wrangler pages dev 用のローカル秘密値。`.dev.vars` にコピーして使う (gitignore 済み)。
+# SUPABASE_JWT_SECRET は `npx supabase status` の JWT secret と一致させること。
+SUPABASE_URL=http://127.0.0.1:54321
+SUPABASE_JWT_SECRET=super-secret-jwt-token-with-at-least-32-characters-long
+EMAIL_YURURI=yururi@example.com
+EMAIL_SHIYOWO=shiyowo@example.com
+# ローカルは Access が無いので、この email を認証済みとして扱う (本番では未設定)
+DEV_BYPASS_EMAIL=yururi@example.com
+# 本番のみ: ACCESS_TEAM_DOMAIN / ACCESS_AUD を設定

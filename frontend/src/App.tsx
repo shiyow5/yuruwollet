@@ -1,26 +1,31 @@
-import { formatYen } from './lib/format';
+import { useSession } from './lib/auth/useSession';
 
 export default function App() {
+  const state = useSession();
+
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center gap-6 bg-custom-bg p-6 text-custom-text">
       <div className="flex w-full max-w-sm flex-col items-center gap-6 rounded-3xl border border-black/5 bg-surface-container p-10 text-center">
         <p className="font-label-sm text-label-sm uppercase tracking-[0.2em] text-custom-text/60">
           yuruwollet
         </p>
-        <h1 className="font-headline-md text-[40px] font-bold leading-none text-custom-accent">
-          {formatYen(0)}
-        </h1>
-        <p className="text-body-md text-custom-text/70">
-          二人専用の共同ウォレット
-          <br />
-          セットアップ完了（Phase 0）
-        </p>
-        <a
-          className="rounded-full bg-custom-accent px-6 py-3 font-label-sm text-label-sm text-on-primary transition-opacity hover:opacity-90"
-          href="/api/health"
-        >
-          health check
-        </a>
+
+        {state.status === 'loading' && (
+          <p className="text-body-md text-custom-text/60">読み込み中…</p>
+        )}
+
+        {state.status === 'authenticated' && (
+          <>
+            <h1 className="font-headline-md text-[28px] font-bold leading-tight text-custom-accent">
+              ようこそ、{state.session.member.displayName} さん
+            </h1>
+            <p className="text-body-md text-custom-text/70">セッション確立（Phase 2）</p>
+          </>
+        )}
+
+        {state.status === 'error' && (
+          <p className="text-body-md text-error">認証が必要です（{state.error}）</p>
+        )}
       </div>
     </main>
   );

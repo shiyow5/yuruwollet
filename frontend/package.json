@@ -12,6 +12,8 @@
     "test": "vitest run --coverage"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.47.10",
+    "jose": "^5.9.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

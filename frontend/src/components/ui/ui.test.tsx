@@ -6,6 +6,7 @@ import {
   Card,
   Chip,
   Input,
+  Select,
   SegmentedControl,
   ProgressBar,
   StatTile,
@@ -45,6 +46,21 @@ describe('Input', () => {
     const input = screen.getByPlaceholderText('0');
     fireEvent.change(input, { target: { value: '5000' } });
     expect(input).toHaveValue('5000');
+  });
+});
+
+describe('Select', () => {
+  it('label と options を描画し選択できる', () => {
+    const onChange = vi.fn();
+    render(
+      <Select label="カテゴリ" value="" onChange={onChange}>
+        <option value="">未選択</option>
+        <option value="c1">食費</option>
+      </Select>,
+    );
+    expect(screen.getByText('カテゴリ')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'c1' } });
+    expect(onChange).toHaveBeenCalled();
   });
 });
 
@@ -154,5 +170,76 @@ describe('Modal', () => {
     );
     fireEvent.click(screen.getByText('本文'));
     expect(onClose).not.toHaveBeenCalled();
+  });
+  it('label でアクセシブルネームを付与', () => {
+    render(
+      <Modal open label="収支を追加">
+        <p>本文</p>
+      </Modal>,
+    );
+    expect(screen.getByRole('dialog', { name: '収支を追加' })).toBeInTheDocument();
+  });
+  it('Escape で onClose、locked では無視', () => {
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <Modal open onClose={onClose}>
+        <button>ok</button>
+      </Modal>,
+    );
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledOnce();
+
+    onClose.mockClear();
+    rerender(
+      <Modal open locked onClose={onClose}>
+        <button>ok</button>
+      </Modal>,
+    );
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+  it('open 時に最初のフォーカス可能要素へフォーカス', () => {
+    render(
+      <Modal open label="t">
+        <button>最初</button>
+        <button>次</button>
+      </Modal>,
+    );
+    expect(screen.getByRole('button', { name: '最初' })).toHaveFocus();
+  });
+  it('Tab がパネル内で循環する（フォーカストラップ）', () => {
+    render(
+      <Modal open label="t">
+        <button>a</button>
+        <button>b</button>
+      </Modal>,
+    );
+    const first = screen.getByRole('button', { name: 'a' });
+    const last = screen.getByRole('button', { name: 'b' });
+    last.focus();
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Tab' });
+    expect(first).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Tab', shiftKey: true });
+    expect(last).toHaveFocus();
+  });
+  it('親再レンダー（onClose の identity 変化）でフォーカスを奪わない', () => {
+    const { rerender } = render(
+      <Modal open onClose={() => {}} label="t">
+        <button>a</button>
+        <button>b</button>
+      </Modal>,
+    );
+    const last = screen.getByRole('button', { name: 'b' });
+    last.focus();
+    expect(last).toHaveFocus();
+    // 親が別の onClose 関数で再レンダー（open/locked は不変）
+    rerender(
+      <Modal open onClose={() => {}} label="t">
+        <button>a</button>
+        <button>b</button>
+      </Modal>,
+    );
+    // effect が再実行されて先頭へフォーカスを戻していない
+    expect(last).toHaveFocus();
   });
 });

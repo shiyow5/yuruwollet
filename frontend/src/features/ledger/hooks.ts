@@ -1,0 +1,216 @@
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { supabase } from '../../lib/supabase';
+import { queryKeys } from '../../lib/queryKeys';
+import { useSessionContext } from '../../lib/auth/session-context';
+import {
+  listTransactions,
+  createTransaction,
+  updateTransaction,
+  deleteTransaction,
+} from '../../lib/data/transactions';
+import {
+  listCategories,
+  createCategory,
+  archiveCategory,
+  unarchiveCategory,
+} from '../../lib/data/categories';
+import {
+  listProfiles,
+  getMemberBalances,
+  getMonthlySummary,
+  getCategoryBreakdown,
+} from '../../lib/data/aggregates';
+import {
+  makeOptimisticTransaction,
+  optimisticId,
+  prependTransaction,
+  keyAcceptsTransaction,
+} from '../../lib/ledger/optimistic';
+import { buildMemberOptions, type MemberOption } from '../../lib/ledger/members';
+import type { Transaction, TransactionDraft, CategoryDraft } from '../../lib/ledger/types';
+
+/** 書込コンテキスト（自分の household_id / member_id）。未認証なら null。 */
+function useWriteContext(): { householdId: string; memberId: string } | null {
+  const session = useSessionContext();
+  if (session.status !== 'authenticated') return null;
+  return {
+    householdId: session.session.householdId,
+    memberId: session.session.member.id,
+  };
+}
+
+/**
+ * 台帳系（残高・月次・カテゴリ内訳・取引一覧）を無効化する。
+ * per-member 設計上、自分の書込は相手のデータを変えないため、memberId が判れば
+ * その人のキーに限定して相手キャッシュの無駄な再取得を避ける。
+ * memberBalances は両者を 1 クエリで返すため常に全体を無効化する。
+ */
+function invalidateLedger(qc: QueryClient, memberId?: string): void {
+  void qc.invalidateQueries({
+    queryKey: memberId ? ['transactions', memberId] : ['transactions'],
+  });
+  void qc.invalidateQueries({ queryKey: queryKeys.memberBalances() });
+  void qc.invalidateQueries({
+    queryKey: memberId ? ['monthlySummary', memberId] : ['monthlySummary'],
+  });
+  void qc.invalidateQueries({
+    queryKey: memberId ? ['categoryBreakdown', memberId] : ['categoryBreakdown'],
+  });
+}
+
+// ---- Queries ----
+
+export function useProfiles() {
+  return useQuery({ queryKey: queryKeys.profiles(), queryFn: () => listProfiles(supabase) });
+}
+
+/** 自分/相手タブの選択肢と自分の member_id を返す（profiles + session を合成）。 */
+export function useMemberOptions(): { options: MemberOption[]; selfId: string | null } {
+  const session = useSessionContext();
+  const { data: profiles = [] } = useProfiles();
+  const selfId = session.status === 'authenticated' ? session.session.member.id : null;
+  const options = selfId ? buildMemberOptions(profiles, selfId) : [];
+  return { options, selfId };
+}
+
+export function useMemberBalances() {
+  return useQuery({
+    queryKey: queryKeys.memberBalances(),
+    queryFn: () => getMemberBalances(supabase),
+  });
+}
+
+export function useCategories() {
+  return useQuery({ queryKey: queryKeys.categories(), queryFn: () => listCategories(supabase) });
+}
+
+export function useMonthlySummary(memberId: string, month: string) {
+  return useQuery({
+    queryKey: queryKeys.monthlySummary(memberId, month),
+    queryFn: () => getMonthlySummary(supabase, memberId, month),
+    enabled: memberId !== '',
+  });
+}
+
+export function useCategoryBreakdown(memberId: string, month: string) {
+  return useQuery({
+    queryKey: queryKeys.categoryBreakdown(memberId, month),
+    queryFn: () => getCategoryBreakdown(supabase, memberId, month),
+    enabled: memberId !== '',
+  });
+}
+
+export function useMonthTransactions(memberId: string, month: string) {
+  return useQuery({
+    queryKey: queryKeys.transactions(memberId, month),
+    queryFn: () => listTransactions(supabase, { memberId, month }),
+    enabled: memberId !== '',
+  });
+}
+
+export function useRecentTransactions(memberId: string, limit = 5) {
+  return useQuery({
+    queryKey: queryKeys.recentTransactions(memberId, limit),
+    queryFn: () => listTransactions(supabase, { memberId, limit }),
+    enabled: memberId !== '',
+  });
+}
+
+// ---- Mutations ----
+
+type TxnSnapshot = [readonly unknown[], Transaction[] | undefined][];
+
+/**
+ * 取引追加（自分の owner_member_id 固定）。
+ * 自分の取引一覧キャッシュを楽観的に先頭挿入し、失敗時はロールバック。
+ * 集計（残高/月次/内訳）は onSettled で invalidate して再取得する。
+ */
+export function useCreateTransaction() {
+  const qc = useQueryClient();
+  const ctx = useWriteContext();
+  return useMutation({
+    mutationFn: (draft: TransactionDraft) => {
+      if (!ctx) throw new Error('セッションが確立していません');
+      return createTransaction(supabase, draft, {
+        householdId: ctx.householdId,
+        ownerMemberId: ctx.memberId,
+      });
+    },
+    onMutate: async (draft: TransactionDraft): Promise<{ snapshot: TxnSnapshot }> => {
+      if (!ctx) return { snapshot: [] };
+      const prefix = ['transactions', ctx.memberId];
+      await qc.cancelQueries({ queryKey: prefix });
+      const snapshot = qc.getQueriesData<Transaction[]>({ queryKey: prefix });
+      const optimistic = makeOptimisticTransaction(draft, {
+        id: optimisticId(crypto.randomUUID()),
+        householdId: ctx.householdId,
+        ownerMemberId: ctx.memberId,
+        createdAt: new Date().toISOString(),
+      });
+      // occurred_on が属す月の一覧・all・recent にのみ挿入（別月への混入を防ぐ）
+      snapshot.forEach(([key]) => {
+        if (keyAcceptsTransaction(key, draft.occurredOn)) {
+          qc.setQueryData<Transaction[]>(key, (old) => prependTransaction(old, optimistic));
+        }
+      });
+      return { snapshot };
+    },
+    onError: (_err, _draft, context) => {
+      context?.snapshot.forEach(([key, data]) => qc.setQueryData(key, data));
+    },
+    onSettled: () => invalidateLedger(qc, ctx?.memberId),
+  });
+}
+
+export function useUpdateTransaction() {
+  const qc = useQueryClient();
+  const ctx = useWriteContext();
+  return useMutation({
+    mutationFn: ({ id, draft }: { id: string; draft: TransactionDraft }) =>
+      updateTransaction(supabase, id, draft),
+    onSettled: () => invalidateLedger(qc, ctx?.memberId),
+  });
+}
+
+export function useDeleteTransaction() {
+  const qc = useQueryClient();
+  const ctx = useWriteContext();
+  return useMutation({
+    mutationFn: (id: string) => deleteTransaction(supabase, id),
+    onSettled: () => invalidateLedger(qc, ctx?.memberId),
+  });
+}
+
+export function useCreateCategory() {
+  const qc = useQueryClient();
+  const ctx = useWriteContext();
+  return useMutation({
+    mutationFn: (draft: CategoryDraft) => {
+      if (!ctx) throw new Error('セッションが確立していません');
+      return createCategory(supabase, draft, { householdId: ctx.householdId });
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.categories() });
+    },
+  });
+}
+
+export function useArchiveCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => archiveCategory(supabase, id),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.categories() });
+    },
+  });
+}
+
+export function useUnarchiveCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => unarchiveCategory(supabase, id),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.categories() });
+    },
+  });
+}

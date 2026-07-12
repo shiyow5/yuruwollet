@@ -48,6 +48,53 @@ function jstEpochDay(d: Date): number {
   return Math.floor(new Date(`${iso}T00:00:00Z`).getTime() / 86_400_000);
 }
 
+/** JST の「今日」を 'YYYY-MM-DD' で返す（フォーム日付の既定値・occurred_on 用）。 */
+export function jstToday(now: Date = new Date()): string {
+  return jstIsoDay.format(now);
+}
+
+/**
+ * occurred_on（'YYYY-MM-DD' の日付のみ・JST 暦日）の相対表示。時刻は持たない。
+ * 今日/昨日/N日前/M月D日。台帳の実日付（記録時刻ではなく）を見せるために使う。
+ */
+export function relativeDay(isoDate: string, now: Date = new Date()): string {
+  const occurredDay = Math.floor(new Date(`${isoDate}T00:00:00Z`).getTime() / 86_400_000);
+  const diffDays = jstEpochDay(now) - occurredDay;
+  if (diffDays === 0) return '今日';
+  if (diffDays === 1) return '昨日';
+  if (diffDays >= 2 && diffDays < 7) return `${diffDays}日前`;
+  // 7日以上前 or 未来日付（diffDays<0）は実日付を表示
+  const parts = isoDate.split('-');
+  return `${Number(parts[1])}月${Number(parts[2])}日`;
+}
+
+/** 'YYYY-MM-DD'（または ISO 文字列先頭）から、その月の初日 'YYYY-MM-01' を返す純関数。 */
+export function monthStartOf(isoDate: string): string {
+  return `${isoDate.slice(0, 7)}-01`;
+}
+
+/** JST の当月初日 'YYYY-MM-01' を返す（月次サマリ/カテゴリ内訳の絞り込みキー）。 */
+export function jstMonthStart(now: Date = new Date()): string {
+  return monthStartOf(jstToday(now));
+}
+
+/** 'YYYY-MM-01' に n か月（負値可）を加えた月初 'YYYY-MM-01' を返す純関数。 */
+export function addMonths(monthStart: string, n: number): string {
+  const year = Number(monthStart.slice(0, 4));
+  const month = Number(monthStart.slice(5, 7)); // 1-12
+  const zeroBased = year * 12 + (month - 1) + n;
+  const y = Math.floor(zeroBased / 12);
+  const m = (zeroBased % 12) + 1;
+  return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-01`;
+}
+
+/** 'YYYY-MM-01' を「YYYY年M月」表示に整形する。 */
+export function formatMonthLabel(monthStart: string): string {
+  const year = Number(monthStart.slice(0, 4));
+  const month = Number(monthStart.slice(5, 7));
+  return `${year}年${month}月`;
+}
+
 /**
  * タイムライン用の相対日付（JST）。
  * 今日→「今日, HH:MM」, 昨日→「昨日, HH:MM」, 7日未満→「N日前」, それ以前→「M月D日」。

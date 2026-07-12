@@ -17,7 +17,9 @@ export default defineConfig({
       // 生成物・薄い配線 (client 生成 / React hook) は単体テスト対象外
       exclude: [
         '**/*.types.ts',
+        'src/lib/ledger/types.ts',
         'src/lib/supabase.ts',
+        'src/lib/queryClient.ts',
         'src/lib/auth/useSession.ts',
         'src/lib/auth/SessionProvider.tsx',
         'src/lib/auth/session-context.ts',

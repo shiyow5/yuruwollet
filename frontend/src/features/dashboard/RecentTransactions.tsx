@@ -20,7 +20,7 @@ export function RecentTransactions({ memberId, className, limit = 5 }: Props) {
       <div className="flex items-center justify-between">
         <h2 className="font-headline-md text-headline-md text-custom-text">直近の履歴</h2>
         <Link
-          to={`/ledger?member=${encodeURIComponent(memberId)}`}
+          to={memberId ? `/ledger?member=${encodeURIComponent(memberId)}` : '/ledger'}
           className="font-label-sm text-label-sm text-custom-accent transition hover:underline"
         >
           すべて見る

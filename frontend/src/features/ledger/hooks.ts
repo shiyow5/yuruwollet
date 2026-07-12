@@ -8,7 +8,12 @@ import {
   updateTransaction,
   deleteTransaction,
 } from '../../lib/data/transactions';
-import { listCategories, createCategory, archiveCategory } from '../../lib/data/categories';
+import {
+  listCategories,
+  createCategory,
+  archiveCategory,
+  unarchiveCategory,
+} from '../../lib/data/categories';
 import {
   listProfiles,
   getMemberBalances,
@@ -194,6 +199,16 @@ export function useArchiveCategory() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => archiveCategory(supabase, id),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.categories() });
+    },
+  });
+}
+
+export function useUnarchiveCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => unarchiveCategory(supabase, id),
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.categories() });
     },

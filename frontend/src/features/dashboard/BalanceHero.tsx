@@ -30,14 +30,14 @@ export function BalanceHero({ memberId, canAdd = false }: Props) {
       {canAdd && (
         <div className="flex w-full max-w-sm gap-4">
           <Link
-            to="/ledger"
+            to={`/ledger?member=${encodeURIComponent(memberId)}&add=income`}
             className="flex flex-1 items-center justify-center gap-2 rounded-full bg-custom-accent px-6 py-4 font-label-sm text-label-sm text-on-primary shadow-sm transition hover:opacity-90"
           >
             <Icon name="add" size={20} />
             収入
           </Link>
           <Link
-            to="/ledger"
+            to={`/ledger?member=${encodeURIComponent(memberId)}&add=expense`}
             className="flex flex-1 items-center justify-center gap-2 rounded-full border border-custom-accent/20 bg-white px-6 py-4 font-label-sm text-label-sm text-custom-accent shadow-sm transition hover:bg-custom-accent/5"
           >
             <Icon name="send" size={20} />

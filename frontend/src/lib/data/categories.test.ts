@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { listCategories, createCategory, archiveCategory } from './categories';
+import { listCategories, createCategory, archiveCategory, unarchiveCategory } from './categories';
 import { makeSupabaseMock, argsOf } from '../../test/supabaseMock';
 import type { Category, CategoryDraft } from '../ledger/types';
 
@@ -78,5 +78,23 @@ describe('archiveCategory', () => {
   it('error は投げる', async () => {
     const { client } = makeSupabaseMock({ categories: { data: null, error: { message: 'no' } } });
     await expect(archiveCategory(client, 'c1')).rejects.toThrow(/no/);
+  });
+});
+
+describe('unarchiveCategory', () => {
+  it('is_archived=false に更新（system 除外条件付き）', async () => {
+    const { client, queries } = makeSupabaseMock({ categories: { data: null, error: null } });
+    await unarchiveCategory(client, 'c1');
+    expect(argsOf(queries.categories, 'update')?.[0]).toEqual({ is_archived: false });
+    const eqCalls = queries.categories.calls.filter((c) => c.method === 'eq');
+    expect(eqCalls.map((c) => c.args)).toEqual([
+      ['id', 'c1'],
+      ['is_system', false],
+    ]);
+  });
+
+  it('error は投げる', async () => {
+    const { client } = makeSupabaseMock({ categories: { data: null, error: { message: 'no' } } });
+    await expect(unarchiveCategory(client, 'c1')).rejects.toThrow(/no/);
   });
 });

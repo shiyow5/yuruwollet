@@ -393,6 +393,21 @@ describe('LedgerPage 統合', () => {
     );
   });
 
+  it('?add=income で作成フォームが収入タイプで自動オープンする', async () => {
+    renderLedger(authedSession, '/ledger?member=yururi&add=income');
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('tab', { name: '収入' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  });
+
+  it('member 空文字パラメータは自分にフォールバックする', async () => {
+    renderLedger(authedSession, '/ledger?member=');
+    // 自分ビューなので FAB（書込導線）が出る
+    expect(await screen.findByRole('button', { name: '収支を追加' })).toBeInTheDocument();
+  });
+
   it('金額未入力ではエラーを出し送信しない', async () => {
     renderLedger();
     fireEvent.click(await screen.findByRole('button', { name: '収支を追加' }));

@@ -52,3 +52,16 @@ export async function archiveCategory(client: SupabaseClient<Database>, id: stri
     .eq('is_system', false);
   if (error) throw new Error(`カテゴリのアーカイブに失敗しました: ${error.message}`);
 }
+
+/** アーカイブ済カテゴリを復元する（誤操作からの復旧・重複名の再作成不能を回避）。 */
+export async function unarchiveCategory(
+  client: SupabaseClient<Database>,
+  id: string,
+): Promise<void> {
+  const { error } = await client
+    .from('categories')
+    .update({ is_archived: false })
+    .eq('id', id)
+    .eq('is_system', false);
+  if (error) throw new Error(`カテゴリの復元に失敗しました: ${error.message}`);
+}

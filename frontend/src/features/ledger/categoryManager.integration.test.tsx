@@ -34,12 +34,25 @@ vi.mock('../../lib/data/categories', () => ({
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-01-01T00:00:00Z',
     },
+    {
+      id: 'c-old',
+      household_id: 'main',
+      kind: 'expense',
+      name: '旧カテゴリ',
+      icon: 'label',
+      sort_order: 2,
+      is_system: false,
+      is_archived: true,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    },
   ]),
   createCategory: vi.fn(async () => ({ id: 'new', name: '交際費' })),
   archiveCategory: vi.fn(async () => {}),
+  unarchiveCategory: vi.fn(async () => {}),
 }));
 
-import { createCategory, archiveCategory } from '../../lib/data/categories';
+import { createCategory, archiveCategory, unarchiveCategory } from '../../lib/data/categories';
 
 const authedSession: SessionState = {
   status: 'authenticated',
@@ -100,5 +113,16 @@ describe('CategoryManager 統合', () => {
     expect((archiveCategory as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][1]).toBe(
       'c-exp',
     );
+  });
+
+  it('アーカイブ済カテゴリが復元セクションに出て、復元で unarchiveCategory が呼ばれる', async () => {
+    renderManager();
+    // アーカイブ済セクションに旧カテゴリが見える
+    expect(await screen.findByText('アーカイブ済')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '旧カテゴリ を復元' }));
+    await waitFor(() => expect(unarchiveCategory).toHaveBeenCalledTimes(1));
+    expect(
+      (unarchiveCategory as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][1],
+    ).toBe('c-old');
   });
 });

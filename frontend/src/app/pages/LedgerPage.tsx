@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { Button, Card, Fab, Icon, Modal } from '../../components/ui';
 import { addMonths, formatMonthLabel, jstMonthStart, jstToday } from '../../lib/format';
-import type { Transaction, TransactionDraft } from '../../lib/ledger/types';
+import type { Transaction, TransactionDraft, TxnType } from '../../lib/ledger/types';
 import { MemberTabs } from '../../features/ledger/MemberTabs';
 import { TransactionForm, type TransactionFormValues } from '../../features/ledger/TransactionForm';
 import { TransactionList } from '../../features/ledger/TransactionList';
@@ -25,10 +25,17 @@ type ModalState =
 export function LedgerPage() {
   const { options, selfId } = useMemberOptions();
   const [searchParams] = useSearchParams();
-  // ダッシュボードの「すべて見る」から来た場合、その member で初期化する
-  const [viewMemberId, setViewMemberId] = useState<string | null>(() => searchParams.get('member'));
+  // ダッシュボードの導線から来た場合の初期化（member / add=income|expense）
+  // 空文字 member は null 扱いして selfId フォールバックを効かせる
+  const addParam = searchParams.get('add');
+  const initialType: TxnType = addParam === 'income' ? 'income' : 'expense';
+  const [viewMemberId, setViewMemberId] = useState<string | null>(
+    () => searchParams.get('member') || null,
+  );
   const [month, setMonth] = useState(() => jstMonthStart());
-  const [modal, setModal] = useState<ModalState>({ kind: 'none' });
+  const [modal, setModal] = useState<ModalState>(() =>
+    addParam === 'income' || addParam === 'expense' ? { kind: 'create' } : { kind: 'none' },
+  );
 
   const activeMember = viewMemberId ?? selfId ?? '';
   const canWrite = activeMember !== '' && activeMember === selfId;
@@ -102,7 +109,7 @@ export function LedgerPage() {
         <h3 className="mb-6 font-headline-md text-headline-md text-custom-text">収支を追加</h3>
         <TransactionForm
           categories={categories}
-          initial={{ occurredOn: createDefaultDate }}
+          initial={{ occurredOn: createDefaultDate, type: initialType }}
           submitLabel="追加"
           submitting={createTransaction.isPending}
           onSubmit={handleCreate}

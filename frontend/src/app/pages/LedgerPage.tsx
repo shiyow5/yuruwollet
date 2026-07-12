@@ -92,7 +92,7 @@ export function LedgerPage() {
 
       {canWrite && <Fab label="収支を追加" onClick={() => setModal({ kind: 'create' })} />}
 
-      <Modal open={modal.kind === 'create'} onClose={closeModal}>
+      <Modal open={modal.kind === 'create'} onClose={closeModal} label="収支を追加">
         <h3 className="mb-6 font-headline-md text-headline-md text-custom-text">収支を追加</h3>
         <TransactionForm
           categories={categories}
@@ -103,7 +103,7 @@ export function LedgerPage() {
         />
       </Modal>
 
-      <Modal open={modal.kind === 'edit'} onClose={closeModal}>
+      <Modal open={modal.kind === 'edit'} onClose={closeModal} label="収支を編集">
         {modal.kind === 'edit' && (
           <>
             <h3 className="mb-6 font-headline-md text-headline-md text-custom-text">収支を編集</h3>
@@ -122,6 +122,7 @@ export function LedgerPage() {
       <Modal
         open={modal.kind === 'categories'}
         onClose={closeModal}
+        label="カテゴリ管理"
         className="max-h-[85vh] overflow-y-auto"
       >
         <CategoryManager />

@@ -1,3 +1,4 @@
+import { monthStartOf } from '../format';
 import type { Transaction, TransactionDraft } from './types';
 
 export interface OptimisticContext {
@@ -46,4 +47,18 @@ export function prependTransaction(
   txn: Transaction,
 ): Transaction[] {
   return [txn, ...(list ?? [])];
+}
+
+/**
+ * 取引キャッシュキー ['transactions', memberId, scope, ...] が、
+ * occurredOn の楽観挿入対象かを判定する純関数。
+ * - 'all' / 'recent'（全期間の一覧・直近N件）は常に対象。
+ * - 'YYYY-MM-01'（月別一覧）は occurredOn がその月に属するときのみ対象。
+ * これで別の月の一覧へ楽観行が混入するのを防ぐ。
+ */
+export function keyAcceptsTransaction(key: readonly unknown[], occurredOn: string): boolean {
+  const scope = key[2];
+  if (scope === 'all' || scope === 'recent') return true;
+  if (typeof scope === 'string') return monthStartOf(occurredOn) === scope;
+  return false;
 }

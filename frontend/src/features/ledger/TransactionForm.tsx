@@ -85,18 +85,24 @@ export function TransactionForm({
       <div>
         <Input
           label="金額"
+          id="txn-amount"
           inputMode="numeric"
           placeholder="0"
           value={values.amount}
+          aria-invalid={errors.amount ? true : undefined}
+          aria-describedby={errors.amount ? 'txn-amount-error' : undefined}
           onChange={(e) => update('amount', e.target.value)}
         />
-        {errors.amount && <FieldError>{errors.amount}</FieldError>}
+        {errors.amount && <FieldError id="txn-amount-error">{errors.amount}</FieldError>}
       </div>
 
       <div>
         <Select
           label="カテゴリ"
+          id="txn-category"
           value={values.categoryId}
+          aria-invalid={errors.categoryId ? true : undefined}
+          aria-describedby={errors.categoryId ? 'txn-category-error' : undefined}
           onChange={(e) => update('categoryId', e.target.value)}
         >
           <option value="">未選択</option>
@@ -106,27 +112,33 @@ export function TransactionForm({
             </option>
           ))}
         </Select>
-        {errors.categoryId && <FieldError>{errors.categoryId}</FieldError>}
+        {errors.categoryId && <FieldError id="txn-category-error">{errors.categoryId}</FieldError>}
       </div>
 
       <div>
         <Input
           label="日付"
+          id="txn-occurred"
           type="date"
           value={values.occurredOn}
+          aria-invalid={errors.occurredOn ? true : undefined}
+          aria-describedby={errors.occurredOn ? 'txn-occurred-error' : undefined}
           onChange={(e) => update('occurredOn', e.target.value)}
         />
-        {errors.occurredOn && <FieldError>{errors.occurredOn}</FieldError>}
+        {errors.occurredOn && <FieldError id="txn-occurred-error">{errors.occurredOn}</FieldError>}
       </div>
 
       <div>
         <Input
           label="メモ"
+          id="txn-memo"
           placeholder="スーパーでの買い物 など"
           value={values.memo}
+          aria-invalid={errors.memo ? true : undefined}
+          aria-describedby={errors.memo ? 'txn-memo-error' : undefined}
           onChange={(e) => update('memo', e.target.value)}
         />
-        {errors.memo && <FieldError>{errors.memo}</FieldError>}
+        {errors.memo && <FieldError id="txn-memo-error">{errors.memo}</FieldError>}
       </div>
 
       <div className="flex gap-3 pt-2">
@@ -143,9 +155,9 @@ export function TransactionForm({
   );
 }
 
-function FieldError({ children }: { children: React.ReactNode }) {
+function FieldError({ id, children }: { id?: string; children: React.ReactNode }) {
   return (
-    <p role="alert" className="mt-1 font-label-sm text-label-sm text-error">
+    <p id={id} role="alert" className="mt-1 font-label-sm text-label-sm text-error">
       {children}
     </p>
   );

@@ -4,6 +4,7 @@ import {
   isOptimisticId,
   makeOptimisticTransaction,
   prependTransaction,
+  keyAcceptsTransaction,
 } from './optimistic';
 import type { Transaction, TransactionDraft } from './types';
 
@@ -64,5 +65,24 @@ describe('prependTransaction', () => {
     const list = [existing];
     prependTransaction(list, fresh);
     expect(list).toEqual([existing]);
+  });
+});
+
+describe('keyAcceptsTransaction', () => {
+  it('all / recent は常に対象', () => {
+    expect(keyAcceptsTransaction(['transactions', 'yururi', 'all'], '2026-07-13')).toBe(true);
+    expect(keyAcceptsTransaction(['transactions', 'yururi', 'recent', 5], '2026-01-02')).toBe(true);
+  });
+  it('月別は occurred_on が属す月のみ対象', () => {
+    expect(keyAcceptsTransaction(['transactions', 'yururi', '2026-07-01'], '2026-07-13')).toBe(
+      true,
+    );
+    expect(keyAcceptsTransaction(['transactions', 'yururi', '2026-06-01'], '2026-07-13')).toBe(
+      false,
+    );
+  });
+  it('想定外の scope は対象外', () => {
+    expect(keyAcceptsTransaction(['transactions', 'yururi'], '2026-07-13')).toBe(false);
+    expect(keyAcceptsTransaction(['transactions', 'yururi', 42], '2026-07-13')).toBe(false);
   });
 });

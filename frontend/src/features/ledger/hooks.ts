@@ -19,6 +19,7 @@ import {
   makeOptimisticTransaction,
   optimisticId,
   prependTransaction,
+  keyAcceptsTransaction,
 } from '../../lib/ledger/optimistic';
 import { buildMemberOptions, type MemberOption } from '../../lib/ledger/members';
 import type { Transaction, TransactionDraft, CategoryDraft } from '../../lib/ledger/types';
@@ -33,12 +34,23 @@ function useWriteContext(): { householdId: string; memberId: string } | null {
   };
 }
 
-/** 台帳系（残高・月次・カテゴリ内訳・取引一覧）をまとめて無効化する。 */
-function invalidateLedger(qc: QueryClient): void {
-  void qc.invalidateQueries({ queryKey: ['transactions'] });
+/**
+ * 台帳系（残高・月次・カテゴリ内訳・取引一覧）を無効化する。
+ * per-member 設計上、自分の書込は相手のデータを変えないため、memberId が判れば
+ * その人のキーに限定して相手キャッシュの無駄な再取得を避ける。
+ * memberBalances は両者を 1 クエリで返すため常に全体を無効化する。
+ */
+function invalidateLedger(qc: QueryClient, memberId?: string): void {
+  void qc.invalidateQueries({
+    queryKey: memberId ? ['transactions', memberId] : ['transactions'],
+  });
   void qc.invalidateQueries({ queryKey: queryKeys.memberBalances() });
-  void qc.invalidateQueries({ queryKey: ['monthlySummary'] });
-  void qc.invalidateQueries({ queryKey: ['categoryBreakdown'] });
+  void qc.invalidateQueries({
+    queryKey: memberId ? ['monthlySummary', memberId] : ['monthlySummary'],
+  });
+  void qc.invalidateQueries({
+    queryKey: memberId ? ['categoryBreakdown', memberId] : ['categoryBreakdown'],
+  });
 }
 
 // ---- Queries ----
@@ -130,32 +142,37 @@ export function useCreateTransaction() {
         ownerMemberId: ctx.memberId,
         createdAt: new Date().toISOString(),
       });
-      qc.setQueriesData<Transaction[]>({ queryKey: prefix }, (old) =>
-        prependTransaction(old, optimistic),
-      );
+      // occurred_on が属す月の一覧・all・recent にのみ挿入（別月への混入を防ぐ）
+      snapshot.forEach(([key]) => {
+        if (keyAcceptsTransaction(key, draft.occurredOn)) {
+          qc.setQueryData<Transaction[]>(key, (old) => prependTransaction(old, optimistic));
+        }
+      });
       return { snapshot };
     },
     onError: (_err, _draft, context) => {
       context?.snapshot.forEach(([key, data]) => qc.setQueryData(key, data));
     },
-    onSettled: () => invalidateLedger(qc),
+    onSettled: () => invalidateLedger(qc, ctx?.memberId),
   });
 }
 
 export function useUpdateTransaction() {
   const qc = useQueryClient();
+  const ctx = useWriteContext();
   return useMutation({
     mutationFn: ({ id, draft }: { id: string; draft: TransactionDraft }) =>
       updateTransaction(supabase, id, draft),
-    onSettled: () => invalidateLedger(qc),
+    onSettled: () => invalidateLedger(qc, ctx?.memberId),
   });
 }
 
 export function useDeleteTransaction() {
   const qc = useQueryClient();
+  const ctx = useWriteContext();
   return useMutation({
     mutationFn: (id: string) => deleteTransaction(supabase, id),
-    onSettled: () => invalidateLedger(qc),
+    onSettled: () => invalidateLedger(qc, ctx?.memberId),
   });
 }
 

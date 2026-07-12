@@ -171,4 +171,55 @@ describe('Modal', () => {
     fireEvent.click(screen.getByText('本文'));
     expect(onClose).not.toHaveBeenCalled();
   });
+  it('label でアクセシブルネームを付与', () => {
+    render(
+      <Modal open label="収支を追加">
+        <p>本文</p>
+      </Modal>,
+    );
+    expect(screen.getByRole('dialog', { name: '収支を追加' })).toBeInTheDocument();
+  });
+  it('Escape で onClose、locked では無視', () => {
+    const onClose = vi.fn();
+    const { rerender } = render(
+      <Modal open onClose={onClose}>
+        <button>ok</button>
+      </Modal>,
+    );
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledOnce();
+
+    onClose.mockClear();
+    rerender(
+      <Modal open locked onClose={onClose}>
+        <button>ok</button>
+      </Modal>,
+    );
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+  it('open 時に最初のフォーカス可能要素へフォーカス', () => {
+    render(
+      <Modal open label="t">
+        <button>最初</button>
+        <button>次</button>
+      </Modal>,
+    );
+    expect(screen.getByRole('button', { name: '最初' })).toHaveFocus();
+  });
+  it('Tab がパネル内で循環する（フォーカストラップ）', () => {
+    render(
+      <Modal open label="t">
+        <button>a</button>
+        <button>b</button>
+      </Modal>,
+    );
+    const first = screen.getByRole('button', { name: 'a' });
+    const last = screen.getByRole('button', { name: 'b' });
+    last.focus();
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Tab' });
+    expect(first).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Tab', shiftKey: true });
+    expect(last).toHaveFocus();
+  });
 });

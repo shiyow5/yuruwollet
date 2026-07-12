@@ -1,0 +1,4 @@
+# wrangler dev のローカル秘密値。`.dev.vars` にコピーして使う（gitignore 済み）。
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+FX_API_BASE=https://api.frankfurter.dev

@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+
+<html class="light" lang="ja"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=block" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        try {
+            tailwind.config = {
+                darkMode: "class",
+                theme: {
+                    extend: {
+                        "colors": {
+                            "custom-bg": "#FFFFFF",
+                            "custom-text": "#25271F",
+                            "custom-accent": "#769CBF",
+                            "on-surface-variant": "#42474d",
+                            "inverse-primary": "#a4cbf0",
+                            "tertiary-container": "#bd9056",
+                            "tertiary-fixed": "#ffddb6",
+                            "tertiary-fixed-dim": "#f0be7f",
+                            "tertiary": "#7c5723",
+                            "outline": "#72777e",
+                            "surface-container-lowest": "#ffffff",
+                            "surface-container": "#f8f9fa",
+                            "surface-dim": "#dbdad9",
+                            "on-surface": "#25271F",
+                            "primary-fixed": "#cde5ff",
+                            "on-primary": "#ffffff",
+                            "on-primary-container": "#013351",
+                            "on-secondary-fixed-variant": "#46483f",
+                            "surface-variant": "#f1f3f5",
+                            "outline-variant": "#c2c7ce",
+                            "error": "#ba1a1a",
+                            "on-background": "#25271F",
+                            "surface": "#ffffff",
+                            "secondary": "#5e5f56",
+                            "inverse-on-surface": "#f2f0ef",
+                            "secondary-fixed-dim": "#c7c7bb",
+                            "on-error": "#ffffff",
+                            "on-secondary-container": "#62635a",
+                            "secondary-container": "#e0e0d4",
+                            "primary": "#769CBF",
+                            "primary-container": "#769CBF",
+                            "surface-container-high": "#f1f3f5",
+                            "surface-container-low": "#fafafa",
+                            "on-primary-fixed-variant": "#214a69",
+                            "on-secondary": "#ffffff",
+                            "surface-bright": "#ffffff",
+                            "on-primary-fixed": "#001d32",
+                            "primary-fixed-dim": "#a4cbf0",
+                            "secondary-fixed": "#e3e3d7",
+                            "on-tertiary-fixed": "#2a1800",
+                            "on-tertiary": "#ffffff",
+                            "surface-tint": "#769CBF",
+                            "on-tertiary-container": "#462a00",
+                            "on-tertiary-fixed-variant": "#62400c",
+                            "error-container": "#ffdad6",
+                            "on-secondary-fixed": "#1a1c15",
+                            "surface-container-highest": "#e9ecef",
+                            "inverse-surface": "#2f3130",
+                            "on-error-container": "#93000a",
+                            "background": "#FFFFFF"
+                        },
+                        "borderRadius": {
+                            "DEFAULT": "0.25rem",
+                            "lg": "0.5rem",
+                            "xl": "0.75rem",
+                            "2xl": "1.5rem",
+                            "3xl": "2rem",
+                            "full": "9999px"
+                        },
+                        "spacing": {
+                            "container-padding-desktop": "64px",
+                            "base-unit": "8px",
+                            "gutter": "24px",
+                            "container-padding-mobile": "20px",
+                            "section-gap": "80px"
+                        },
+                        "fontFamily": {
+                            "body-lg": ["Plus Jakarta Sans"],
+                            "headline-md": ["Plus Jakarta Sans"],
+                            "label-sm": ["Plus Jakarta Sans"],
+                            "display-lg-mobile": ["Plus Jakarta Sans"],
+                            "display-lg": ["Plus Jakarta Sans"],
+                            "body-md": ["Plus Jakarta Sans"]
+                        },
+                        "fontSize": {
+                            "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                            "headline-md": ["24px", {"lineHeight": "1.4", "fontWeight": "600"}],
+                            "label-sm": ["13px", {"lineHeight": "1.2", "letterSpacing": "0.05em", "fontWeight": "500"}],
+                            "display-lg-mobile": ["32px", {"lineHeight": "1.25", "fontWeight": "700"}],
+                            "display-lg": ["48px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                            "body-md": ["16px", {"lineHeight": "1.6", "fontWeight": "400"}]
+                        }
+                    },
+                },
+            }
+        } catch (_e) {}
+    </script>
+</head>
+<body class="font-body-md antialiased md:pb-0 bg-custom-bg text-custom-text pb-20">
+<!-- TopAppBar -->
+<header class="bg-custom-bg flex justify-between items-center w-full px-container-padding-mobile py-6 sticky top-0 z-40" id="top-nav">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-full overflow-hidden border border-gray-100 shadow-sm">
+<img alt="Couple portrait" class="w-full h-full object-cover" data-alt="A softly lit, professional portrait photo of a young modern couple smiling warmly in a bright, minimalist apartment setting with Nordic design elements, natural light pouring in from a large window." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBZYKPph6Lu9Y1j7AzqQvXVTPSR3cZ_wu_hQLsXz4s823uz9uqClm9_CXGE00FCzv3018DK8a36YUBgXVOMOxMSFakJsSO-vbsly-ysDRd0QCGBtP0kYtwkFRYK7m_lZwjy81hxN8mEt3XTT-uPMOh_ZV_a1b55zutChPOdFNz6bP_EuTqEquu25BorwA4RB8Ei8_lEWcfiScbxQbhKKUE-Or-rLXrkYeAXpdX5BdqyrUM6pB-dG6E9i2XhTJIMJOumNwYQpKPz_Q"/>
+</div>
+<h1 class="font-headline-md text-headline-md font-bold text-custom-text">MutualWarmth</h1>
+</div>
+<button class="hover:bg-black/5 transition-colors active:scale-95 duration-200 w-12 h-12 flex items-center justify-center rounded-full text-custom-text">
+<span class="material-symbols-outlined text-[28px]" style="font-variation-settings: 'FILL' 0;">settings</span>
+</button>
+</header>
+<!-- Main Content Canvas -->
+<main class="max-w-[1200px] mx-auto px-container-padding-mobile md:px-container-padding-desktop pt-4 pb-16 flex flex-col gap-10">
+<!-- Current Balance -->
+<section class="flex flex-col items-center justify-center py-12">
+<h2 class="font-label-sm text-label-sm text-custom-text/60 uppercase tracking-[0.2em] mb-4">現在の残高</h2>
+<div class="text-[56px] font-bold text-custom-accent tracking-tight leading-none mb-10">
+                ¥ 342,500
+            </div>
+<div class="flex gap-6 w-full max-w-sm">
+<button class="flex-1 bg-custom-accent text-white font-label-sm text-label-sm rounded-full px-6 py-4 hover:opacity-90 transition-opacity flex items-center justify-center gap-2 shadow-sm">
+<span class="material-symbols-outlined text-[20px]">add</span>
+                    収入
+                </button>
+<button class="flex-1 bg-white border border-custom-accent/20 text-custom-accent font-label-sm text-label-sm rounded-full px-6 py-4 hover:bg-custom-accent/5 transition-colors flex items-center justify-center gap-2 shadow-sm">
+<span class="material-symbols-outlined text-[20px]">send</span>
+                    支出
+                </button>
+</div>
+</section>
+<!-- Comparison Graph Card -->
+<section class="bg-surface-container rounded-3xl p-8 border border-gray-100 relative overflow-hidden">
+<div class="flex justify-between items-center mb-8">
+<h2 class="font-headline-md text-headline-md text-custom-text">今月と先月の支出比較</h2>
+</div>
+<div class="flex flex-col gap-6">
+<!-- This Month -->
+<div>
+<div class="flex justify-between items-end mb-2">
+<span class="font-body-md text-body-md font-medium text-custom-text">今月</span>
+<span class="font-body-md text-body-md text-custom-accent">¥ 107,500</span>
+</div>
+<div class="w-full bg-black/5 rounded-full h-3 overflow-hidden">
+<div class="bg-custom-accent h-3 rounded-full" style="width: 45%"></div>
+</div>
+</div>
+<!-- Last Month -->
+<div>
+<div class="flex justify-between items-end mb-2">
+<span class="font-body-md text-body-md font-medium text-custom-text/60">先月</span>
+<span class="font-body-md text-body-md text-custom-text/60">¥ 124,000</span>
+</div>
+<div class="w-full bg-black/5 rounded-full h-3 overflow-hidden">
+<div class="bg-black/10 h-3 rounded-full" style="width: 55%"></div>
+</div>
+</div>
+</div>
+</section>
+<!-- Income & Expenses (Stacked/Side-by-side) -->
+<section class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div class="bg-surface-container-high rounded-3xl p-8 border border-gray-100 flex flex-col justify-center items-center text-center">
+<h3 class="font-label-sm text-label-sm text-custom-text/60 uppercase tracking-[0.2em] mb-3">今月の収入</h3>
+<div class="text-[32px] font-bold text-custom-text">
+                    ¥ 450,000
+                </div>
+</div>
+<div class="bg-surface-container-high rounded-3xl p-8 border border-gray-100 flex flex-col justify-center items-center text-center">
+<h3 class="font-label-sm text-label-sm text-custom-text/60 uppercase tracking-[0.2em] mb-3">今月の支出</h3>
+<div class="text-[32px] font-bold text-custom-text">
+                    ¥ 107,500
+                </div>
+</div>
+</section>
+<!-- Main Dashboard Detail area -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-10">
+<!-- Category Breakdown -->
+<section class="lg:col-span-7 bg-surface-container rounded-3xl p-8 md:p-10 border border-gray-100">
+<div class="flex justify-between items-center mb-10">
+<h2 class="font-headline-md text-headline-md text-custom-text">カテゴリ別支出</h2>
+<span class="font-label-sm text-label-sm text-custom-text/60 bg-black/5 px-4 py-2 rounded-full">今月</span>
+</div>
+<div class="flex flex-col gap-10">
+<!-- Category 1 -->
+<div>
+<div class="flex justify-between items-end mb-3">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-custom-accent/10 flex items-center justify-center">
+<span class="material-symbols-outlined text-custom-accent">restaurant</span>
+</div>
+<span class="font-body-lg text-body-lg font-medium text-custom-text">食費</span>
+</div>
+<span class="font-body-lg text-body-lg font-medium text-custom-accent">¥ 42,000</span>
+</div>
+<div class="w-full bg-black/5 rounded-full h-1 overflow-hidden">
+<div class="bg-custom-accent h-1 rounded-full" style="width: 45%"></div>
+</div>
+</div>
+<!-- Category 2 -->
+<div>
+<div class="flex justify-between items-end mb-3">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-custom-accent/10 flex items-center justify-center">
+<span class="material-symbols-outlined text-custom-accent">home</span>
+</div>
+<span class="font-body-lg text-body-lg font-medium text-custom-text">住宅</span>
+</div>
+<span class="font-body-lg text-body-lg font-medium text-custom-accent">¥ 85,000</span>
+</div>
+<div class="w-full bg-black/5 rounded-full h-1 overflow-hidden">
+<div class="bg-custom-accent h-1 rounded-full opacity-80" style="width: 80%"></div>
+</div>
+</div>
+<!-- Category 3 -->
+<div>
+<div class="flex justify-between items-end mb-3">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-custom-accent/10 flex items-center justify-center">
+<span class="material-symbols-outlined text-custom-accent">local_cafe</span>
+</div>
+<span class="font-body-lg text-body-lg font-medium text-custom-text">交際費</span>
+</div>
+<span class="font-body-lg text-body-lg font-medium text-custom-accent">¥ 15,300</span>
+</div>
+<div class="w-full bg-black/5 rounded-full h-1 overflow-hidden">
+<div class="bg-custom-accent h-1 rounded-full opacity-60" style="width: 15%"></div>
+</div>
+</div>
+<!-- Category 4 -->
+<div>
+<div class="flex justify-between items-end mb-3">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-custom-accent/10 flex items-center justify-center">
+<span class="material-symbols-outlined text-custom-accent">directions_subway</span>
+</div>
+<span class="font-body-lg text-body-lg font-medium text-custom-text">交通費</span>
+</div>
+<span class="font-body-lg text-body-lg font-medium text-custom-accent">¥ 8,200</span>
+</div>
+<div class="w-full bg-black/5 rounded-full h-1 overflow-hidden">
+<div class="bg-custom-accent h-1 rounded-full opacity-40" style="width: 8%"></div>
+</div>
+</div>
+</div>
+<button class="w-full mt-10 pt-6 font-label-sm text-label-sm text-custom-accent hover:underline transition-all border-t border-black/5 text-center tracking-wider">
+                    すべてのカテゴリを見る
+                </button>
+</section>
+<!-- Recent Transactions -->
+<section class="lg:col-span-5 bg-surface-container rounded-3xl p-8 md:p-10 border border-gray-100 flex flex-col h-full">
+<div class="flex justify-between items-center mb-10">
+<h2 class="font-headline-md text-headline-md text-custom-text">直近の履歴</h2>
+<button class="w-10 h-10 rounded-full hover:bg-black/5 flex items-center justify-center transition-colors">
+<span class="material-symbols-outlined text-custom-text/60 text-[24px]">more_horiz</span>
+</button>
+</div>
+<div class="flex flex-col gap-8 overflow-y-auto pr-2 flex-grow">
+<!-- Transaction Item -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-5">
+<div class="w-14 h-14 rounded-2xl bg-custom-accent/10 flex items-center justify-center text-custom-accent">
+<span class="material-symbols-outlined">shopping_cart</span>
+</div>
+<div class="flex flex-col gap-1">
+<h4 class="font-body-md text-body-md font-medium text-custom-text">スーパーでの買い物</h4>
+<span class="font-label-sm text-label-sm text-custom-text/50">今日, 14:30</span>
+</div>
+</div>
+<span class="font-body-md text-body-md font-medium text-custom-text">- ¥ 4,500</span>
+</div>
+<!-- Transaction Item -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-5">
+<div class="w-14 h-14 rounded-2xl bg-custom-accent/10 flex items-center justify-center text-custom-accent">
+<span class="material-symbols-outlined">local_cafe</span>
+</div>
+<div class="flex flex-col gap-1">
+<h4 class="font-body-md text-body-md font-medium text-custom-text">カフェ代</h4>
+<span class="font-label-sm text-label-sm text-custom-text/50">昨日, 10:15</span>
+</div>
+</div>
+<span class="font-body-md text-body-md font-medium text-custom-text">- ¥ 1,200</span>
+</div>
+<!-- Transaction Item (Income) -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-5">
+<div class="w-14 h-14 rounded-2xl bg-custom-accent/20 flex items-center justify-center text-custom-accent">
+<span class="material-symbols-outlined">account_balance</span>
+</div>
+<div class="flex flex-col gap-1">
+<h4 class="font-body-md text-body-md font-medium text-custom-text">給与振込</h4>
+<span class="font-label-sm text-label-sm text-custom-text/50">2日前</span>
+</div>
+</div>
+<span class="font-body-md text-body-md font-medium text-custom-accent">+ ¥ 280,000</span>
+</div>
+<!-- Transaction Item -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-5">
+<div class="w-14 h-14 rounded-2xl bg-custom-accent/10 flex items-center justify-center text-custom-accent">
+<span class="material-symbols-outlined">bolt</span>
+</div>
+<div class="flex flex-col gap-1">
+<h4 class="font-body-md text-body-md font-medium text-custom-text">電気代</h4>
+<span class="font-label-sm text-label-sm text-custom-text/50">3日前</span>
+</div>
+</div>
+<span class="font-body-md text-body-md font-medium text-custom-text">- ¥ 12,400</span>
+</div>
+</div>
+</section>
+</div>
+</main>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-black/5 flex justify-around items-center px-4 py-3 rounded-t-xl shadow-lg">
+<!-- Home Tab (Active) -->
+<a class="flex flex-col items-center justify-center gap-1 flex-1 py-1" href="#">
+<div class="bg-custom-accent/20 text-custom-accent px-6 py-1 rounded-xl flex items-center justify-center">
+<span class="material-symbols-outlined text-[24px]" style="font-variation-settings: 'FILL' 1;">home</span>
+</div>
+<span class="font-label-sm text-[10px] font-bold text-custom-accent">ホーム</span>
+</a>
+<!-- Bills Tab -->
+<a class="flex flex-col items-center justify-center gap-1 flex-1 py-1 text-custom-text/40 hover:text-custom-accent transition-colors" href="#">
+<div class="px-6 py-1 rounded-xl flex items-center justify-center">
+<span class="material-symbols-outlined text-[24px]" style="font-variation-settings: 'FILL' 0;">account_balance_wallet</span>
+</div>
+<span class="font-label-sm text-[10px]">家計簿</span>
+</a>
+<!-- Wishlist Tab -->
+<a class="flex flex-col items-center justify-center gap-1 flex-1 py-1 text-custom-text/40 hover:text-custom-accent transition-colors" href="#">
+<div class="px-6 py-1 rounded-xl flex items-center justify-center">
+<span class="material-symbols-outlined text-[24px]" style="font-variation-settings: 'FILL' 0;">favorite</span>
+</div>
+<span class="font-label-sm text-[10px]">ウィッシュリスト</span>
+</a>
+<!-- My Page Tab -->
+<a class="flex flex-col items-center justify-center gap-1 flex-1 py-1 text-custom-text/40 hover:text-custom-accent transition-colors" href="#">
+<div class="px-6 py-1 rounded-xl flex items-center justify-center">
+<span class="material-symbols-outlined text-[24px]" style="font-variation-settings: 'FILL' 0;">person</span>
+</div>
+<span class="font-label-sm text-[10px]">マイページ</span>
+</a>
+</nav>
+<script>
+        // Simple scroll effect for top nav
+        window.addEventListener('scroll', () => {
+            const nav = document.getElementById('top-nav');
+            if (window.scrollY > 10) {
+                nav.style.backgroundColor = 'rgba(255, 255, 255, 0.9)';
+                nav.style.backdropFilter = 'blur(12px)';
+                nav.classList.add('shadow-sm');
+            } else {
+                nav.style.backgroundColor = '#FFFFFF';
+                nav.style.backdropFilter = 'none';
+                nav.classList.remove('shadow-sm');
+            }
+        });
+    </script>
+</body></html>

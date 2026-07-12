@@ -1,0 +1,2 @@
+# SPA フォールバック（/api/* は Pages Functions が優先されるため除外される）
+/*    /index.html   200

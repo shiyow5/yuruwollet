@@ -1,0 +1,68 @@
+@import 'tailwindcss';
+
+/*
+ * デザインシステム（docs/templates/ の white_blue_polished / Nordic Serenity）
+ * トークンを Tailwind v4 の CSS-first `@theme` に移植。クラス名はテンプレートと 1:1。
+ * 自己ホストフォント（Plus Jakarta Sans / Material Symbols）は Phase 3 で追加。
+ */
+@theme {
+  /* ---- Colors ---- */
+  --color-custom-bg: #ffffff;
+  --color-custom-text: #25271f;
+  --color-custom-accent: #769cbf;
+  --color-primary: #769cbf;
+  --color-on-primary: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #fafafa;
+  --color-surface-container: #f8f9fa;
+  --color-surface-container-high: #f1f3f5;
+  --color-surface-container-highest: #e9ecef;
+  --color-surface-variant: #f1f3f5;
+  --color-surface-dim: #dbdad9;
+  --color-outline: #72777e;
+  --color-outline-variant: #c2c7ce;
+  --color-error: #ba1a1a;
+  --color-on-error: #ffffff;
+  --color-primary-fixed-dim: #a4cbf0;
+
+  /* ---- Typography ---- */
+  --font-body-md: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-body-lg: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-headline-md: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-label-sm: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+
+  --text-body-md: 16px;
+  --text-body-md--line-height: 1.6;
+  --text-body-lg: 18px;
+  --text-body-lg--line-height: 1.6;
+  --text-headline-md: 24px;
+  --text-headline-md--line-height: 1.4;
+  --text-headline-md--font-weight: 600;
+  --text-label-sm: 13px;
+  --text-label-sm--line-height: 1.2;
+  --text-label-sm--letter-spacing: 0.05em;
+  --text-label-sm--font-weight: 500;
+  --text-display-lg: 48px;
+  --text-display-lg--line-height: 1.2;
+  --text-display-lg--letter-spacing: -0.02em;
+  --text-display-lg--font-weight: 700;
+
+  /* ---- Radius ---- */
+  --radius-2xl: 1.5rem;
+  --radius-3xl: 2rem;
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background-color: var(--color-custom-bg);
+  color: var(--color-custom-text);
+  font-family: var(--font-body-md);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

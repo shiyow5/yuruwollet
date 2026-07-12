@@ -113,6 +113,7 @@ vi.mock('../../lib/data/categories', () => ({
   ]),
   createCategory: vi.fn(),
   archiveCategory: vi.fn(),
+  unarchiveCategory: vi.fn(),
 }));
 
 vi.mock('../../lib/data/aggregates', () => ({
@@ -406,6 +407,17 @@ describe('LedgerPage 統合', () => {
     renderLedger(authedSession, '/ledger?member=');
     // 自分ビューなので FAB（書込導線）が出る
     expect(await screen.findByRole('button', { name: '収支を追加' })).toBeInTheDocument();
+  });
+
+  it('相手 member + add では書込不可なので作成フォームを開かない', async () => {
+    renderLedger(authedSession, '/ledger?member=shiyowo&add=expense');
+    // 相手ビュー（しよを）として表示され、書込導線・作成モーダルは出ない
+    expect(await screen.findByRole('tab', { name: 'しよを' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('button', { name: '収支を追加' })).toBeNull();
   });
 
   it('金額未入力ではエラーを出し送信しない', async () => {

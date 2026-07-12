@@ -12,8 +12,9 @@ interface Props {
 
 /** 現在の残高ヒーロー（テンプレ fixed_nav_update の残高セクション）。 */
 export function BalanceHero({ memberId, canAdd = false }: Props) {
-  const { data: balances = [], isLoading } = useMemberBalances();
-  const balance = selectBalance(balances, memberId);
+  const { data: balances, isLoading, isError } = useMemberBalances();
+  // 取得失敗時に ¥0 を残高として見せない（data は undefined のまま）
+  const balance = balances ? selectBalance(balances, memberId) : null;
 
   return (
     <section className="flex flex-col items-center justify-center py-8">
@@ -22,6 +23,10 @@ export function BalanceHero({ memberId, canAdd = false }: Props) {
       </h2>
       {isLoading ? (
         <Skeleton className="mb-8 h-14 w-56" />
+      ) : isError ? (
+        <p role="alert" className="mb-8 text-body-md text-error">
+          残高を取得できませんでした
+        </p>
       ) : (
         <div className="mb-8 text-[56px] font-bold leading-none tracking-tight text-custom-accent">
           {formatYen(balance ?? 0)}

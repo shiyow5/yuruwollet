@@ -52,6 +52,7 @@ vi.mock('../../lib/data/categories', () => ({
   ]),
   createCategory: vi.fn(),
   archiveCategory: vi.fn(),
+  unarchiveCategory: vi.fn(),
 }));
 
 vi.mock('../../lib/data/aggregates', () => ({

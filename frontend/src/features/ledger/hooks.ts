@@ -14,11 +14,7 @@ import {
   archiveCategory,
   unarchiveCategory,
 } from '../../lib/data/categories';
-import {
-  getMemberBalances,
-  getMonthlySummary,
-  getCategoryBreakdown,
-} from '../../lib/data/aggregates';
+import { getMonthlySummary, getCategoryBreakdown } from '../../lib/data/aggregates';
 import {
   makeOptimisticTransaction,
   optimisticId,
@@ -47,13 +43,7 @@ function invalidateLedger(qc: QueryClient, memberId?: string): void {
 }
 
 // ---- Queries ----
-
-export function useMemberBalances() {
-  return useQuery({
-    queryKey: queryKeys.memberBalances(),
-    queryFn: () => getMemberBalances(supabase),
-  });
-}
+// useMemberBalances は features/shared/members へ移動（ダッシュボード・24日の壁で共用）
 
 export function useCategories() {
   return useQuery({ queryKey: queryKeys.categories(), queryFn: () => listCategories(supabase) });

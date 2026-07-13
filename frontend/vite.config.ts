@@ -19,6 +19,7 @@ export default defineConfig({
         '**/*.types.ts',
         'src/lib/ledger/types.ts',
         'src/lib/subscriptions/types.ts',
+        'src/lib/wall/types.ts',
         'src/lib/supabase.ts',
         'src/lib/queryClient.ts',
         'src/lib/auth/useSession.ts',

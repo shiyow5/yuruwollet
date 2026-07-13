@@ -1,6 +1,6 @@
 -- pgTAP: RLS の cross-household 分離 + per-member 書込強制 + confirm_balance_checkpoint RPC
 begin;
-select plan(30);
+select plan(36);
 
 -- ============================================================
 -- Block A: ゆるり @ main として認証
@@ -201,6 +201,42 @@ select is(
   (select count(*) from public.transactions where owner_member_id = 'shiyowo' and is_system_generated)::int,
   1,
   '残高調整 transaction が 1 件生成される'
+);
+
+-- 差額マイナス: 実際 3000 < 計算 5000 → 支出として残高調整
+select results_eq(
+  $$ select computed, diff from public.confirm_balance_checkpoint(3000) $$,
+  $$ values (5000, -2000) $$,
+  'confirm_balance_checkpoint: 計算 5000 / 実際 3000 → 差額 -2000'
+);
+select is(
+  (select balance from public.v_member_balances where member_id = 'shiyowo'),
+  3000::bigint,
+  'マイナス差額の調整後 しよを 残高 = 3000'
+);
+select is(
+  (select count(*) from public.transactions where owner_member_id = 'shiyowo' and is_system_generated)::int,
+  2,
+  'マイナス差額でも残高調整 transaction が生成される (計2件)'
+);
+
+-- 差額 0: 取引は挿入しない (amount > 0 制約に抵触させない)
+select results_eq(
+  $$ select computed, diff from public.confirm_balance_checkpoint(3000) $$,
+  $$ values (3000, 0) $$,
+  'confirm_balance_checkpoint: 差額 0'
+);
+select is(
+  (select count(*) from public.transactions where owner_member_id = 'shiyowo' and is_system_generated)::int,
+  2,
+  '差額 0 のときは残高調整 transaction を挿入しない'
+);
+
+-- checkpoint は member×月 で 1 行に upsert される (再確定しても増えない)
+select is(
+  (select count(*) from public.balance_checkpoints where member_id = 'shiyowo')::int,
+  1,
+  'checkpoint は member×月 で 1 行に upsert される'
 );
 
 -- v_monthly_summary は残高調整(system)を除外する（しよをの当月は調整のみ→行なし）

@@ -2,7 +2,7 @@ import { Link } from 'react-router';
 import { Icon, Skeleton } from '../../components/ui';
 import { formatYen } from '../../lib/format';
 import { selectBalance } from '../../lib/ledger/members';
-import { useMemberBalances } from '../../features/ledger/hooks';
+import { useMemberBalances } from '../../features/shared/members';
 
 interface Props {
   memberId: string;

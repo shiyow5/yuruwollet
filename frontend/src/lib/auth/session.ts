@@ -139,8 +139,23 @@ export async function mintSupabaseJwt(
 }
 
 /**
+ * Access が設定されているか（= 本番）。
+ *
+ * 設定されている環境では **dev バイパスを一切効かせない**。
+ * バイパスは「Access ヘッダが無いリクエストをそのまま信頼する」ものなので、
+ * 本番で DEV_BYPASS_EMAIL を消し忘れると、Access を迂回して到達できる経路
+ * （例: Access の対象外になっている `*.pages.dev`）から**誰でもログインできてしまう**。
+ * 「設定し忘れないこと」に頼らず、構造的に不可能にする。
+ */
+export function isAccessConfigured(
+  cfg: Pick<SessionConfig, 'accessAud' | 'accessIssuer'>,
+): boolean {
+  return cfg.accessAud !== '' && cfg.accessIssuer !== '';
+}
+
+/**
  * リクエストからセッションを生成する。
- * Access JWT があれば検証、無ければ devBypassEmail(ローカル/CI) を使用。
+ * Access JWT があれば検証、無ければ devBypassEmail(ローカル/CI のみ) を使用。
  */
 export async function createSession(
   request: Request,
@@ -148,11 +163,14 @@ export async function createSession(
   opts: { getAccessKey: () => AccessKey; devBypassEmail?: string },
 ): Promise<SessionResult> {
   const token = extractAccessToken(request);
+  // Access を設定した環境ではバイパスを無効化する（本番での消し忘れを無害にする）
+  const bypass = isAccessConfigured(cfg) ? undefined : opts.devBypassEmail;
+
   let email: string;
   if (token) {
     email = await verifyAccessEmail(token, opts.getAccessKey(), cfg);
-  } else if (opts.devBypassEmail) {
-    email = opts.devBypassEmail.toLowerCase();
+  } else if (bypass) {
+    email = bypass.toLowerCase();
   } else {
     throw new SessionError('missing Access token');
   }

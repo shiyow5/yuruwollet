@@ -8,6 +8,7 @@ import {
   mintSupabaseJwt,
   resolveSigningKey,
   createSession,
+  isAccessConfigured,
   SessionError,
   type SessionConfig,
   type SigningKey,
@@ -180,9 +181,12 @@ describe('createSession', () => {
     expect(payload.member_id).toBe('yururi');
   });
 
+  // ローカル/CI は ACCESS_AUD / ACCESS_TEAM_DOMAIN が未設定 → '' になる
+  const devCfg: SessionConfig = { ...cfg, accessAud: '', accessIssuer: '' };
+
   it('token 無し + devBypassEmail でセッション発行 (getAccessKey は呼ばれない)', async () => {
     let called = false;
-    const session = await createSession(requestWith({}), cfg, {
+    const session = await createSession(requestWith({}), devCfg, {
       getAccessKey: () => {
         called = true;
         return keyResolver;
@@ -191,6 +195,26 @@ describe('createSession', () => {
     });
     expect(called).toBe(false);
     expect(session.member.id).toBe('shiyowo');
+  });
+
+  // バイパスは「Access ヘッダが無いリクエストをそのまま信頼する」ものなので、
+  // 本番で DEV_BYPASS_EMAIL を消し忘れると、Access を迂回できる経路
+  // （Access の対象外になっている *.pages.dev など）から誰でもログインできてしまう。
+  // 「消し忘れないこと」に頼らず、Access が設定されていたら構造的に効かないようにする。
+  it('Access が設定されていれば devBypassEmail は効かない（本番での消し忘れを無害化）', async () => {
+    await expect(
+      createSession(requestWith({}), cfg, {
+        getAccessKey,
+        devBypassEmail: 'shiyowo@example.com',
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('isAccessConfigured は AUD と team domain の両方が揃ったときだけ true', () => {
+    expect(isAccessConfigured(cfg)).toBe(true);
+    expect(isAccessConfigured(devCfg)).toBe(false);
+    expect(isAccessConfigured({ accessAud: 'aud', accessIssuer: '' })).toBe(false);
+    expect(isAccessConfigured({ accessAud: '', accessIssuer: 'https://x' })).toBe(false);
   });
 
   it('token 無し + bypass 無しは SessionError(403)', async () => {

@@ -14,7 +14,8 @@ export function Fab({ icon = 'add', label, className, ...props }: Props) {
       type="button"
       aria-label={label}
       className={cn(
-        'fixed bottom-24 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-2xl bg-custom-accent text-on-primary shadow-lg transition hover:opacity-90 md:bottom-8',
+        // ボトムナビの上に浮く。ナビがセーフエリアぶん高くなるので、こちらも同じだけ持ち上げる
+        'fixed bottom-[calc(6rem+env(safe-area-inset-bottom))] right-[calc(1.25rem+env(safe-area-inset-right))] z-40 flex h-14 w-14 items-center justify-center rounded-2xl bg-custom-accent text-on-primary shadow-lg transition hover:opacity-90 md:bottom-8',
         className,
       )}
       {...props}

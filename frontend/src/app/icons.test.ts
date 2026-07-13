@@ -56,6 +56,12 @@ describe('サイトアイコン', () => {
     expect(html).toContain('name="theme-color" content="#769cbf"');
   });
 
+  // viewport-fit=cover が無いと、iOS では env(safe-area-inset-*) が常に 0 になり、
+  // fixed のボトムナビが画面下端（丸み・ホームインジケータ）を避けられない。
+  it('viewport-fit=cover（セーフエリアを扱うために必須）', () => {
+    expect(html).toMatch(/name="viewport"[^>]*viewport-fit=cover/);
+  });
+
   it('index.html が参照するアイコンが実在する', () => {
     for (const name of ['favicon.svg', 'favicon.ico', 'apple-touch-icon.png', 'site.webmanifest']) {
       expect(() => publicFile(name), `${name} が無い`).not.toThrow();

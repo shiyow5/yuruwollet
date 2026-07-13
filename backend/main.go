@@ -10,6 +10,7 @@ import (
 	"github.com/syumai/workers"
 	"github.com/syumai/workers/cloudflare"
 	"github.com/syumai/workers/cloudflare/cron"
+	"github.com/syumai/workers/cloudflare/fetch"
 
 	"github.com/shiyow5/yuruwollet/backend/internal/cronjob"
 	"github.com/shiyow5/yuruwollet/backend/internal/fx"
@@ -40,9 +41,24 @@ func runDaily(ctx context.Context) error {
 		return err
 	}
 
-	httpClient := &http.Client{Timeout: 15 * time.Second}
+	// **Go 標準の http.Client を使ってはいけない。**
+	// js/wasm の net/http トランスポートはグローバルの fetch を直接呼ぶが、
+	// workerd では `this` が不正になり Illegal invocation で panic する
+	// （2026-07-13: これで cron が毎回 scriptThrewException で死んでいた。
+	//   ネイティブの go test は WASM の fetch 経路を通らないので捕まらない。
+	//   CI の scheduled スモークテストが唯一の防波堤）。
+	httpClient := fetch.NewClient().HTTPClient(fetch.RedirectModeFollow)
+	httpClient.Timeout = 15 * time.Second
+
+	fxClient := fx.New(httpClient)
+	// 為替 API のベース URL は差し替え可能にする（CI のスモークテストをスタブに向けるため）。
+	// 未設定なら keyless の frankfurter.dev。
+	if base := cloudflare.Getenv("FX_BASE_URL"); base != "" {
+		fxClient.BaseURL = base
+	}
+
 	job := &cronjob.Job{
-		FX:    fx.New(httpClient),
+		FX:    fxClient,
 		Store: supabase.New(httpClient, baseURL, serviceKey),
 		Now:   time.Now,
 	}

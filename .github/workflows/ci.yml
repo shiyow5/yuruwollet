@@ -63,6 +63,15 @@ jobs:
           SIZE=$(gzip -c build/app.wasm | wc -c)
           echo "WASM gzip size: ${SIZE} bytes (free plan limit: 3145728)"
           test "${SIZE}" -lt 3145728 || (echo 'WASM exceeds free-plan 3MB gzip limit'; exit 1)
+      # go test はネイティブ実行なので WASM の fetch 経路を通らない。
+      # 「ビルドは通るが workerd では毎回 panic する」を捕まえられるのはここだけ。
+      # (2026-07-13: Go 標準の http.Client を使っていて cron が本番で毎回落ちていた)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: cron スモークテスト (workerd で scheduled を実行)
+        working-directory: .
+        run: python3 scripts/cron_smoke.py
 
   supabase:
     name: supabase (schema / rls / rpc)

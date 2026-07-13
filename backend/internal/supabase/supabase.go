@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -31,6 +32,9 @@ func New(httpClient *http.Client, baseURL, serviceKey string) *Client {
 // Subscription は cron が更新するために必要な最小限のサブスク情報。
 type Subscription struct {
 	ID               string   `json:"id"`
+	HouseholdID      string   `json:"household_id"`
+	OwnerMemberID    string   `json:"owner_member_id"`
+	Name             string   `json:"name"`
 	Currency         string   `json:"currency"`
 	OriginalAmount   float64  `json:"original_amount"`
 	Cycle            string   `json:"cycle"`
@@ -92,7 +96,7 @@ func (c *Client) UpsertFXRate(ctx context.Context, date string, rate float64) er
 // 解約検討中(considering_cancel)は課金されない前提なので進めない。
 func (c *Client) ListDueSubscriptions(ctx context.Context, today string) ([]Subscription, error) {
 	q := url.Values{}
-	q.Set("select", "id,currency,original_amount,cycle,next_renewal_date,renewal_anchor_day,amount_jpy,fx_rate")
+	q.Set("select", "id,household_id,owner_member_id,name,currency,original_amount,cycle,next_renewal_date,renewal_anchor_day,amount_jpy,fx_rate")
 	q.Set("next_renewal_date", "lte."+today)
 	q.Set("status", "in.(active,trial)")
 
@@ -172,4 +176,64 @@ func (c *Client) UpdateSubscriptionRenewal(
 func (c *Client) Ping(ctx context.Context) error {
 	_, err := c.do(ctx, http.MethodGet, "/rest/v1/households?select=id&limit=1", nil, "")
 	return err
+}
+
+// CategoryID は household 内のカテゴリ名から id を引く。
+// cron はサブスクの支払いを「サブスク」カテゴリで記録する。
+func (c *Client) CategoryID(ctx context.Context, householdID, name string) (string, error) {
+	q := url.Values{}
+	q.Set("select", "id")
+	q.Set("household_id", "eq."+householdID)
+	q.Set("name", "eq."+name)
+	q.Set("limit", "1")
+
+	payload, err := c.do(ctx, http.MethodGet, "/rest/v1/categories?"+q.Encode(), nil, "")
+	if err != nil {
+		return "", err
+	}
+	var rows []struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(payload, &rows); err != nil {
+		return "", fmt.Errorf("supabase: カテゴリを解釈できませんでした: %w", err)
+	}
+	if len(rows) == 0 {
+		return "", fmt.Errorf("supabase: カテゴリ %q が見つかりません", name)
+	}
+	return rows[0].ID, nil
+}
+
+// SubscriptionPayment はサブスクの支払い 1 件（= 支出取引）。
+type SubscriptionPayment struct {
+	HouseholdID    string `json:"household_id"`
+	OwnerMemberID  string `json:"owner_member_id"`
+	Type           string `json:"type"`
+	Amount         int    `json:"amount"`
+	CategoryID     string `json:"category_id"`
+	Memo           string `json:"memo"`
+	OccurredOn     string `json:"occurred_on"`
+	SubscriptionID string `json:"subscription_id"`
+}
+
+// RecordSubscriptionPayment はサブスクの支払いを支出として台帳に記録する。
+//
+// **二重計上は DB が弾く**（unique(subscription_id, occurred_on) の部分インデックス）。
+// cron は再実行されうるし、複数期ぶん遅れて追いつくこともあるので、
+// アプリのロジックで「記録済みか」を判定するのではなく、
+// **重複エラー(23505)を「すでに記録済み」として正常扱いする**。
+//
+// is_system_generated は付けない。残高調整と違い、これは **実際の支出** であり、
+// カテゴリ別グラフ・月次収支・目標貯金の判定に **含めるべき** もの。
+func (c *Client) RecordSubscriptionPayment(ctx context.Context, p SubscriptionPayment) (recorded bool, err error) {
+	payload, err := c.do(ctx, http.MethodPost, "/rest/v1/transactions",
+		[]SubscriptionPayment{p}, "return=minimal")
+	if err == nil {
+		return true, nil
+	}
+	// PostgREST は unique 違反を 409 + code 23505 で返す
+	if strings.Contains(err.Error(), "23505") || strings.Contains(err.Error(), "409") {
+		return false, nil
+	}
+	_ = payload
+	return false, err
 }

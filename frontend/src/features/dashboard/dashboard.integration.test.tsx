@@ -24,6 +24,7 @@ vi.mock('../../lib/data/transactions', () => ({
         memo: 'カフェ代',
         occurred_on: '2026-07-12',
         is_system_generated: false,
+        subscription_id: null,
         created_at: '2026-07-12T01:15:00Z',
         updated_at: '2026-07-12T01:15:00Z',
       },

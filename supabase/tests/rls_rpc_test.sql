@@ -1,6 +1,6 @@
 -- pgTAP: RLS の cross-household 分離 + per-member 書込強制 + confirm_balance_checkpoint RPC
 begin;
-select plan(60);
+select plan(65);
 
 -- ============================================================
 -- Block A: ゆるり @ main として認証
@@ -13,7 +13,7 @@ select set_config(
 );
 
 select is((select count(*) from public.profiles)::int, 2, 'ゆるりは 2 件の profile を閲覧できる');
-select is((select count(*) from public.categories)::int, 10, 'seed カテゴリ 10 件が見える');
+select is((select count(*) from public.categories)::int, 11, 'seed カテゴリ 11 件が見える（サブスク追加）');
 
 select lives_ok(
   $$ insert into public.transactions (household_id, owner_member_id, type, amount, category_id, occurred_on)
@@ -411,7 +411,26 @@ select is(
 
 -- ============================================================
 -- Block E: cron (service_role) のロールフォワードは本来の課金日を壊さない
+--          + サブスクの支払いを台帳に記録する
 -- ============================================================
+-- サブスクの支払いは **実際の支出** なので is_system_generated にしない。
+-- （残高調整と違い、カテゴリ別グラフ・月次収支・目標貯金の判定に含めるべきもの）
+select is(
+  (select is_system from public.categories where household_id = 'main' and name = 'サブスク'),
+  false,
+  'サブスクは通常の支出カテゴリ（集計から除外しない）'
+);
+
+-- ユーザーが subscription_id 付きの取引を作れてしまうと、
+-- cron の冪等キー (subscription_id, occurred_on) と衝突してその月の自動記録が失敗する
+select throws_ok(
+  $$ insert into public.transactions (household_id, owner_member_id, type, amount, occurred_on, subscription_id)
+     values ('main', 'yururi', 'expense', 500, current_date,
+             (select id from public.subscriptions where name = 'Netflix')) $$,
+  'PT403', null,
+  'subscription_id 付きの取引はユーザーが作れない（cron 専用）'
+);
+
 -- cron が丸めた日 (2/28) を anchor に付け直してしまうと、以後ずっと 28 日課金に化ける。
 -- service_role の更新では anchor を保持しなければならない。
 reset role;
@@ -430,6 +449,41 @@ select is(
   (select renewal_anchor_day from public.subscriptions where name = 'CronRoll'),
   31::smallint,
   'cron のロールフォワードでは本来の課金日 (31) を保持する（28 日に化けない）'
+);
+
+-- cron はサブスクの支払いを支出として台帳に記録できる
+select lives_ok(
+  $$ insert into public.transactions
+       (household_id, owner_member_id, type, amount, category_id, memo, occurred_on, subscription_id)
+     values ('main', 'shiyowo', 'expense', 500,
+             (select id from public.categories where household_id = 'main' and name = 'サブスク'),
+             'CronRoll', date '2026-01-31',
+             (select id from public.subscriptions where name = 'CronRoll')) $$,
+  'cron はサブスクの支払いを支出として記録できる'
+);
+
+-- **二重計上をアプリのロジックに頼らない。**
+-- cron は再実行されうるし、複数期ぶん遅れて追いつくこともある。DB が弾く。
+select throws_ok(
+  $$ insert into public.transactions
+       (household_id, owner_member_id, type, amount, category_id, occurred_on, subscription_id)
+     values ('main', 'shiyowo', 'expense', 500,
+             (select id from public.categories where household_id = 'main' and name = 'サブスク'),
+             date '2026-01-31',
+             (select id from public.subscriptions where name = 'CronRoll')) $$,
+  '23505', null,
+  '同じサブスクの同じ更新日を二重に記録できない（unique 制約）'
+);
+
+-- 別の更新日なら記録できる（翌月ぶん）
+select lives_ok(
+  $$ insert into public.transactions
+       (household_id, owner_member_id, type, amount, category_id, occurred_on, subscription_id)
+     values ('main', 'shiyowo', 'expense', 500,
+             (select id from public.categories where household_id = 'main' and name = 'サブスク'),
+             date '2026-02-28',
+             (select id from public.subscriptions where name = 'CronRoll')) $$,
+  '別の更新日ぶんは記録できる'
 );
 
 reset role;

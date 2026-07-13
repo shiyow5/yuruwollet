@@ -35,7 +35,7 @@ const devEnv: TestEnv = {
 
 function ctx(env: TestEnv, init: RequestInit = {}) {
   return {
-    request: new Request('https://yuruwollet.shiyow.dev/api/session', init),
+    request: new Request('https://yuruwollet.pages.dev/api/session', init),
     env,
   } as Parameters<typeof onRequest>[0];
 }

@@ -162,10 +162,10 @@ cat <<EOF
 
   アプリ: https://${APP_HOSTNAME}
 
-  残りの手動作業:
-    1. Pages にカスタムドメインを割り当てる
-       Cloudflare → Workers & Pages → ${PAGES_PROJECT} → Custom domains
-         → Set up a custom domain → ${APP_HOSTNAME}
+  ⚠️ カスタムドメインは割り当てないこと。
+     自分のゾーンに Pages のカスタムドメインを足すと、同じゾーンの他のサイトが 403 になる
+     （証明書がホスト個別に発行され、ブラウザの接続再利用時に Cloudflare が弾く）。
+     詳細と再現方法は docs/DEPLOY.md の B-3。
 
   確認（docs/DEPLOY.md の F）:
     - 許可していない Google アカウントで開いて **拒否される**こと（最重要）

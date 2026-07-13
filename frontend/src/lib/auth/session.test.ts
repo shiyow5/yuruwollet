@@ -58,7 +58,7 @@ async function signAccessToken(
 }
 
 function requestWith(headers: Record<string, string>): Request {
-  return new Request('https://yuruwollet.shiyow.dev/api/session', { headers });
+  return new Request('https://yuruwollet.pages.dev/api/session', { headers });
 }
 
 describe('extractAccessToken', () => {

@@ -61,26 +61,6 @@ esac
 # 導出値
 ACCESS_TEAM_DOMAIN="https://${CF_TEAM_NAME}.cloudflareaccess.com"
 PAGES_PROJECT="yuruwollet"
-CF_API="https://api.cloudflare.com/client/v4"
-
-cf() { # cf <method> <path> [json]
-  local method="$1" path="$2" body="${3:-}"
-  local args=(-sS -X "$method" "${CF_API}${path}"
-    -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
-    -H "Content-Type: application/json")
-  [ -n "$body" ] && args+=(-d "$body")
-  curl "${args[@]}"
-}
-
-cf_ok() { # 標準入力の Cloudflare レスポンスを検証し .result を返す
-  local res
-  res="$(cat)"
-  if [ "$(jq -r '.success' <<<"$res")" != "true" ]; then
-    printf '%s\n' "$res" >&2
-    die "Cloudflare API が失敗しました（上のエラーを確認してください）"
-  fi
-  jq -c '.result' <<<"$res"
-}
 
 # ---------------------------------------------------------------- A. Supabase
 step "A. Supabase — スキーマを本番へ適用"
@@ -105,55 +85,23 @@ for pair in "yururi:${EMAIL_YURURI}" "shiyowo:${EMAIL_SHIYOWO}"; do
     cat /tmp/yw-profile.json >&2
     die "profiles.email の更新に失敗しました (HTTP $status)"
   }
-  [ "$(jq -r 'length' /tmp/yw-profile.json)" = "1" ] ||
-    die "member_id=${member} の行が見つかりません（db push は成功していますか）"
+  python3 -c "
+import json, sys
+rows = json.load(open('/tmp/yw-profile.json'))
+if len(rows) != 1:
+    sys.exit('member_id=${member} の行が見つかりません（db push は成功していますか）')
+if rows[0].get('email') != '${email}':
+    sys.exit('email が反映されていません: ' + repr(rows[0].get('email')))
+" || die "profiles.email の確認に失敗しました"
   ok "${member} → ${email}"
 done
 
 # ---------------------------------------------------------------- C. Access
 # Pages より先に作る。AUD が決まらないと Pages の env を確定できないため。
-step "C. Cloudflare Access — Google をログイン方法として登録"
+step "C. Cloudflare Access — Google IdP / アプリ / この2人だけ通すポリシー"
 
-idp_id=$(cf GET "/accounts/${CLOUDFLARE_ACCOUNT_ID}/access/identity_providers" | cf_ok |
-  jq -r '.[] | select(.type=="google") | .id' | head -1)
-
-if [ -n "$idp_id" ]; then
-  ok "Google IdP は登録済み ($idp_id)"
-else
-  idp_id=$(cf POST "/accounts/${CLOUDFLARE_ACCOUNT_ID}/access/identity_providers" "$(jq -nc \
-    --arg id "$GOOGLE_CLIENT_ID" --arg secret "$GOOGLE_CLIENT_SECRET" \
-    '{name:"Google", type:"google", config:{client_id:$id, client_secret:$secret}}')" |
-    cf_ok | jq -r '.id')
-  ok "Google IdP を登録 ($idp_id)"
-fi
-
-step "C. Cloudflare Access — アプリとポリシー（この2人だけ通す）"
-
-app=$(cf GET "/accounts/${CLOUDFLARE_ACCOUNT_ID}/access/apps" | cf_ok |
-  jq -c --arg d "$APP_HOSTNAME" '.[] | select(.domain==$d)' | head -1)
-
-policy=$(jq -nc --arg a "$EMAIL_YURURI" --arg b "$EMAIL_SHIYOWO" '{
-  name: "two of us",
-  decision: "allow",
-  include: [ {email:{email:$a}}, {email:{email:$b}} ]
-}')
-
-if [ -n "$app" ]; then
-  app_id=$(jq -r '.id' <<<"$app")
-  ok "Access アプリは作成済み ($app_id)"
-else
-  app=$(cf POST "/accounts/${CLOUDFLARE_ACCOUNT_ID}/access/apps" "$(jq -nc \
-    --arg d "$APP_HOSTNAME" --arg idp "$idp_id" --argjson p "$policy" \
-    '{name:"yuruwollet", type:"self_hosted", domain:$d,
-      session_duration:"720h", allowed_idps:[$idp], auto_redirect_to_identity:true,
-      policies:[$p]}')" | cf_ok)
-  app_id=$(jq -r '.id' <<<"$app")
-  ok "Access アプリを作成 ($app_id)"
-fi
-
-ACCESS_AUD=$(jq -r '.aud' <<<"$app")
-[ -n "$ACCESS_AUD" ] && [ "$ACCESS_AUD" != "null" ] || die "AUD タグを取得できませんでした"
-ok "AUD = ${ACCESS_AUD}"
+ACCESS_AUD="$(python3 scripts/setup_access.py)"
+[ -n "$ACCESS_AUD" ] || die "AUD タグを取得できませんでした"
 
 # ---------------------------------------------------------------- B. Pages
 step "B. Cloudflare Pages — プロジェクト"

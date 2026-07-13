@@ -22,16 +22,10 @@ jobs:
 
       # スキーマはコードより先に適用する（失敗時に「新コード × 旧スキーマ」を避ける）。
       # supabase/ は Phase 1 で作成。それまでは migrations が無いため db push は no-op。
-      - name: link supabase project
-        run: npx supabase link --project-ref "${{ secrets.SUPABASE_PROJECT_REF }}"
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      # --db-url なら link も access token も DB パスワードも要らない（.env と同じ入力に揃える）。
+      # Session pooler の接続文字列を使うこと（Transaction pooler:6543 は DDL に使えない）。
       - name: apply supabase migrations
-        run: npx supabase db push
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: npx supabase db push --db-url "${{ secrets.DATABASE_URL }}"
 
       # VITE_ 変数は **ビルド時**にバンドルへ埋め込まれる。
       # ここで渡さないと、Cloudflare Pages 側の環境変数（= 実行時）は届かず、

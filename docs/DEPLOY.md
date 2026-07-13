@@ -32,10 +32,13 @@ Browser ──▶ Cloudflare Pages（SPA + /api/session）
 
 1. https://supabase.com/dashboard → **New project**
 2. **Region: Northeast Asia (Tokyo)** を選ぶ（レイテンシに効く）
-3. Database Password は強いものを生成し、**控える**（あとで `SUPABASE_DB_PASSWORD` に使う）
-4. 作成後、**Project Settings → General** の **Reference ID**（`abcdefghijklmnop` のような文字列）を控える
+3. Database Password は強いものを生成し、**控える**
+4. ダッシュボード上部の **Connect → Session pooler** の接続文字列を控える → `DATABASE_URL`
+   （**Transaction pooler(6543) は DDL に使えない**ので選ばない。パスワードに記号があれば percent-encode する）
 
 ### A-2. API キーを控える
+
+**Project Settings → Data API** → プロジェクト URL → `SUPABASE_URL`
 
 **Project Settings → API Keys**:
 
@@ -43,6 +46,9 @@ Browser ──▶ Cloudflare Pages（SPA + /api/session）
 |---|---|---|
 | `anon` / `publishable` key | ブラウザから Supabase を叩く | 公開して良い |
 | `service_role` key | **Cron Worker 専用** | **絶対に公開しない** |
+
+> Reference ID と DB パスワードは個別に控えなくてよい。
+> `SUPABASE_URL` と `DATABASE_URL` に含まれているので、スクリプトが導出する。
 
 ### A-3. Supabase JWT の署名鍵を用意する
 
@@ -80,22 +86,14 @@ npx supabase gen signing-key --algorithm ES256
 
 ### A-4. スキーマを本番へ流す
 
-ローカルから実行する:
+`make setup-prod` が自動で実行する（`supabase login` も `link` も不要）:
 
 ```bash
-cd /home/satosho/yuruwollet/yuruwollet
-
-# Supabase CLI にログイン（ブラウザが開く）
-npx supabase login
-
-# 本番プロジェクトに紐付け（<ref> は A-1 の Reference ID）
-npx supabase link --project-ref <ref>
-
-# マイグレーションを本番に適用
-npx supabase db push
+npx supabase db push --db-url "$DATABASE_URL"
 ```
 
-> `db push` はマイグレーションのみを流す。**seed は流れない**。
+> `db push` はマイグレーションのみを流す。**seed.sql は流れない**が、
+> 世帯・メンバー・カテゴリは migration で管理しているので入る（A-5 参照）。
 
 ### A-5. メンバーのメールを入れる
 
@@ -290,15 +288,13 @@ make deploy-backend
 ```bash
 cd /home/satosho/yuruwollet/yuruwollet
 
-gh secret set CLOUDFLARE_API_TOKEN      # Cloudflare → My Profile → API Tokens
-gh secret set CLOUDFLARE_ACCOUNT_ID     # Cloudflare ダッシュボード右側の Account ID
-gh secret set SUPABASE_ACCESS_TOKEN     # https://supabase.com/dashboard/account/tokens
-gh secret set SUPABASE_PROJECT_REF      # A-1 の Reference ID
-gh secret set SUPABASE_DB_PASSWORD      # A-1 の DB パスワード
+gh secret set CLOUDFLARE_API_TOKEN      # .env と同じ値
+gh secret set CLOUDFLARE_ACCOUNT_ID     # .env と同じ値
+gh secret set DATABASE_URL              # .env と同じ値（Session pooler の接続文字列）
 
 # ビルド時にバンドルへ焼き込む（B-2b）。渡さないとローカル用の既定値が本番に出る
-gh secret set VITE_SUPABASE_URL         # https://<ref>.supabase.co
-gh secret set VITE_SUPABASE_ANON_KEY    # anon key
+gh secret set VITE_SUPABASE_URL         # = SUPABASE_URL
+gh secret set VITE_SUPABASE_ANON_KEY    # = SUPABASE_ANON_KEY
 ```
 
 `CLOUDFLARE_API_TOKEN` に必要な権限:

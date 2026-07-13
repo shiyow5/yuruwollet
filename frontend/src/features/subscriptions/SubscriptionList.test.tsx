@@ -15,6 +15,7 @@ const sub: Subscription = {
   fx_rate_date: null,
   cycle: 'monthly',
   next_renewal_date: '2026-08-15',
+  renewal_anchor_day: 15,
   status: 'trial',
   monthly_amount_jpy: 1490,
   created_at: '2026-07-13T00:00:00Z',

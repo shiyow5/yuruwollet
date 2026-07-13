@@ -4,14 +4,22 @@
   "compatibility_date": "2026-07-01",
   "compatibility_flags": ["nodejs_compat"],
   "build": {
-    "command": "go run github.com/syumai/workers/cmd/workers-assets-gen -mode=go && GOOS=js GOARCH=wasm go build -o ./build/app.wasm .",
+    // -s -w でシンボル/デバッグ情報を落とす。素のままだと gzip 2.89MB となり、
+    // 無料枠の 3MB 上限に対して余裕が 100KB ほどしか残らない（実測値、CI でも検査している）。
+    "command": "go run github.com/syumai/workers/cmd/workers-assets-gen -mode=go && GOOS=js GOARCH=wasm go build -trimpath -ldflags=\"-s -w\" -o ./build/app.wasm .",
   },
-  // JST 24日 00:00 = 前日 15:00 UTC。日次処理も兼ねる想定で Phase 10 で確定。
+  // 毎日 JST 00:00 (= 15:00 UTC 前日)。
+  // 為替の取得・サブスクの更新日ロール・Supabase の keep-alive はいずれも日次なので、
+  // トリガは 1 本にまとめる。
+  // 24日の壁はクライアント側が jst_today() RPC で判定するため、月次 cron は不要。
   "triggers": {
-    "crons": ["0 15 23 * *"],
+    "crons": ["0 15 * * *"],
   },
-  "vars": {
-    "SUPABASE_URL": "",
-  },
-  // secrets は `wrangler secret put` で: SUPABASE_SERVICE_ROLE_KEY / (FX_API_KEY は frankfurter.dev のため不要)
+  // vars に SUPABASE_URL を空文字で置かない。
+  // 空の var は同名の secret を上書きしてしまい、cron が「未設定」で毎回失敗する。
+  // 環境ごとの値なのでコミットもできない。**デプロイ前に secret として登録する**:
+  //   wrangler secret put SUPABASE_URL
+  //   wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+  // 未登録のまま動かすと cron は成功扱いにせず失敗として報告する (main.go のガード)。
+  // 為替 API (frankfurter.dev) は keyless なのでキー不要。
 }

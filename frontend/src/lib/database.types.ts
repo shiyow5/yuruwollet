@@ -292,6 +292,7 @@ export type Database = {
           next_renewal_date: string
           original_amount: number
           owner_member_id: string
+          renewal_anchor_day: number | null
           status: Database["public"]["Enums"]["sub_status"]
           updated_at: string
         }
@@ -309,6 +310,7 @@ export type Database = {
           next_renewal_date: string
           original_amount: number
           owner_member_id: string
+          renewal_anchor_day?: number | null
           status?: Database["public"]["Enums"]["sub_status"]
           updated_at?: string
         }
@@ -326,6 +328,7 @@ export type Database = {
           next_renewal_date?: string
           original_amount?: number
           owner_member_id?: string
+          renewal_anchor_day?: number | null
           status?: Database["public"]["Enums"]["sub_status"]
           updated_at?: string
         }

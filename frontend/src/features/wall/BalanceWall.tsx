@@ -13,11 +13,19 @@ import {
   diffDirectionLabel,
 } from '../../lib/wall/schedule';
 import { validateActualBalance } from '../../lib/wall/validate';
+import { confirmErrorMessage, kindOfConfirmError } from '../../lib/wall/errors';
 import { useCurrentCheckpoint, useSkipCheckpoint, useConfirmCheckpoint } from './hooks';
 
 interface Props {
   /** テスト/E2E 用の注入クロック（既定は ?now= を尊重する実時刻） */
   now?: Date;
+}
+
+/** ユーザーが承認する内容。computed は確認画面に出した「アプリの計算」＝ CAS の期待値。 */
+interface Pending {
+  actual: number;
+  computed: number;
+  diff: number;
 }
 
 /**
@@ -66,7 +74,27 @@ function WallDialog({ selfId, month }: { selfId: string; month: string }) {
   const [actualText, setActualText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
-  const [pending, setPending] = useState<{ actual: number; diff: number } | null>(null);
+  const [pending, setPending] = useState<Pending | null>(null);
+
+  /**
+   * ユーザーが承認した (computed, actual) の組をそのまま RPC に渡す。
+   * 承認後に残高が動いていたらサーバが PT412 で弾くので、
+   * ユーザーが見ていないズレが黙って調整されることはない。
+   */
+  function submit(p: Pending) {
+    confirm.mutate(
+      { actual: p.actual, expectedComputed: p.computed },
+      {
+        onError: (e) => {
+          // stale = 残高が動いた。入力画面に戻して最新残高で数え直させる。
+          if (kindOfConfirmError(e) === 'stale') {
+            setStep('input');
+            setPending(null);
+          }
+        },
+      },
+    );
+  }
 
   async function handleDecide() {
     const result = validateActualBalance(actualText);
@@ -82,22 +110,25 @@ function WallDialog({ selfId, month }: { selfId: string; month: string }) {
     setChecking(false);
     // 再取得が失敗した場合、fresh.data には「前回成功時の古い残高」が残る。
     // それで差額を計算すると stale 判定になるため、必ずエラーとして扱う。
-    const latest = fresh.isError || !fresh.data ? null : selectBalance(fresh.data, selfId);
-    if (latest == null) {
+    const computed = fresh.isError || !fresh.data ? null : selectBalance(fresh.data, selfId);
+    if (computed == null) {
       setError('現在の残高を取得できませんでした。時間をおいて再度お試しください。');
       return;
     }
-    const diff = computeDiff(result.value, latest);
+    const diff = computeDiff(result.value, computed);
     if (diff === 0) {
       // ズレ無し → 確認ダイアログ無しで確定（RPC も取引を挿入しない）
-      confirm.mutate(result.value);
+      submit({ actual: result.value, computed, diff });
       return;
     }
-    setPending({ actual: result.value, diff });
+    setPending({ actual: result.value, computed, diff });
     setStep('confirm');
   }
 
   const busy = checking || confirm.isPending;
+  const confirmError = confirm.isError
+    ? confirmErrorMessage(kindOfConfirmError(confirm.error))
+    : null;
 
   return (
     <Modal open locked label="今月の残高確認">
@@ -135,9 +166,9 @@ function WallDialog({ selfId, month }: { selfId: string; month: string }) {
               現在の残高を取得できませんでした。通信環境を確認してください。
             </p>
           )}
-          {confirm.isError && (
+          {confirmError && (
             <p role="alert" className="text-label-sm text-error">
-              残高の確定に失敗しました。再度お試しください。
+              {confirmError}
             </p>
           )}
           {skip.isError && (
@@ -172,9 +203,7 @@ function WallDialog({ selfId, month }: { selfId: string; month: string }) {
           <dl className="flex flex-col gap-1 rounded-2xl bg-surface-container-high p-4">
             <div className="flex justify-between">
               <dt className="text-label-sm text-custom-text/60">アプリの計算</dt>
-              <dd className="text-body-md text-custom-text">
-                {formatYen(pending.actual - pending.diff)}
-              </dd>
+              <dd className="text-body-md text-custom-text">{formatYen(pending.computed)}</dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-label-sm text-custom-text/60">実際の残高</dt>
@@ -184,9 +213,9 @@ function WallDialog({ selfId, month }: { selfId: string; month: string }) {
             </div>
           </dl>
 
-          {confirm.isError && (
+          {confirmError && (
             <p role="alert" className="text-label-sm text-error">
-              残高の確定に失敗しました。再度お試しください。
+              {confirmError}
             </p>
           )}
 
@@ -203,11 +232,7 @@ function WallDialog({ selfId, month }: { selfId: string; month: string }) {
             >
               いいえ
             </Button>
-            <Button
-              fullWidth
-              disabled={confirm.isPending}
-              onClick={() => confirm.mutate(pending.actual)}
-            >
+            <Button fullWidth disabled={confirm.isPending} onClick={() => submit(pending)}>
               {confirm.isPending ? '確定中…' : 'はい'}
             </Button>
           </div>

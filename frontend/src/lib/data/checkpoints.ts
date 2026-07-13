@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Database } from '../database.types';
 import type { Checkpoint } from '../wall/types';
+import { ConfirmCheckpointError, classifyConfirmError, confirmErrorMessage } from '../wall/errors';
 
 /** member×月 の残高確認 checkpoint。無ければ null。 */
 export async function getCurrentCheckpoint(
@@ -45,15 +46,32 @@ export async function skipCheckpoint(
   if (error) throw new Error(`スキップを保存できませんでした: ${error.message}`);
 }
 
+export interface ConfirmInput {
+  /** ユーザーが数えて入力した実際の残高。 */
+  actual: number;
+  /** ユーザーが画面で見た「アプリの計算」残高。サーバはこれと現在値が一致するときだけ確定する。 */
+  expectedComputed: number;
+}
+
 /**
  * 「決定」= RPC で原子的に「残高調整」取引を挿入し checkpoint を confirmed にする。
  * 差額 0 のときは取引を挿入しない（サーバ側で判定）。
+ *
+ * RPC は 24日ガード・確定済みチェック・expectedComputed の一致（CAS）を検証し、
+ * 崩れていれば SQLSTATE で拒否する。承認後に残高が動いていた場合に、
+ * ユーザーが見ていないズレを勝手に調整しないための仕組み。
  */
 export async function confirmCheckpoint(
   client: SupabaseClient<Database>,
-  actual: number,
+  input: ConfirmInput,
 ): Promise<Checkpoint> {
-  const { data, error } = await client.rpc('confirm_balance_checkpoint', { p_actual: actual });
-  if (error) throw new Error(`残高の確定に失敗しました: ${error.message}`);
+  const { data, error } = await client.rpc('confirm_balance_checkpoint', {
+    p_actual: input.actual,
+    p_expected_computed: input.expectedComputed,
+  });
+  if (error) {
+    const kind = classifyConfirmError(error.code);
+    throw new ConfirmCheckpointError(kind, `${confirmErrorMessage(kind)} (${error.message})`);
+  }
   return data as Checkpoint;
 }

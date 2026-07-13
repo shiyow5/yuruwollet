@@ -5,6 +5,7 @@ import { SessionContext } from '../../lib/auth/session-context';
 import type { SessionState } from '../../lib/auth/useSession';
 import { BalanceWall } from './BalanceWall';
 import type { Checkpoint } from '../../lib/wall/types';
+import { ConfirmCheckpointError } from '../../lib/wall/errors';
 
 vi.mock('../../lib/supabase', () => ({ supabase: {} }));
 
@@ -49,16 +50,16 @@ vi.mock('../../lib/data/checkpoints', () => ({
       updated_at: '2026-07-24T03:00:00Z',
     };
   }),
-  confirmCheckpoint: vi.fn(async (_c: unknown, actual: number) => {
+  confirmCheckpoint: vi.fn(async (_c: unknown, input: { actual: number }) => {
     if (state.confirmHold) await state.confirmHold;
     state.checkpoint = {
       id: 'cp1',
       household_id: 'main',
       member_id: 'yururi',
       checkpoint_month: '2026-07-01',
-      actual,
+      actual: input.actual,
       computed: 45000,
-      diff: actual - 45000,
+      diff: input.actual - 45000,
       status: 'confirmed',
       created_at: '2026-07-24T03:00:00Z',
       updated_at: '2026-07-24T03:00:00Z',
@@ -156,9 +157,10 @@ describe('BalanceWall 統合', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'はい' }));
     await waitFor(() => expect(confirmCheckpoint).toHaveBeenCalledTimes(1));
-    expect(
-      (confirmCheckpoint as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][1],
-    ).toBe(50000);
+    expect(confirmCheckpoint).toHaveBeenCalledWith(expect.anything(), {
+      actual: 50000,
+      expectedComputed: 45000,
+    });
     // confirmed になり壁が閉じる
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
@@ -304,5 +306,40 @@ describe('BalanceWall 統合', () => {
     fireEvent.change(await screen.findByPlaceholderText('0'), { target: { value: '45000' } });
     fireEvent.click(screen.getByRole('button', { name: '決定' }));
     expect(await screen.findByText(/残高の確定に失敗しました/)).toBeInTheDocument();
+  });
+
+  // サーバは「ユーザーが承認した計算残高」と現在値が一致するときだけ確定する（CAS）。
+  // 一致しなければ確定せず拒否するので、承認していないズレが黙って調整されることはない。
+  it('ユーザーが画面で見た計算残高を確定 RPC に渡す', async () => {
+    renderWall();
+    fireEvent.change(await screen.findByPlaceholderText('0'), { target: { value: '50000' } });
+    fireEvent.click(screen.getByRole('button', { name: '決定' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'はい' }));
+
+    await waitFor(() =>
+      expect(confirmCheckpoint).toHaveBeenCalledWith(expect.anything(), {
+        actual: 50000,
+        expectedComputed: 45000,
+      }),
+    );
+  });
+
+  it('確定直前に残高が動いていたら（stale）入力に戻して数え直させる', async () => {
+    (
+      confirmCheckpoint as unknown as { mockImplementationOnce: (f: () => Promise<never>) => void }
+    ).mockImplementationOnce(async () => {
+      throw new ConfirmCheckpointError('stale', '残高が変わりました。もう一度確認してください。');
+    });
+    renderWall();
+    fireEvent.change(await screen.findByPlaceholderText('0'), { target: { value: '50000' } });
+    fireEvent.click(screen.getByRole('button', { name: '決定' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'はい' }));
+
+    expect(await screen.findByText(/残高が変わりました/)).toBeInTheDocument();
+    // 確認画面ではなく入力画面に戻っている（= 最新残高で数え直せる）
+    expect(screen.getByRole('button', { name: '決定' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'はい' })).toBeNull();
+    // 壁は開いたまま（勝手に確定していない）
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 });

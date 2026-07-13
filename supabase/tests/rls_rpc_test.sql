@@ -1,6 +1,6 @@
 -- pgTAP: RLS の cross-household 分離 + per-member 書込強制 + confirm_balance_checkpoint RPC
 begin;
-select plan(36);
+select plan(41);
 
 -- ============================================================
 -- Block A: ゆるり @ main として認証
@@ -179,14 +179,44 @@ select is((select count(*) from public.transactions)::int, 0, '別 household は
 -- ============================================================
 -- Block C: しよを @ main で残高確認 RPC
 -- ============================================================
+-- RPC は「今日(JST)」を public.jst_today() 経由で読む。テストではこの関数を
+-- GUC 参照に差し替えて日付を偽装する (本番コードに注入経路を持たせないためのシーム)。
+-- DDL も transaction 内なので rollback で元に戻る。
+reset role;
+create or replace function public.jst_today() returns date language sql stable as
+  $$ select current_setting('test.today')::date $$;
+set local role authenticated;
+
 select set_config(
   'request.jwt.claims',
   '{"role":"authenticated","household_id":"main","member_id":"shiyowo"}',
   true
 );
 
+-- 24日より前は確定できない (端末時計を進めても当月を早期 confirmed にできない)
+select set_config('test.today', '2026-07-13', true);
+select throws_ok(
+  $$ select public.confirm_balance_checkpoint(5000, 0) $$,
+  'PT403', null,
+  'confirm_balance_checkpoint: 24日より前は拒否 (サーバ時刻でガード)'
+);
+
+select set_config('test.today', '2026-07-24', true);
+
+-- CAS: ユーザーが見た「アプリの計算」と現在の計算残高が食い違えば拒否
+select throws_ok(
+  $$ select public.confirm_balance_checkpoint(9999, 12345) $$,
+  'PT412', null,
+  'confirm_balance_checkpoint: expected_computed 不一致は拒否 (stale)'
+);
+select is(
+  (select count(*) from public.transactions where owner_member_id = 'shiyowo' and is_system_generated)::int,
+  0,
+  'stale な確定では残高調整 transaction を挿入しない'
+);
+
 select results_eq(
-  $$ select computed, diff from public.confirm_balance_checkpoint(5000) $$,
+  $$ select computed, diff from public.confirm_balance_checkpoint(5000, 0) $$,
   $$ values (0, 5000) $$,
   'confirm_balance_checkpoint: 調整前残高 0, 差額 5000'
 );
@@ -203,9 +233,22 @@ select is(
   '残高調整 transaction が 1 件生成される'
 );
 
+-- 確定済みの月は再確定できない (別タブからの二重確定で調整が重複しない)
+select throws_ok(
+  $$ select public.confirm_balance_checkpoint(6000, 5000) $$,
+  'PT409', null,
+  'confirm_balance_checkpoint: 確定済みの月は拒否 (冪等)'
+);
+select is(
+  (select count(*) from public.transactions where owner_member_id = 'shiyowo' and is_system_generated)::int,
+  1,
+  '確定済みの月への再確定では残高調整 transaction が増えない'
+);
+
 -- 差額マイナス: 実際 3000 < 計算 5000 → 支出として残高調整
+select set_config('test.today', '2026-08-24', true);
 select results_eq(
-  $$ select computed, diff from public.confirm_balance_checkpoint(3000) $$,
+  $$ select computed, diff from public.confirm_balance_checkpoint(3000, 5000) $$,
   $$ values (5000, -2000) $$,
   'confirm_balance_checkpoint: 計算 5000 / 実際 3000 → 差額 -2000'
 );
@@ -221,8 +264,9 @@ select is(
 );
 
 -- 差額 0: 取引は挿入しない (amount > 0 制約に抵触させない)
+select set_config('test.today', '2026-09-24', true);
 select results_eq(
-  $$ select computed, diff from public.confirm_balance_checkpoint(3000) $$,
+  $$ select computed, diff from public.confirm_balance_checkpoint(3000, 3000) $$,
   $$ values (3000, 0) $$,
   'confirm_balance_checkpoint: 差額 0'
 );
@@ -232,11 +276,11 @@ select is(
   '差額 0 のときは残高調整 transaction を挿入しない'
 );
 
--- checkpoint は member×月 で 1 行に upsert される (再確定しても増えない)
+-- checkpoint は member×月 で 1 行 (同月の再確定では増えず、月ごとに 1 行)
 select is(
   (select count(*) from public.balance_checkpoints where member_id = 'shiyowo')::int,
-  1,
-  'checkpoint は member×月 で 1 行に upsert される'
+  3,
+  'checkpoint は member×月 で 1 行 (7/8/9月の 3 行)'
 );
 
 -- v_monthly_summary は残高調整(system)を除外する（しよをの当月は調整のみ→行なし）

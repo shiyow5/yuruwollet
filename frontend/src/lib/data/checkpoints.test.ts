@@ -78,24 +78,33 @@ describe('skipCheckpoint', () => {
 });
 
 describe('confirmCheckpoint', () => {
-  it('RPC を p_actual で呼び checkpoint を返す', async () => {
+  it('実際の残高と「ユーザーが見た計算残高」の両方を RPC に渡す', async () => {
     const row = cp();
     const { client, rpcs } = makeSupabaseMock(
       {},
       { confirm_balance_checkpoint: { data: row, error: null } },
     );
-    expect(await confirmCheckpoint(client, 50000)).toEqual(row);
+    expect(await confirmCheckpoint(client, { actual: 50000, expectedComputed: 45000 })).toEqual(
+      row,
+    );
     expect(rpcs.confirm_balance_checkpoint.calls[0]).toEqual({
       method: 'rpc',
-      args: ['confirm_balance_checkpoint', { p_actual: 50000 }],
+      args: ['confirm_balance_checkpoint', { p_actual: 50000, p_expected_computed: 45000 }],
     });
   });
 
-  it('error は投げる', async () => {
+  it.each([
+    ['PT403', 'not_open'],
+    ['PT409', 'already_confirmed'],
+    ['PT412', 'stale'],
+    ['P0001', 'unknown'],
+  ])('SQLSTATE %s を種別 %s の ConfirmCheckpointError にする', async (code, kind) => {
     const { client } = makeSupabaseMock(
       {},
-      { confirm_balance_checkpoint: { data: null, error: { message: 'nope' } } },
+      { confirm_balance_checkpoint: { data: null, error: { message: 'nope', code } } },
     );
-    await expect(confirmCheckpoint(client, 50000)).rejects.toThrow(/nope/);
+    await expect(
+      confirmCheckpoint(client, { actual: 50000, expectedComputed: 45000 }),
+    ).rejects.toMatchObject({ kind, name: 'ConfirmCheckpointError' });
   });
 });

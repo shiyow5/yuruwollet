@@ -6,6 +6,7 @@ import {
   getCurrentCheckpoint,
   skipCheckpoint,
   confirmCheckpoint,
+  type ConfirmInput,
 } from '../../lib/data/checkpoints';
 
 /**
@@ -56,12 +57,15 @@ export function useSkipCheckpoint() {
   });
 }
 
-/** 「決定」= RPC で残高調整 + confirmed 化。 */
+/**
+ * 「決定」= RPC で残高調整 + confirmed 化。
+ * 拒否されたときも残高/checkpoint を invalidate する（サーバ側が動いている＝手元が古い、ということなので）。
+ */
 export function useConfirmCheckpoint() {
   const qc = useQueryClient();
   const ctx = useWriteContext();
   return useMutation({
-    mutationFn: (actual: number) => confirmCheckpoint(supabase, actual),
+    mutationFn: (input: ConfirmInput) => confirmCheckpoint(supabase, input),
     onSettled: () => invalidateAfterConfirm(qc, ctx?.memberId),
   });
 }

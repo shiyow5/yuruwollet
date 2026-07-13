@@ -3,7 +3,8 @@ import type { Database } from '../lib/database.types';
 
 export interface QueryResult {
   data: unknown;
-  error: { message: string } | null;
+  /** code は PostgREST が返す SQLSTATE（RPC の拒否理由の判別に使う）。 */
+  error: { message: string; code?: string } | null;
 }
 
 export interface RecordedCall {

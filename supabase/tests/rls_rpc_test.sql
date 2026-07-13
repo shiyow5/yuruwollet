@@ -1,6 +1,6 @@
 -- pgTAP: RLS の cross-household 分離 + per-member 書込強制 + confirm_balance_checkpoint RPC
 begin;
-select plan(65);
+select plan(85);
 
 -- ============================================================
 -- Block A: ゆるり @ main として認証
@@ -494,6 +494,232 @@ select throws_ok(
   $$ insert into public.fx_rates (rate_date, rate) values (current_date, 150) $$,
   null, null,
   'fx_rates への書込は拒否 (service_role のみ)'
+);
+
+-- ============================================================
+-- Block F: roll_subscription_cycle（支払い記録と更新日前進の原子化）
+-- ============================================================
+-- 「記録」と「前進」が別々の往復だと、その隙間で編集/解約されたときに
+-- 古い金額の支払いだけが台帳に残る。1 トランザクションに閉じて塞ぐ。
+reset role;
+set local role service_role;
+
+-- 収入カテゴリにも「サブスク」を作る。
+-- categories は (household_id, kind, name) で一意なので **これは作れてしまう**。
+-- 名前だけでカテゴリを引いていると、支出が収入カテゴリで記録される。
+insert into public.categories (household_id, kind, name, sort_order)
+values ('main', 'income', 'サブスク', 90);
+
+insert into public.subscriptions
+  (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+values ('main', 'yururi', 'RpcSub', 'JPY', 1200, 1200, 'monthly', date '2026-05-10', 'active');
+
+-- cron が 3 ヶ月止まっていた場合。止まっていた間も課金は起きているので、全期ぶん記録する。
+select is(
+  public.roll_subscription_cycle(
+    (select id from public.subscriptions where name = 'RpcSub'),
+    date '2026-05-10', 'JPY', 1200, 'monthly', 10,
+    '[{"occurred_on":"2026-05-10","amount":1200},
+      {"occurred_on":"2026-06-10","amount":1200},
+      {"occurred_on":"2026-07-10","amount":1200}]'::jsonb,
+    date '2026-08-10'
+  ),
+  true,
+  'roll_subscription_cycle: 到来した支払いを記録して更新日を進める'
+);
+
+select is(
+  (select count(*)::int from public.transactions
+     where subscription_id = (select id from public.subscriptions where name = 'RpcSub')),
+  3,
+  'roll_subscription_cycle: 止まっていた 3 期ぶんすべてを記録する'
+);
+
+select is(
+  (select next_renewal_date from public.subscriptions where name = 'RpcSub'),
+  date '2026-08-10',
+  'roll_subscription_cycle: 更新日が次の周期へ進む'
+);
+
+-- 同名の収入カテゴリがあっても、支出は必ず **支出カテゴリ** で記録される
+select is(
+  (select distinct c.kind::text
+     from public.transactions t join public.categories c on c.id = t.category_id
+    where t.subscription_id = (select id from public.subscriptions where name = 'RpcSub')),
+  'expense',
+  'roll_subscription_cycle: 同名の収入カテゴリを引かない（kind まで絞る）'
+);
+
+-- cron は再実行されうる。同じ更新日ぶんが二重計上されてはいけない。
+select is(
+  public.roll_subscription_cycle(
+    (select id from public.subscriptions where name = 'RpcSub'),
+    date '2026-08-10', 'JPY', 1200, 'monthly', 10,
+    '[{"occurred_on":"2026-07-10","amount":1200}]'::jsonb,
+    date '2026-09-10'
+  ),
+  true,
+  'roll_subscription_cycle: 再実行できる'
+);
+select is(
+  (select count(*)::int from public.transactions
+     where subscription_id = (select id from public.subscriptions where name = 'RpcSub')),
+  3,
+  'roll_subscription_cycle: 同じ更新日ぶんは増えない（冪等）'
+);
+
+-- 一覧取得から呼び出しまでの間にユーザーが編集した場合。
+-- **支払いだけが古い金額で残る** ことが無いよう、何もせず false を返す。
+select is(
+  public.roll_subscription_cycle(
+    (select id from public.subscriptions where name = 'RpcSub'),
+    date '2026-05-10',  -- 古いスナップショット（実際は 2026-09-10）
+    'JPY', 1200, 'monthly', 10,
+    '[{"occurred_on":"2026-10-10","amount":9999}]'::jsonb,
+    date '2026-06-10'
+  ),
+  false,
+  'roll_subscription_cycle: スナップショットが古ければ何もせず false'
+);
+select is(
+  (select next_renewal_date from public.subscriptions where name = 'RpcSub'),
+  date '2026-09-10',
+  'CAS 不一致では更新日を進めない'
+);
+select is(
+  (select count(*)::int from public.transactions
+     where subscription_id = (select id from public.subscriptions where name = 'RpcSub')),
+  3,
+  'CAS 不一致では支払いも記録しない（記録だけ残る穴が無い）'
+);
+
+-- 解約検討中は課金されない前提。進めない。
+update public.subscriptions set status = 'considering_cancel' where name = 'RpcSub';
+select is(
+  public.roll_subscription_cycle(
+    (select id from public.subscriptions where name = 'RpcSub'),
+    date '2026-09-10', 'JPY', 1200, 'monthly', 10,
+    '[{"occurred_on":"2026-09-10","amount":1200}]'::jsonb,
+    date '2026-10-10'
+  ),
+  false,
+  'roll_subscription_cycle: 解約検討中のサブスクは進めない'
+);
+
+reset role;
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","household_id":"main","member_id":"yururi"}',
+  true
+);
+
+-- cron が作った支払いをユーザーが消せると、更新日は既に進んでいるため **二度と復活しない**。
+-- 残高とカテゴリ別集計からサブスク代が恒久的に欠落する。
+delete from public.transactions
+  where subscription_id = (select id from public.subscriptions where name = 'RpcSub');
+select is(
+  (select count(*)::int from public.transactions
+     where subscription_id = (select id from public.subscriptions where name = 'RpcSub')),
+  3,
+  'ユーザーは cron が作った支払いを削除できない'
+);
+
+-- ただし、ふつうの取引は今までどおり削除できる（削除ポリシーを締めすぎていない）
+insert into public.transactions (household_id, owner_member_id, type, amount, occurred_on)
+values ('main', 'yururi', 'expense', 300, current_date);
+delete from public.transactions
+  where owner_member_id = 'yururi' and amount = 300 and subscription_id is null;
+select is(
+  (select count(*)::int from public.transactions
+     where owner_member_id = 'yururi' and amount = 300 and subscription_id is null),
+  0,
+  'サブスク由来でない取引はこれまでどおり削除できる'
+);
+
+-- **subscription_id を外して「ただの取引」に化けさせる経路も塞ぐ。**
+-- 旧トリガは new.subscription_id しか見ていなかったので、null を書き込む UPDATE は
+-- 素通りし、その後は削除ポリシー (subscription_id is null) もすり抜けて消せた。
+-- UI がボタンを隠しても、API を直接叩けば同じことができる。
+select throws_ok(
+  $$ update public.transactions set subscription_id = null
+      where subscription_id = (select id from public.subscriptions where name = 'RpcSub') $$,
+  'PT403', null,
+  'ユーザーは cron の支払いから subscription_id を外せない'
+);
+select throws_ok(
+  $$ update public.transactions set amount = 1
+      where subscription_id = (select id from public.subscriptions where name = 'RpcSub') $$,
+  'PT403', null,
+  'ユーザーは cron の支払いの金額を書き換えられない'
+);
+
+-- ただしサブスク本体を削除したら、支払いは「ただの支出」として残り、通常どおり扱える。
+-- （実際に使ったお金なので履歴からは消さない。FK の on delete set null）
+select lives_ok(
+  $$ delete from public.subscriptions where name = 'RpcSub' $$,
+  'サブスク本体は削除できる（支払い履歴の FK set null がトリガに弾かれない）'
+);
+select is(
+  (select count(*)::int from public.transactions
+     where owner_member_id = 'yururi' and memo = 'RpcSub' and subscription_id is null),
+  3,
+  'サブスクを消しても支払い履歴は「ただの支出」として残る'
+);
+
+-- RPC は cron 専用。クライアントからは実行できない。
+select throws_ok(
+  $$ select public.roll_subscription_cycle(
+       '00000000-0000-0000-0000-000000000000'::uuid, current_date, 'JPY', 1, 'monthly', 1,
+       '[]'::jsonb, current_date) $$,
+  '42501', null,
+  'authenticated は roll_subscription_cycle を実行できない'
+);
+
+-- ============================================================
+-- Block G: anchor が null のサブスクでも CAS が通る
+-- ============================================================
+-- renewal_anchor_day は nullable。Go 側は null を 0 (int のゼロ値) として受け取るので、
+-- RPC が null と 0 を別物として扱うと CAS が **常に不一致** になり、
+-- そのサブスクは永久に進まない（支払いも記録されない）。
+reset role;
+set local role service_role;
+
+insert into public.subscriptions
+  (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+values ('main', 'shiyowo', 'NullAnchor', 'JPY', 800, 800, 'monthly', date '2026-06-05', 'active');
+
+-- 通常はトリガが必ず埋めるので null にはならない。
+-- ここではトリガを一時停止して「万一 null が残った行」を作る
+-- （20260713060000 が明示的に想定しているケース）。
+reset role;
+alter table public.subscriptions disable trigger set_renewal_anchor_on_write;
+update public.subscriptions set renewal_anchor_day = null where name = 'NullAnchor';
+alter table public.subscriptions enable trigger set_renewal_anchor_on_write;
+set local role service_role;
+
+select is(
+  (select renewal_anchor_day from public.subscriptions where name = 'NullAnchor'),
+  null::smallint,
+  'anchor が null の行を用意した'
+);
+
+-- Go は null を 0 として送ってくる
+select is(
+  public.roll_subscription_cycle(
+    (select id from public.subscriptions where name = 'NullAnchor'),
+    date '2026-06-05', 'JPY', 800, 'monthly', 0,
+    '[{"occurred_on":"2026-06-05","amount":800}]'::jsonb,
+    date '2026-07-05'
+  ),
+  true,
+  'anchor が null でも CAS が通る（null と 0 を同じ扱いにする）'
+);
+select is(
+  (select count(*)::int from public.transactions
+     where subscription_id = (select id from public.subscriptions where name = 'NullAnchor')),
+  1,
+  'anchor が null のサブスクでも支払いが記録される'
 );
 
 select * from finish();

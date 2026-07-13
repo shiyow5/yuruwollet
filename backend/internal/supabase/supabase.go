@@ -9,8 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
-	"strings"
 )
 
 // Client は Supabase REST クライアント (service_role)。
@@ -118,62 +116,98 @@ func (c *Client) ListDueSubscriptions(ctx context.Context, today string) ([]Subs
 
 // RenewalUpdate はロールフォワードで書き戻す値。
 type RenewalUpdate struct {
-	NextRenewalDate string   `json:"next_renewal_date"`
-	AmountJPY       *int     `json:"amount_jpy,omitempty"`
-	FxRate          *float64 `json:"fx_rate,omitempty"`
-	FxRateDate      *string  `json:"fx_rate_date,omitempty"`
+	NextRenewalDate string
+	AmountJPY       *int
+	FxRate          *float64
+	FxRateDate      *string
 }
 
-// UpdateSubscriptionRenewal は 1 件のサブスクを次の更新日へ進める。
-//
-// snapshot は一覧取得時に読んだ行。**その内容のままの行だけを更新する** (CAS)。
-//
-// 一覧取得から PATCH までの間にユーザーがサブスクを編集/解約すると、id だけで更新すると
-// **cron が古いスナップショットからの計算でユーザーの編集を巻き戻してしまう**。
-// 更新日だけでなく、**次の更新日と amount_jpy の計算に使った値をすべて** 条件に入れる
-// (currency / original_amount / cycle / renewal_anchor_day)。
-// 例えば課金日を変えずに金額や周期だけ編集された場合も、古い値で上書きしてはいけない。
-//
-// 一致する行が無ければ「その間に人が触った」だけなので、次回の cron で拾えば良い。
-// エラーではなく applied=false を返す。
-//
-// renewal_anchor_day は **条件には入れるが、更新値としては送らない**:
-// service_role の更新では DB トリガが anchor を保持する
-// (丸めた日で上書きすると、月末課金が 28 日に固定化してしまう)。
-func (c *Client) UpdateSubscriptionRenewal(
-	ctx context.Context, snapshot Subscription, update RenewalUpdate,
-) (applied bool, err error) {
-	q := url.Values{}
-	q.Set("id", "eq."+snapshot.ID)
-	q.Set("next_renewal_date", "eq."+snapshot.NextRenewalDate)
-	q.Set("currency", "eq."+snapshot.Currency)
-	q.Set("cycle", "eq."+snapshot.Cycle)
-	q.Set("original_amount", "eq."+strconv.FormatFloat(snapshot.OriginalAmount, 'f', -1, 64))
-	// 解約検討中に変えられた行も進めない
-	q.Set("status", "in.(active,trial)")
+// Payment はサブスクの支払い 1 回ぶん（= 支出取引 1 件）。
+type Payment struct {
+	OccurredOn string `json:"occurred_on"`
+	Amount     int    `json:"amount"`
+}
 
-	// anchor はトリガが埋めるが、万一 null の行は null のままであることを条件にする
-	if snapshot.RenewalAnchorDay > 0 {
-		q.Set("renewal_anchor_day", "eq."+strconv.Itoa(snapshot.RenewalAnchorDay))
-	} else {
-		q.Set("renewal_anchor_day", "is.null")
+// FXRateOn は date 以前で最も新しい USD/JPY をキャッシュ (fx_rates) から返す。
+// 休日はその日の行が無いので、その日以前の直近を使う。
+func (c *Client) FXRateOn(ctx context.Context, date string) (rate float64, rateDate string, found bool, err error) {
+	q := url.Values{}
+	q.Set("select", "rate,rate_date")
+	q.Set("base", "eq.USD")
+	q.Set("quote", "eq.JPY")
+	q.Set("rate_date", "lte."+date)
+	q.Set("order", "rate_date.desc")
+	q.Set("limit", "1")
+
+	payload, err := c.do(ctx, http.MethodGet, "/rest/v1/fx_rates?"+q.Encode(), nil, "")
+	if err != nil {
+		return 0, "", false, err
 	}
 
-	q.Set("select", "id")
+	var rows []struct {
+		Rate     float64 `json:"rate"`
+		RateDate string  `json:"rate_date"`
+	}
+	if err := json.Unmarshal(payload, &rows); err != nil {
+		return 0, "", false, fmt.Errorf("supabase: 為替レートを解釈できませんでした: %w", err)
+	}
+	if len(rows) == 0 {
+		return 0, "", false, nil
+	}
+	return rows[0].Rate, rows[0].RateDate, true, nil
+}
 
-	payload, err := c.do(ctx, http.MethodPatch,
-		"/rest/v1/subscriptions?"+q.Encode(), update, "return=representation")
+// RollSubscriptionCycle は「支払いの記録」と「更新日の前進」を
+// **1 つの RPC = 1 つの DB トランザクション** で行う。
+//
+// 2 回の往復に分けると、その隙間でユーザーがサブスクを編集/解約したときに、
+// 古いスナップショットの金額で **支払いだけが台帳に残る**（更新は CAS で弾かれるが、
+// 既に入った取引は取り消せない）。RPC 側はサブスク行を FOR UPDATE で固定してから
+// スナップショットと突き合わせるので、その隙間が構造的に存在しない。
+//
+// snapshot は一覧取得時に読んだ行。**次の更新日と支払額の計算に使った値をすべて**
+// 渡し、RPC 側で突き合わせる (currency / original_amount / cycle / renewal_anchor_day)。
+// 一致しなければ「その間に人が触った」だけなので、エラーではなく applied=false。
+// 次回の cron が新しい値で拾い直す。
+//
+// renewal_anchor_day は **突合せには使うが、更新値としては送らない**:
+// DB トリガが anchor を保持する（丸めた日で上書きすると月末課金が 28 日に固定化する）。
+//
+// 二重計上は RPC 内の on conflict do nothing が弾くので、cron を再実行しても増えない。
+func (c *Client) RollSubscriptionCycle(
+	ctx context.Context, snapshot Subscription, payments []Payment, update RenewalUpdate,
+) (applied bool, err error) {
+	args := map[string]any{
+		"p_subscription_id":            snapshot.ID,
+		"p_expected_next_renewal_date": snapshot.NextRenewalDate,
+		"p_expected_currency":          snapshot.Currency,
+		"p_expected_original_amount":   snapshot.OriginalAmount,
+		"p_expected_cycle":             snapshot.Cycle,
+		"p_expected_anchor_day":        snapshot.RenewalAnchorDay,
+		"p_payments":                   payments,
+		"p_next_renewal_date":          update.NextRenewalDate,
+	}
+	// JPY に fx 系を混ぜると DB 制約に弾かれる。USD のときだけ送る。
+	if update.AmountJPY != nil {
+		args["p_amount_jpy"] = *update.AmountJPY
+	}
+	if update.FxRate != nil {
+		args["p_fx_rate"] = *update.FxRate
+	}
+	if update.FxRateDate != nil {
+		args["p_fx_rate_date"] = *update.FxRateDate
+	}
+
+	payload, err := c.do(ctx, http.MethodPost,
+		"/rest/v1/rpc/roll_subscription_cycle", args, "")
 	if err != nil {
 		return false, err
 	}
 
-	var updated []struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(payload, &updated); err != nil {
+	if err := json.Unmarshal(payload, &applied); err != nil {
 		return false, fmt.Errorf("supabase: 更新結果を解釈できませんでした: %w", err)
 	}
-	return len(updated) > 0, nil
+	return applied, nil
 }
 
 // Ping は Supabase Free の自動一時停止 (約7日アイドル) を避けるための軽い読み取り。
@@ -182,62 +216,6 @@ func (c *Client) Ping(ctx context.Context) error {
 	return err
 }
 
-// CategoryID は household 内のカテゴリ名から id を引く。
-// cron はサブスクの支払いを「サブスク」カテゴリで記録する。
-func (c *Client) CategoryID(ctx context.Context, householdID, name string) (string, error) {
-	q := url.Values{}
-	q.Set("select", "id")
-	q.Set("household_id", "eq."+householdID)
-	q.Set("name", "eq."+name)
-	q.Set("limit", "1")
-
-	payload, err := c.do(ctx, http.MethodGet, "/rest/v1/categories?"+q.Encode(), nil, "")
-	if err != nil {
-		return "", err
-	}
-	var rows []struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(payload, &rows); err != nil {
-		return "", fmt.Errorf("supabase: カテゴリを解釈できませんでした: %w", err)
-	}
-	if len(rows) == 0 {
-		return "", fmt.Errorf("supabase: カテゴリ %q が見つかりません", name)
-	}
-	return rows[0].ID, nil
-}
-
-// SubscriptionPayment はサブスクの支払い 1 件（= 支出取引）。
-type SubscriptionPayment struct {
-	HouseholdID    string `json:"household_id"`
-	OwnerMemberID  string `json:"owner_member_id"`
-	Type           string `json:"type"`
-	Amount         int    `json:"amount"`
-	CategoryID     string `json:"category_id"`
-	Memo           string `json:"memo"`
-	OccurredOn     string `json:"occurred_on"`
-	SubscriptionID string `json:"subscription_id"`
-}
-
-// RecordSubscriptionPayment はサブスクの支払いを支出として台帳に記録する。
-//
-// **二重計上は DB が弾く**（unique(subscription_id, occurred_on) の部分インデックス）。
-// cron は再実行されうるし、複数期ぶん遅れて追いつくこともあるので、
-// アプリのロジックで「記録済みか」を判定するのではなく、
-// **重複エラー(23505)を「すでに記録済み」として正常扱いする**。
-//
-// is_system_generated は付けない。残高調整と違い、これは **実際の支出** であり、
-// カテゴリ別グラフ・月次収支・目標貯金の判定に **含めるべき** もの。
-func (c *Client) RecordSubscriptionPayment(ctx context.Context, p SubscriptionPayment) (recorded bool, err error) {
-	payload, err := c.do(ctx, http.MethodPost, "/rest/v1/transactions",
-		[]SubscriptionPayment{p}, "return=minimal")
-	if err == nil {
-		return true, nil
-	}
-	// PostgREST は unique 違反を 409 + code 23505 で返す
-	if strings.Contains(err.Error(), "23505") || strings.Contains(err.Error(), "409") {
-		return false, nil
-	}
-	_ = payload
-	return false, err
-}
+// カテゴリの解決は RPC (roll_subscription_cycle) の中で行う。
+// クライアント側で名前だけ引くと、同名の収入カテゴリを掴んで
+// 支出を収入カテゴリで記録してしまう（categories は household×kind×name で一意）。

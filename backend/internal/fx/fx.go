@@ -47,8 +47,23 @@ type latestResponse struct {
 
 // FetchUSDJPY は最新の USD/JPY を取得する。
 func (c *Client) FetchUSDJPY(ctx context.Context) (Rate, error) {
-	url := c.BaseURL + "/v1/latest?base=USD&symbols=JPY"
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	return c.fetch(ctx, "/v1/latest?base=USD&symbols=JPY")
+}
+
+// FetchUSDJPYOn は指定日の USD/JPY を取得する。
+//
+// cron が数ヶ月止まっていた場合、その間に到来した更新日ぶんの支払いは
+// **その日のレート** で記録しないと月次収支が狂う（5月の支払いを7月のレートで
+// 記録することになる）。fx_rates にキャッシュが無い日はここで取りに行く。
+//
+// date は YYYY-MM-DD。休日を指定すると API は前営業日の基準日を返すので、
+// 返ってきた Date をそのまま保存する。
+func (c *Client) FetchUSDJPYOn(ctx context.Context, date string) (Rate, error) {
+	return c.fetch(ctx, "/v1/"+date+"?base=USD&symbols=JPY")
+}
+
+func (c *Client) fetch(ctx context.Context, path string) (Rate, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+path, nil)
 	if err != nil {
 		return Rate{}, fmt.Errorf("fx: リクエストを作れませんでした: %w", err)
 	}

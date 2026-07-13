@@ -81,6 +81,48 @@ func TestFetchUSDJPY_Errors(t *testing.T) {
 	}
 }
 
+// cron が数ヶ月止まっていた場合、その間の更新日ぶんの支払いは
+// **その日のレート** で記録しなければならない（今日のレートで丸めると月次収支が狂う）。
+func TestFetchUSDJPYOn(t *testing.T) {
+	t.Parallel()
+
+	c := clientFor(t, func(w http.ResponseWriter, r *http.Request) {
+		// frankfurter は /v1/<date> で過去の基準日レートを返す
+		if r.URL.Path != "/v1/2026-05-10" {
+			t.Errorf("path = %q, want /v1/2026-05-10", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("base"); got != "USD" {
+			t.Errorf("base = %q, want USD", got)
+		}
+		_, _ = w.Write([]byte(`{"base":"USD","date":"2026-05-08","rates":{"JPY":142.5}}`))
+	})
+
+	rate, err := c.FetchUSDJPYOn(context.Background(), "2026-05-10")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rate.Rate != 142.5 {
+		t.Errorf("Rate = %v, want 142.5", rate.Rate)
+	}
+	// 5/10 が休日なら前営業日 (5/8) が返る。API の基準日をそのまま保存する。
+	if rate.Date != "2026-05-08" {
+		t.Errorf("Date = %q, want 2026-05-08", rate.Date)
+	}
+}
+
+// 履歴レートも検証は同じ（0/負/JPY 欠落を通してはいけない）
+func TestFetchUSDJPYOn_Errors(t *testing.T) {
+	t.Parallel()
+
+	c := clientFor(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"date":"2026-05-08","rates":{"JPY":0}}`))
+	})
+
+	if _, err := c.FetchUSDJPYOn(context.Background(), "2026-05-10"); err == nil {
+		t.Fatal("不正なレートはエラーになるべき")
+	}
+}
+
 func TestFetchUSDJPY_ContextCancel(t *testing.T) {
 	t.Parallel()
 

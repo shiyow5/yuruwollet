@@ -16,24 +16,23 @@ import (
 // FXFetcher は為替取得。
 type FXFetcher interface {
 	FetchUSDJPY(ctx context.Context) (fx.Rate, error)
+	// FetchUSDJPYOn は過去の指定日のレートを取得する。
+	// cron が止まっていた期間の支払いを、その日のレートで確定するために使う。
+	FetchUSDJPYOn(ctx context.Context, date string) (fx.Rate, error)
 }
 
 // Store は Supabase 側の操作。
 type Store interface {
 	UpsertFXRate(ctx context.Context, date string, rate float64) error
 	ListDueSubscriptions(ctx context.Context, today string) ([]supabase.Subscription, error)
-	// UpdateSubscriptionRenewal は snapshot と一致する行だけを更新する (CAS)。
-	// 一致しなければ applied=false（その間に人が触ったので、次回の cron で拾う）。
-	UpdateSubscriptionRenewal(
-		ctx context.Context, snapshot supabase.Subscription, update supabase.RenewalUpdate,
+	// FXRateOn は date 以前で最も新しいキャッシュ済みレートを返す。
+	FXRateOn(ctx context.Context, date string) (rate float64, rateDate string, found bool, err error)
+	// RollSubscriptionCycle は支払いの記録と更新日の前進を 1 トランザクションで行う。
+	// 一覧取得から呼出までの間に人が編集していたら applied=false（次回の cron で拾う）。
+	RollSubscriptionCycle(
+		ctx context.Context, snapshot supabase.Subscription,
+		payments []supabase.Payment, update supabase.RenewalUpdate,
 	) (applied bool, err error)
-	// CategoryID は household 内のカテゴリ名から id を引く。
-	CategoryID(ctx context.Context, householdID, name string) (string, error)
-	// RecordSubscriptionPayment はサブスクの支払いを支出として記録する。
-	// 既に記録済み（DB の unique 制約）なら recorded=false を返し、エラーにしない。
-	RecordSubscriptionPayment(
-		ctx context.Context, payment supabase.SubscriptionPayment,
-	) (recorded bool, err error)
 	Ping(ctx context.Context) error
 }
 
@@ -86,19 +85,21 @@ func (j *Job) Run(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// SubscriptionCategory は cron がサブスクの支払いを記録するカテゴリ名。
-const SubscriptionCategory = "サブスク"
+// 支払いを記録するカテゴリ（kind=expense の「サブスク」）は RPC 側で解決する。
+// クライアントが名前だけで引くと、同名の収入カテゴリを掴んで
+// 支出を収入カテゴリで記録してしまう（categories は household×kind×name で一意）。
+
+const dateLayout = "2006-01-02"
 
 // rollSubscriptions は更新日が到来したサブスクについて、
-// **支払いを台帳に記録してから** 更新日を次の周期へ進める。
+// 到来したぶんの支払いを台帳に記録し、更新日を次の周期へ進める。
 //
-// 順序が重要: 先に更新日を進めてしまうと、記録に失敗したときにその支払いが
-// **永久に失われる**（次回の cron からは「到来済み」に見えなくなるため）。
-// 逆順なら、記録できて更新に失敗しても、次回 cron が同じ日を再記録しようとして
-// DB の unique 制約が「記録済み」と教えてくれる（冪等）。
-func (j *Job) rollSubscriptions(ctx context.Context, rate *fx.Rate) error {
+// 記録と前進は **1 つの RPC = 1 トランザクション** で行う（RollSubscriptionCycle）。
+// 別々の往復にすると、その隙間でユーザーが編集/解約したときに、
+// 古い金額の支払いだけが台帳に残る。
+func (j *Job) rollSubscriptions(ctx context.Context, latest *fx.Rate) error {
 	today := j.Today()
-	subs, err := j.Store.ListDueSubscriptions(ctx, today.Format("2006-01-02"))
+	subs, err := j.Store.ListDueSubscriptions(ctx, today.Format(dateLayout))
 	if err != nil {
 		return err
 	}
@@ -106,54 +107,32 @@ func (j *Job) rollSubscriptions(ctx context.Context, rate *fx.Rate) error {
 		return nil
 	}
 
+	// 同じ日のレートを何度も引かない (1 回の cron 内でのみ有効)
+	rates := map[string]fx.Rate{}
+	if latest != nil {
+		rates[today.Format(dateLayout)] = *latest
+	}
+
 	var errs []error
-	categoryCache := map[string]string{}
-
 	for _, sub := range subs {
-		p := j.planUpdate(sub, rate, today)
-		if p.skip {
+		// 為替 API が落ちている日は USD を確定させない。
+		// 古い概算のまま台帳に刻むと、あとから直せない。次に取れる日まで待つ。
+		if sub.Currency == "USD" && latest == nil {
 			continue
 		}
 
-		categoryID, ok := categoryCache[sub.HouseholdID]
-		if !ok {
-			categoryID, err = j.Store.CategoryID(ctx, sub.HouseholdID, SubscriptionCategory)
-			if err != nil {
-				errs = append(errs, fmt.Errorf("%s: カテゴリ取得: %w", sub.ID, err))
-				continue
-			}
-			categoryCache[sub.HouseholdID] = categoryID
+		payments, update, err := j.planCycle(ctx, sub, today, rates)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", sub.ID, err))
+			continue // 更新日を進めない。次回の cron でやり直す
 		}
-
-		// 到来した更新日ぶんの支払いをすべて記録する。
-		// cron が数ヶ月止まっていたなら、その回数ぶん実際に課金されている。
-		failed := false
-		for _, dueDate := range p.due {
-			_, err := j.Store.RecordSubscriptionPayment(ctx, supabase.SubscriptionPayment{
-				HouseholdID:    sub.HouseholdID,
-				OwnerMemberID:  sub.OwnerMemberID,
-				Type:           "expense",
-				Amount:         p.amount,
-				CategoryID:     categoryID,
-				Memo:           sub.Name,
-				OccurredOn:     dueDate.Format("2006-01-02"),
-				SubscriptionID: sub.ID,
-			})
-			if err != nil {
-				errs = append(errs, fmt.Errorf("%s (%s): 支払いの記録: %w",
-					sub.ID, dueDate.Format("2006-01-02"), err))
-				failed = true
-				break
-			}
-		}
-		// 記録できていない支払いがあるなら更新日を進めない（次回 cron でやり直す）
-		if failed {
+		if len(payments) == 0 {
 			continue
 		}
 
-		// 一覧取得から更新までの間に人が編集していたら applied=false。
+		// 一覧取得から呼出までの間に人が編集していたら applied=false。
 		// 古いスナップショットで巻き戻さず、次回の cron で拾えば良いのでエラーにしない。
-		if _, err := j.Store.UpdateSubscriptionRenewal(ctx, sub, p.update); err != nil {
+		if _, err := j.Store.RollSubscriptionCycle(ctx, sub, payments, update); err != nil {
 			// 1 件の失敗で残りを諦めない
 			errs = append(errs, fmt.Errorf("%s: %w", sub.ID, err))
 		}
@@ -161,44 +140,108 @@ func (j *Job) rollSubscriptions(ctx context.Context, rate *fx.Rate) error {
 	return errors.Join(errs...)
 }
 
-// plan は 1 件ぶんの処理内容。skip=true なら触らない。
-type plan struct {
-	update supabase.RenewalUpdate
-	// due は到来した更新日（= 実際に発生した支払い）。cron が止まっていた期間ぶんも含む。
-	due []time.Time
-	// amount は 1 回ぶんの支払額（円）。
-	amount int
-	skip   bool
-}
-
-// planUpdate は 1 件ぶんの処理内容を決める。
-func (j *Job) planUpdate(sub supabase.Subscription, rate *fx.Rate, today time.Time) plan {
-	current, err := time.ParseInLocation("2006-01-02", sub.NextRenewalDate, jst)
+// planCycle は 1 件ぶんの「記録すべき支払い」と「書き戻す値」を決める。
+// payments が空なら、まだ更新日が来ていない（何もしない）。
+func (j *Job) planCycle(
+	ctx context.Context, sub supabase.Subscription, today time.Time, rates map[string]fx.Rate,
+) ([]supabase.Payment, supabase.RenewalUpdate, error) {
+	current, err := time.ParseInLocation(dateLayout, sub.NextRenewalDate, jst)
 	if err != nil {
-		return plan{skip: true}
-	}
-
-	// USD は更新日が来て初めて実レートで確定する。レートが無い日に進めてしまうと、
-	// 古い概算のまま「確定した」ことになってしまうので、次に取れる日まで待つ。
-	if sub.Currency == "USD" && rate == nil {
-		return plan{skip: true}
+		// 日付が壊れている行は触らない (人が直すまで放置する方が安全)
+		return nil, supabase.RenewalUpdate{}, nil
 	}
 
 	next, due := renewal.RollForward(current, renewal.Cycle(sub.Cycle), sub.RenewalAnchorDay, today)
 	if len(due) == 0 {
-		return plan{skip: true}
+		return nil, supabase.RenewalUpdate{}, nil
 	}
 
-	update := supabase.RenewalUpdate{NextRenewalDate: next.Format("2006-01-02")}
-	amount := sub.AmountJPY
+	update := supabase.RenewalUpdate{NextRenewalDate: next.Format(dateLayout)}
 
-	if sub.Currency == "USD" && rate != nil {
-		// 概算 → 実額。更新日に到来した時点のレートで確定させる。
-		amount = int(math.Round(sub.OriginalAmount * rate.Rate))
-		update.AmountJPY = &amount
-		update.FxRate = &rate.Rate
-		update.FxRateDate = &rate.Date
+	if sub.Currency != "USD" {
+		payments := make([]supabase.Payment, 0, len(due))
+		for _, d := range due {
+			payments = append(payments, supabase.Payment{
+				OccurredOn: d.Format(dateLayout),
+				Amount:     sub.AmountJPY,
+			})
+		}
+		return payments, update, nil
 	}
 
-	return plan{update: update, due: due, amount: amount}
+	// USD は更新日が来て初めて実レートで確定する。
+	// **各支払いを、その支払日のレートで確定する。** cron が数ヶ月止まっていた場合に
+	// 全期を今日のレートで記録すると、過去の月次収支が実際と食い違う。
+	payments := make([]supabase.Payment, 0, len(due))
+	var last fx.Rate
+	for _, d := range due {
+		rate, err := j.rateOn(ctx, d.Format(dateLayout), rates)
+		if err != nil {
+			// レートが取れない期があるなら 1 件も進めない。
+			// 古い概算のまま「確定した」ことにしてしまう方が有害。
+			return nil, supabase.RenewalUpdate{}, fmt.Errorf("%s のレート: %w", d.Format(dateLayout), err)
+		}
+		payments = append(payments, supabase.Payment{
+			OccurredOn: d.Format(dateLayout),
+			Amount:     int(math.Round(sub.OriginalAmount * rate.Rate)),
+		})
+		last = rate
+	}
+
+	// サブスクに書き戻すのは **最後に到来した更新日** のレート（＝以後の表示に使う概算）
+	amount := payments[len(payments)-1].Amount
+	update.AmountJPY = &amount
+	update.FxRate = &last.Rate
+	update.FxRateDate = &last.Date
+
+	return payments, update, nil
+}
+
+// maxRateStaleness はキャッシュ済みレートを「その日のレート」として使える上限。
+//
+// 為替市場は週末・祝日に閉まるので、更新日ちょうどの行が fx_rates に無いことは普通にある
+// (日曜の課金 → 金曜のレート)。一方、cron が数ヶ月止まっていた場合の「その日以前の直近」は
+// **1 ヶ月前のレート** になりうる。それはその日のレートではない。
+// 数日のズレは許し、それを超えたら履歴 API を取りに行く。
+const maxRateStaleness = 7 * 24 * time.Hour
+
+// rateOn は date 時点の USD/JPY を返す。
+// キャッシュ (fx_rates) → 履歴 API の順に探し、取れたものは fx_rates に保存する。
+func (j *Job) rateOn(ctx context.Context, date string, rates map[string]fx.Rate) (fx.Rate, error) {
+	if r, ok := rates[date]; ok {
+		return r, nil
+	}
+
+	rate, rateDate, found, err := j.Store.FXRateOn(ctx, date)
+	if err == nil && found && freshEnough(rateDate, date) {
+		r := fx.Rate{Date: rateDate, Rate: rate}
+		rates[date] = r
+		return r, nil
+	}
+
+	// cron が止まっていた期間はキャッシュにも無い。履歴レートを取りに行く。
+	r, fetchErr := j.FX.FetchUSDJPYOn(ctx, date)
+	if fetchErr != nil {
+		return fx.Rate{}, errors.Join(err, fetchErr)
+	}
+	// 保存できないレートは信用しない（既存の方針と同じ）
+	if err := j.Store.UpsertFXRate(ctx, r.Date, r.Rate); err != nil {
+		return fx.Rate{}, err
+	}
+
+	rates[date] = r
+	return r, nil
+}
+
+// freshEnough は rateDate のレートを want 日のレートとして使ってよいか。
+func freshEnough(rateDate, want string) bool {
+	got, err := time.ParseInLocation(dateLayout, rateDate, jst)
+	if err != nil {
+		return false
+	}
+	target, err := time.ParseInLocation(dateLayout, want, jst)
+	if err != nil {
+		return false
+	}
+	return target.Sub(got) <= maxRateStaleness
 }

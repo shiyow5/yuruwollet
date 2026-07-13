@@ -361,6 +361,21 @@ describe('LedgerPage 統合', () => {
     expect(screen.getAllByRole('button', { name: '削除' })).toHaveLength(1);
   });
 
+  // cron が作ったサブスクの支払いは is_system_generated=false（実支出なので集計に含める）。
+  // 一方、更新日は既に進んでいるので、消されても二度と復活しない。DB 側で削除・更新とも
+  // 拒否しているため、ボタンを出すと「押せるのに何も起きない」ことになる。
+  it('サブスク由来の支払い行は編集/削除ボタンを出さない', async () => {
+    state.rows = [
+      row({ id: 'seed-1', memo: '通常', is_system_generated: false }),
+      row({ id: 'sub-1', memo: 'Netflix', subscription_id: 'sub-uuid' }),
+    ];
+    renderLedger();
+    expect(await screen.findByText('Netflix')).toBeInTheDocument();
+    expect(screen.getByText('通常')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: '編集' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: '削除' })).toHaveLength(1);
+  });
+
   it('過去/未来月で追加する際、日付が選択中の月の初日に既定される', async () => {
     renderLedger();
     await screen.findByRole('button', { name: '収支を追加' });

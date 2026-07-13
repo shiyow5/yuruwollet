@@ -18,8 +18,11 @@ export function TransactionItem({ txn, categories, onEdit, onDelete, now }: Prop
   const title = txn.memo.trim() !== '' ? txn.memo : name;
   const isIncome = txn.type === 'income';
   const pending = isOptimisticId(txn.id);
-  // 残高調整(is_system_generated)は RLS で更新/削除不可のため操作ボタンを出さない
-  const actionable = !pending && !txn.is_system_generated;
+  // 操作ボタンを出さない行:
+  //   - 残高調整 (is_system_generated): RLS で更新/削除不可
+  //   - サブスクの支払い (subscription_id): cron が作った実支出。更新日は既に進んでいるので
+  //     消されると二度と復活しない。DB 側でも更新はトリガ、削除は RLS が拒否する
+  const actionable = !pending && !txn.is_system_generated && txn.subscription_id === null;
 
   return (
     <div className="flex items-center justify-between gap-4">

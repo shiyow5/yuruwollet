@@ -42,11 +42,25 @@ export function subscribeToTable(
   // 引数なし = accessToken コールバック方式（毎回フレッシュな JWT を取りに行く）
   const reauth = () => client.realtime.setAuth();
 
+  /**
+   * 定期再認証。/api/session やネットワークが一時的に落ちると setAuth() は reject する。
+   * 握り潰すと unhandled rejection になる上、**購読は「接続中」に見えたまま認証だけ腐る**。
+   * 失敗は必ず表に出す。
+   */
+  const refreshAuth = async () => {
+    try {
+      await reauth();
+    } catch {
+      if (!disposed) onStatus('error');
+    }
+  };
+
   void (async () => {
     try {
       await reauth();
     } catch {
       // 認証に失敗しても購読は試みる（サーバ側で弾かれれば onStatus('error') になる）
+      if (!disposed) onStatus('error');
     }
     if (disposed) return;
 
@@ -74,7 +88,7 @@ export function subscribeToTable(
       });
   })();
 
-  const timer = setInterval(() => void reauth(), REALTIME_AUTH_REFRESH_MS);
+  const timer = setInterval(() => void refreshAuth(), REALTIME_AUTH_REFRESH_MS);
 
   return () => {
     disposed = true;

@@ -118,6 +118,47 @@ describe('subscribeToTable', () => {
     expect(REALTIME_AUTH_REFRESH_MS).toBeLessThan(45 * 60 * 1000);
   });
 
+  // 握り潰すと unhandled rejection になる上、購読は「接続中」に見えたまま認証だけ腐る
+  it('定期再認証が失敗したら error 状態にする（黙って腐らせない）', async () => {
+    const rt = makeRealtimeMock();
+    const onStatus = vi.fn();
+    subscribeToTable(rt.client, {
+      table: 'wishlist_items',
+      householdId: 'main',
+      onChange: vi.fn(),
+      onStatus,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    rt.emitStatus('SUBSCRIBED');
+    expect(onStatus).toHaveBeenLastCalledWith('connected');
+
+    // /api/session が落ちて setAuth が reject する
+    (
+      rt.client.realtime.setAuth as unknown as { mockRejectedValueOnce: (e: Error) => void }
+    ).mockRejectedValueOnce(new Error('session down'));
+    await vi.advanceTimersByTimeAsync(REALTIME_AUTH_REFRESH_MS);
+
+    expect(onStatus).toHaveBeenLastCalledWith('error');
+  });
+
+  it('初回の認証に失敗しても error 状態にする', async () => {
+    const rt = makeRealtimeMock();
+    const onStatus = vi.fn();
+    (
+      rt.client.realtime.setAuth as unknown as { mockRejectedValueOnce: (e: Error) => void }
+    ).mockRejectedValueOnce(new Error('session down'));
+
+    subscribeToTable(rt.client, {
+      table: 'wishlist_items',
+      householdId: 'main',
+      onChange: vi.fn(),
+      onStatus,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(onStatus).toHaveBeenCalledWith('error');
+  });
+
   it('変更イベントで onChange を呼ぶ', async () => {
     const rt = makeRealtimeMock();
     const onChange = vi.fn();

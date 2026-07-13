@@ -62,40 +62,57 @@ func TestRollForward(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name       string
-		current    string
-		cycle      Cycle
-		anchor     int
-		today      string
-		want       string
-		wantRolled bool
+		name    string
+		current string
+		cycle   Cycle
+		anchor  int
+		today   string
+		want    string
+		// wantDue は到来した更新日（= 実際に発生した支払い）。
+		// cron が止まっていた期間ぶんは、すべて記録しなければならない。
+		wantDue []string
 	}{
-		{"未来の更新日は進めない", "2026-08-10", Monthly, 10, "2026-07-13", "2026-08-10", false},
+		{"未来の更新日は進めない", "2026-08-10", Monthly, 10, "2026-07-13", "2026-08-10", nil},
 
 		// 更新日「当日」は到来済みとして進める
-		{"当日は進める", "2026-07-13", Monthly, 13, "2026-07-13", "2026-08-13", true},
+		{"当日は進める", "2026-07-13", Monthly, 13, "2026-07-13", "2026-08-13", []string{"2026-07-13"}},
 
-		{"1 期ぶん遅れ", "2026-06-10", Monthly, 10, "2026-07-13", "2026-08-10", true},
+		{"1 期ぶん遅れ", "2026-06-10", Monthly, 10, "2026-07-13", "2026-08-10", []string{"2026-06-10", "2026-07-10"}},
 
-		// Worker が数ヶ月止まっていても 1 回で追いつく
-		{"複数期ぶん遅れをまとめて進める", "2026-01-10", Monthly, 10, "2026-07-13", "2026-08-10", true},
+		// Worker が数ヶ月止まっていた場合、その期間の支払いは **すべて実際に発生している**。
+		// 1 回にまとめてはいけない。
+		{"複数期ぶん遅れは到来日をすべて返す", "2026-05-10", Monthly, 10, "2026-07-13", "2026-08-10",
+			[]string{"2026-05-10", "2026-06-10", "2026-07-10"}},
 
-		{"yearly の遅れ", "2024-03-01", Yearly, 1, "2026-07-13", "2027-03-01", true},
+		{"yearly の遅れ", "2024-03-01", Yearly, 1, "2026-07-13", "2027-03-01",
+			[]string{"2024-03-01", "2025-03-01", "2026-03-01"}},
 
 		// 複数期またぐ間に短い月を通っても、本来の課金日を失わない
-		{"1/31 から 4 月まで遅れても 31 日に戻る", "2026-01-31", Monthly, 31, "2026-03-15", "2026-03-31", true},
+		{"1/31 から 3 月まで遅れても 31 日に戻る", "2026-01-31", Monthly, 31, "2026-03-15", "2026-03-31",
+			[]string{"2026-01-31", "2026-02-28"}},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			next, rolled := RollForward(d(tc.current), tc.cycle, tc.anchor, d(tc.today))
+			next, due := RollForward(d(tc.current), tc.cycle, tc.anchor, d(tc.today))
 			if next.Format("2006-01-02") != tc.want {
 				t.Errorf("next = %s, want %s", next.Format("2006-01-02"), tc.want)
 			}
-			if rolled != tc.wantRolled {
-				t.Errorf("rolled = %v, want %v", rolled, tc.wantRolled)
+
+			got := make([]string, len(due))
+			for i, x := range due {
+				got[i] = x.Format("2006-01-02")
 			}
+			if len(got) != len(tc.wantDue) {
+				t.Fatalf("due = %v, want %v", got, tc.wantDue)
+			}
+			for i := range got {
+				if got[i] != tc.wantDue[i] {
+					t.Errorf("due[%d] = %s, want %s", i, got[i], tc.wantDue[i])
+				}
+			}
+
 			if !next.After(d(tc.today)) {
 				t.Errorf("next (%s) は today (%s) より後でなければならない", next.Format("2006-01-02"), tc.today)
 			}

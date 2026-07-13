@@ -6,7 +6,7 @@
 
 | 層 | 技術 | 役割 |
 |---|---|---|
-| フロント | Vite + React 19 + TS + Tailwind v4 | SPA（Cloudflare Pages, `yuruwollet.shiyow.dev`） |
+| フロント | Vite + React 19 + TS + Tailwind v4 | SPA（Cloudflare Pages, `yuruwollet.pages.dev`） |
 | 認証エッジ | TS Pages Functions（`frontend/functions/api/`） | Access JWT 検証 → 短命 Supabase JWT 発行（`jose` + Web Crypto） |
 | 定期処理 | Go Cron Worker（`syumai/workers`, WASM） | 日次為替 / サブスク更新日ロール / keep-alive |
 | データ | Supabase Postgres（RLS / RPC / View） + Realtime | CRUD・集計・原子的更新・共有ウィッシュの Realtime |
@@ -14,7 +14,7 @@
 
 ## 認証フロー
 
-1. Cloudflare Access が `yuruwollet.shiyow.dev` を 2 メールに限定（外側ゲート）。
+1. Cloudflare Access が `yuruwollet.pages.dev` を 2 メールに限定（外側ゲート）。
 2. ブラウザが同一オリジンの `GET /api/session` を叩く → Access が `Cf-Access-Jwt-Assertion` を注入。
 3. Pages Function が Access JWT を検証（JWKS / aud / iss / exp）→ email を `member`(yururi/shiyowo)+`household` に写像 → **短命 Supabase JWT** を発行（`role:authenticated`, `household_id`, `member_id`）。
 4. ブラウザは supabase-js を発行 JWT で使い、CRUD・集計・Realtime を **Supabase に直接**。RLS が `auth.jwt()->>'household_id'` で認可。

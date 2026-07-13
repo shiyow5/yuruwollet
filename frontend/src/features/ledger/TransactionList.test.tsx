@@ -28,6 +28,7 @@ const txn: Transaction = {
   memo: 'スーパー',
   occurred_on: '2026-07-10',
   is_system_generated: false,
+  subscription_id: null,
   created_at: '2026-07-10T05:30:00Z',
   updated_at: '2026-07-10T05:30:00Z',
 };

@@ -60,13 +60,16 @@ func Next(current time.Time, cycle Cycle, anchor int) time.Time {
 // RollForward は next_renewal_date が today 以前なら、today より後になるまで進める。
 //
 // 何期ぶん遅れていても 1 回の実行で追いつく (Worker が数日止まっていた場合に備える)。
-// 進める必要が無ければ current をそのまま返し、rolled=false とする。
-func RollForward(current time.Time, cycle Cycle, anchor int, today time.Time) (next time.Time, rolled bool) {
+// 進める必要が無ければ current をそのまま返し、due は空。
+//
+// due には **到来した更新日をすべて** 返す。Worker が 3 ヶ月止まっていたなら、
+// その 3 回ぶんの支払いは実際に発生しているので、1 回にまとめてはいけない。
+func RollForward(current time.Time, cycle Cycle, anchor int, today time.Time) (next time.Time, due []time.Time) {
 	next = current
 	// 更新日「当日」も到来済みとして進める (その日のうちに次の周期へ移す)
 	for !next.After(today) {
+		due = append(due, next)
 		next = Next(next, cycle, anchor)
-		rolled = true
 	}
-	return next, rolled
+	return next, due
 }

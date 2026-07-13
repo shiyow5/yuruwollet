@@ -367,6 +367,7 @@ export type Database = {
           memo: string
           occurred_on: string
           owner_member_id: string
+          subscription_id: string | null
           type: Database["public"]["Enums"]["txn_type"]
           updated_at: string
         }
@@ -380,6 +381,7 @@ export type Database = {
           memo?: string
           occurred_on: string
           owner_member_id: string
+          subscription_id?: string | null
           type: Database["public"]["Enums"]["txn_type"]
           updated_at?: string
         }
@@ -393,6 +395,7 @@ export type Database = {
           memo?: string
           occurred_on?: string
           owner_member_id?: string
+          subscription_id?: string | null
           type?: Database["public"]["Enums"]["txn_type"]
           updated_at?: string
         }
@@ -424,6 +427,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "v_member_balances"
             referencedColumns: ["member_id"]
+          },
+          {
+            foreignKeyName: "transactions_subscription_id_fkey"
+            columns: ["subscription_id"]
+            isOneToOne: false
+            referencedRelation: "subscriptions"
+            referencedColumns: ["id"]
           },
         ]
       }

@@ -39,6 +39,8 @@ describe('makeOptimisticTransaction', () => {
       id: 'optimistic-1',
       household_id: 'main',
       owner_member_id: 'yururi',
+      // ユーザーの手入力はサブスク由来ではない（サブスクの支払いは cron だけが作る）
+      subscription_id: null,
       type: 'expense',
       amount: 4500,
       category_id: 'c1',

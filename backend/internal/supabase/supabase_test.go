@@ -221,3 +221,96 @@ func TestUpdateSubscriptionRenewal_CASMiss(t *testing.T) {
 		t.Error("applied = true, want false")
 	}
 }
+
+func TestCategoryID(t *testing.T) {
+	t.Parallel()
+
+	var cap captured
+	c := serverFor(t, http.StatusOK, `[{"id":"cat-1"}]`, &cap)
+
+	id, err := c.CategoryID(context.Background(), "main", "サブスク")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != "cat-1" {
+		t.Errorf("id = %q, want cat-1", id)
+	}
+	if !strings.Contains(cap.Query, "household_id=eq.main") {
+		t.Errorf("household で絞っていない: %q", cap.Query)
+	}
+}
+
+func TestCategoryID_NotFound(t *testing.T) {
+	t.Parallel()
+
+	var cap captured
+	c := serverFor(t, http.StatusOK, `[]`, &cap)
+
+	// カテゴリが無いまま支払いを記録すると category_id なしの取引が生まれる。
+	// 黙って続けず、エラーにする。
+	if _, err := c.CategoryID(context.Background(), "main", "サブスク"); err == nil {
+		t.Fatal("カテゴリが無ければエラーになるべき")
+	}
+}
+
+func TestRecordSubscriptionPayment(t *testing.T) {
+	t.Parallel()
+
+	var cap captured
+	c := serverFor(t, http.StatusCreated, ``, &cap)
+
+	recorded, err := c.RecordSubscriptionPayment(context.Background(), SubscriptionPayment{
+		HouseholdID: "main", OwnerMemberID: "yururi", Type: "expense",
+		Amount: 1490, CategoryID: "cat-1", Memo: "Netflix",
+		OccurredOn: "2026-07-10", SubscriptionID: "s1",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !recorded {
+		t.Error("recorded = false, want true")
+	}
+	if cap.Method != http.MethodPost || cap.Path != "/rest/v1/transactions" {
+		t.Errorf("%s %s", cap.Method, cap.Path)
+	}
+	// サブスクの支払いは **実際の支出**。残高調整と違い、集計に含めるべきもの。
+	if strings.Contains(cap.Body, "is_system_generated") {
+		t.Errorf("is_system_generated を付けてはいけない: %s", cap.Body)
+	}
+	for _, want := range []string{`"subscription_id":"s1"`, `"occurred_on":"2026-07-10"`, `"amount":1490`} {
+		if !strings.Contains(cap.Body, want) {
+			t.Errorf("body に %s が無い: %s", want, cap.Body)
+		}
+	}
+}
+
+// **二重計上は DB が弾く。** cron は再実行されうるし、複数期ぶん遅れて追いつくこともある。
+// unique 違反(23505) は「すでに記録済み」であってエラーではない。
+func TestRecordSubscriptionPayment_Duplicate(t *testing.T) {
+	t.Parallel()
+
+	var cap captured
+	c := serverFor(t, http.StatusConflict,
+		`{"code":"23505","message":"duplicate key value violates unique constraint"}`, &cap)
+
+	recorded, err := c.RecordSubscriptionPayment(context.Background(), SubscriptionPayment{
+		SubscriptionID: "s1", OccurredOn: "2026-07-10",
+	})
+	if err != nil {
+		t.Fatalf("重複はエラーにしない: %v", err)
+	}
+	if recorded {
+		t.Error("recorded = true, want false（既に記録済み）")
+	}
+}
+
+func TestRecordSubscriptionPayment_OtherErrorIsReported(t *testing.T) {
+	t.Parallel()
+
+	var cap captured
+	c := serverFor(t, http.StatusUnauthorized, `{"message":"invalid key"}`, &cap)
+
+	if _, err := c.RecordSubscriptionPayment(context.Background(), SubscriptionPayment{}); err == nil {
+		t.Fatal("重複以外の失敗はエラーにするべき")
+	}
+}

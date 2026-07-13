@@ -34,14 +34,44 @@ type fakeStore struct {
 	casSnapshots map[string]supabase.Subscription
 	// raced[id] = true なら、その行は CAS に一致せず更新されない（人が編集した体）。
 	raced map[string]bool
+
+	// 記録された支払い（"subID:YYYY-MM-DD" → 金額）
+	payments   map[string]int
+	paymentErr error
+	// alreadyRecorded[key] = true なら DB の unique 制約に弾かれた体（recorded=false）
+	alreadyRecorded map[string]bool
+	categoryErr     error
 }
 
 func newStore() *fakeStore {
 	return &fakeStore{
-		updates:      map[string]supabase.RenewalUpdate{},
-		casSnapshots: map[string]supabase.Subscription{},
-		raced:        map[string]bool{},
+		updates:         map[string]supabase.RenewalUpdate{},
+		casSnapshots:    map[string]supabase.Subscription{},
+		raced:           map[string]bool{},
+		payments:        map[string]int{},
+		alreadyRecorded: map[string]bool{},
 	}
+}
+
+func (s *fakeStore) CategoryID(_ context.Context, _, name string) (string, error) {
+	if s.categoryErr != nil {
+		return "", s.categoryErr
+	}
+	return "cat-" + name, nil
+}
+
+func (s *fakeStore) RecordSubscriptionPayment(
+	_ context.Context, p supabase.SubscriptionPayment,
+) (bool, error) {
+	if s.paymentErr != nil {
+		return false, s.paymentErr
+	}
+	key := p.SubscriptionID + ":" + p.OccurredOn
+	if s.alreadyRecorded[key] {
+		return false, nil // DB の unique 制約が弾いた = 記録済み
+	}
+	s.payments[key] = p.Amount
+	return true, nil
 }
 
 func (s *fakeStore) UpsertFXRate(_ context.Context, date string, _ float64) error {
@@ -311,6 +341,132 @@ func TestRun_PassesFullSnapshotAsCASKey(t *testing.T) {
 	}
 	if got := store.casSnapshots["s1"]; got != sub {
 		t.Errorf("CAS スナップショット = %+v, want %+v", got, sub)
+	}
+}
+
+// サブスクは実際の支出。台帳に記録されないと残高がズレ続け、
+// 24日の壁が毎月「ズレています」と言い、残高調整でカテゴリ情報が失われる。
+func TestRun_RecordsSubscriptionPayment(t *testing.T) {
+	t.Parallel()
+
+	store := newStore()
+	store.subs = []supabase.Subscription{
+		{ID: "s1", HouseholdID: "main", OwnerMemberID: "yururi", Name: "Netflix",
+			Currency: "JPY", AmountJPY: 1490, Cycle: "monthly",
+			NextRenewalDate: "2026-07-10", RenewalAnchorDay: 10},
+	}
+	f := &fakeFX{rate: fx.Rate{Date: "2026-07-13", Rate: 150}}
+	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
+
+	if err := j.Run(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := store.payments["s1:2026-07-10"]; got != 1490 {
+		t.Errorf("支払いが記録されていない: payments = %v", store.payments)
+	}
+	if got := store.updates["s1"].NextRenewalDate; got != "2026-08-10" {
+		t.Errorf("更新日も進めるべき: %s", got)
+	}
+}
+
+// cron が数ヶ月止まっていたら、その期間ぶんの支払いは **すべて実際に発生している**。
+// 1 回にまとめてはいけない。
+func TestRun_RecordsEveryMissedPayment(t *testing.T) {
+	t.Parallel()
+
+	store := newStore()
+	store.subs = []supabase.Subscription{
+		{ID: "s1", HouseholdID: "main", OwnerMemberID: "yururi", Name: "Netflix",
+			Currency: "JPY", AmountJPY: 1490, Cycle: "monthly",
+			NextRenewalDate: "2026-05-10", RenewalAnchorDay: 10},
+	}
+	f := &fakeFX{rate: fx.Rate{Date: "2026-07-13", Rate: 150}}
+	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
+
+	if err := j.Run(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	for _, day := range []string{"2026-05-10", "2026-06-10", "2026-07-10"} {
+		if store.payments["s1:"+day] != 1490 {
+			t.Errorf("%s ぶんの支払いが記録されていない: %v", day, store.payments)
+		}
+	}
+	if len(store.payments) != 3 {
+		t.Errorf("支払いは 3 件のはず: %v", store.payments)
+	}
+}
+
+// 再実行しても支払いが増えない（DB の unique 制約が弾く）。
+func TestRun_AlreadyRecorded_IsNotAnError(t *testing.T) {
+	t.Parallel()
+
+	store := newStore()
+	store.alreadyRecorded["s1:2026-07-10"] = true // 前回の cron で記録済み
+	store.subs = []supabase.Subscription{
+		{ID: "s1", HouseholdID: "main", OwnerMemberID: "yururi", Name: "Netflix",
+			Currency: "JPY", AmountJPY: 1490, Cycle: "monthly",
+			NextRenewalDate: "2026-07-10", RenewalAnchorDay: 10},
+	}
+	f := &fakeFX{rate: fx.Rate{Date: "2026-07-13", Rate: 150}}
+	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
+
+	if err := j.Run(context.Background()); err != nil {
+		t.Fatalf("記録済みはエラーにしない: %v", err)
+	}
+	if len(store.payments) != 0 {
+		t.Errorf("二重に記録してはいけない: %v", store.payments)
+	}
+	// 記録済みなら更新日は進める（でないと永久に進まない）
+	if got := store.updates["s1"].NextRenewalDate; got != "2026-08-10" {
+		t.Errorf("更新日は進めるべき: %q", got)
+	}
+}
+
+// **順序が重要**: 先に更新日を進めると、記録に失敗した支払いが永久に失われる
+// （次回の cron からは「到来済み」に見えなくなるため）。
+func TestRun_PaymentFails_DoesNotAdvanceRenewalDate(t *testing.T) {
+	t.Parallel()
+
+	store := newStore()
+	store.paymentErr = errors.New("db down")
+	store.subs = []supabase.Subscription{
+		{ID: "s1", HouseholdID: "main", OwnerMemberID: "yururi", Name: "Netflix",
+			Currency: "JPY", AmountJPY: 1490, Cycle: "monthly",
+			NextRenewalDate: "2026-07-10", RenewalAnchorDay: 10},
+	}
+	f := &fakeFX{rate: fx.Rate{Date: "2026-07-13", Rate: 150}}
+	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
+
+	err := j.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "支払いの記録") {
+		t.Fatalf("支払いの記録失敗が報告されるべき: %v", err)
+	}
+	if _, advanced := store.updates["s1"]; advanced {
+		t.Error("記録できていない支払いがあるなら更新日を進めてはいけない（支払いが失われる）")
+	}
+}
+
+// USD は更新日に到来した時点の実レートで確定した額を記録する
+func TestRun_RecordsUSDPaymentAtActualRate(t *testing.T) {
+	t.Parallel()
+
+	store := newStore()
+	store.subs = []supabase.Subscription{
+		{ID: "u1", HouseholdID: "main", OwnerMemberID: "shiyowo", Name: "ChatGPT",
+			Currency: "USD", OriginalAmount: 20, AmountJPY: 3000, Cycle: "monthly",
+			NextRenewalDate: "2026-07-13", RenewalAnchorDay: 13},
+	}
+	f := &fakeFX{rate: fx.Rate{Date: "2026-07-13", Rate: 151.5}}
+	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
+
+	if err := j.Run(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 概算 (3000) ではなく実額 round(20 * 151.5) = 3030
+	if got := store.payments["u1:2026-07-13"]; got != 3030 {
+		t.Errorf("支払額 = %d, want 3030（実レートで確定した額）", got)
 	}
 }
 

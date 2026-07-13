@@ -30,6 +30,8 @@ export function makeOptimisticTransaction(
     id: ctx.id,
     household_id: ctx.householdId,
     owner_member_id: ctx.ownerMemberId,
+    // ユーザーの手入力はサブスク由来ではない（サブスクの支払いは cron だけが作る）
+    subscription_id: null,
     type: draft.type,
     amount: draft.amount,
     category_id: draft.categoryId,

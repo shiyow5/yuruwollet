@@ -19,6 +19,7 @@ function txn(over: Partial<Transaction> = {}): Transaction {
     memo: 'スーパー',
     occurred_on: '2026-07-13',
     is_system_generated: false,
+    subscription_id: null,
     created_at: '2026-07-13T05:30:00Z',
     updated_at: '2026-07-13T05:30:00Z',
     ...over,

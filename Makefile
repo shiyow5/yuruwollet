@@ -80,14 +80,29 @@ build-backend: ## Go Worker を WASM ビルド (gzip サイズも表示)
 		printf 'WASM gzip: %s bytes (無料枠上限 3145728)\n' "$$(gzip -c ./build/app.wasm | wc -c)"
 
 # ---- Deploy (手動 / CI) ---------------------------------------------------
-.PHONY: deploy deploy-frontend deploy-backend
+.PHONY: deploy deploy-frontend deploy-backend check-worker-secrets
 deploy: deploy-frontend deploy-backend ## 本番デプロイ
 
 deploy-frontend: build-frontend ## Cloudflare Pages へデプロイ
 	cd frontend && npx wrangler pages deploy dist
 
-deploy-backend: build-backend ## Go Cron Worker をデプロイ
+deploy-backend: check-worker-secrets build-backend ## Go Cron Worker をデプロイ
 	cd backend && npx wrangler deploy
+
+check-worker-secrets: ## cron に必要な secret が登録済みか確認する
+	@cd backend && \
+	MISSING=""; \
+	LIST="$$(npx wrangler secret list 2>/dev/null || echo '[]')"; \
+	for name in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY; do \
+		echo "$$LIST" | grep -q "\"$$name\"" || MISSING="$$MISSING $$name"; \
+	done; \
+	if [ -n "$$MISSING" ]; then \
+		echo "cron に必要な secret が未登録です:$$MISSING"; \
+		echo "登録してから再実行してください:"; \
+		for name in $$MISSING; do echo "  cd backend && npx wrangler secret put $$name"; done; \
+		exit 1; \
+	fi; \
+	echo "worker secrets OK"
 
 # ---- Clean ----------------------------------------------------------------
 .PHONY: clean

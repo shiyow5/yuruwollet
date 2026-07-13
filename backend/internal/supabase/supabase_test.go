@@ -107,7 +107,11 @@ func TestUpdateSubscriptionRenewal(t *testing.T) {
 	amount := 3030
 	rate := 151.5
 	date := "2026-07-13"
-	applied, err := c.UpdateSubscriptionRenewal(context.Background(), "s1", "2026-07-13", RenewalUpdate{
+	snapshot := Subscription{
+		ID: "s1", Currency: "USD", OriginalAmount: 20, Cycle: "monthly",
+		NextRenewalDate: "2026-07-13", RenewalAnchorDay: 13,
+	}
+	applied, err := c.UpdateSubscriptionRenewal(context.Background(), snapshot, RenewalUpdate{
 		NextRenewalDate: "2026-08-13",
 		AmountJPY:       &amount,
 		FxRate:          &rate,
@@ -123,10 +127,18 @@ func TestUpdateSubscriptionRenewal(t *testing.T) {
 	if cap.Method != http.MethodPatch || !strings.Contains(cap.Query, "id=eq.s1") {
 		t.Errorf("%s ?%s", cap.Method, cap.Query)
 	}
-	// CAS: 一覧取得時に読んだ更新日と一致する行だけを更新する。
-	// id だけで更新すると、その間にユーザーが編集した課金日を巻き戻してしまう。
-	if !strings.Contains(cap.Query, "next_renewal_date=eq.2026-07-13") {
-		t.Errorf("CAS 条件が無い: %q", cap.Query)
+	// CAS: 次の更新日と amount_jpy の計算に使った値をすべて条件に入れる。
+	// 更新日だけを見ていると、金額や周期だけ編集された行を古い値で上書きしてしまう。
+	for _, want := range []string{
+		"next_renewal_date=eq.2026-07-13",
+		"currency=eq.USD",
+		"cycle=eq.monthly",
+		"original_amount=eq.20",
+		"renewal_anchor_day=eq.13",
+	} {
+		if !strings.Contains(cap.Query, want) {
+			t.Errorf("CAS 条件 %q が無い: %q", want, cap.Query)
+		}
 	}
 	// anchor は送らない (送ると丸めた日で上書きされ、月末課金が 28 日に固定化する)
 	if strings.Contains(cap.Body, "renewal_anchor_day") {
@@ -144,7 +156,11 @@ func TestUpdateSubscriptionRenewal_JPY_OmitsFX(t *testing.T) {
 	var cap captured
 	c := serverFor(t, http.StatusOK, `[{"id":"s1"}]`, &cap)
 
-	if _, err := c.UpdateSubscriptionRenewal(context.Background(), "s1", "2026-07-10",
+	snapshot := Subscription{
+		ID: "s1", Currency: "JPY", OriginalAmount: 1490, Cycle: "monthly",
+		NextRenewalDate: "2026-07-10", RenewalAnchorDay: 10,
+	}
+	if _, err := c.UpdateSubscriptionRenewal(context.Background(), snapshot,
 		RenewalUpdate{NextRenewalDate: "2026-08-10"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -194,7 +210,9 @@ func TestUpdateSubscriptionRenewal_CASMiss(t *testing.T) {
 	var cap captured
 	c := serverFor(t, http.StatusOK, `[]`, &cap)
 
-	applied, err := c.UpdateSubscriptionRenewal(context.Background(), "s1", "2026-07-13",
+	applied, err := c.UpdateSubscriptionRenewal(context.Background(),
+		Subscription{ID: "s1", Currency: "JPY", Cycle: "monthly",
+			NextRenewalDate: "2026-07-13", RenewalAnchorDay: 13},
 		RenewalUpdate{NextRenewalDate: "2026-08-13"})
 	if err != nil {
 		t.Fatalf("CAS 不一致はエラーにしない: %v", err)

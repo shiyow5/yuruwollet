@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 )
 
@@ -117,24 +118,39 @@ type RenewalUpdate struct {
 
 // UpdateSubscriptionRenewal は 1 件のサブスクを次の更新日へ進める。
 //
-// expectedDate は一覧取得時に読んだ next_renewal_date。**その値のままの行だけを更新する** (CAS)。
-// 一覧取得から PATCH までの間にユーザーが更新日を編集/解約すると、id だけで更新すると
-// **cron が古いスナップショットからの計算でユーザーの編集を巻き戻してしまう**
-// (例: 課金日を 7/13 → 12/31 に変えた直後に cron が 8/13 へ戻す)。
+// snapshot は一覧取得時に読んだ行。**その内容のままの行だけを更新する** (CAS)。
+//
+// 一覧取得から PATCH までの間にユーザーがサブスクを編集/解約すると、id だけで更新すると
+// **cron が古いスナップショットからの計算でユーザーの編集を巻き戻してしまう**。
+// 更新日だけでなく、**次の更新日と amount_jpy の計算に使った値をすべて** 条件に入れる
+// (currency / original_amount / cycle / renewal_anchor_day)。
+// 例えば課金日を変えずに金額や周期だけ編集された場合も、古い値で上書きしてはいけない。
 //
 // 一致する行が無ければ「その間に人が触った」だけなので、次回の cron で拾えば良い。
 // エラーではなく applied=false を返す。
 //
-// renewal_anchor_day は送らない: service_role の更新では DB トリガが anchor を保持する
+// renewal_anchor_day は **条件には入れるが、更新値としては送らない**:
+// service_role の更新では DB トリガが anchor を保持する
 // (丸めた日で上書きすると、月末課金が 28 日に固定化してしまう)。
 func (c *Client) UpdateSubscriptionRenewal(
-	ctx context.Context, id, expectedDate string, update RenewalUpdate,
+	ctx context.Context, snapshot Subscription, update RenewalUpdate,
 ) (applied bool, err error) {
 	q := url.Values{}
-	q.Set("id", "eq."+id)
-	q.Set("next_renewal_date", "eq."+expectedDate)
+	q.Set("id", "eq."+snapshot.ID)
+	q.Set("next_renewal_date", "eq."+snapshot.NextRenewalDate)
+	q.Set("currency", "eq."+snapshot.Currency)
+	q.Set("cycle", "eq."+snapshot.Cycle)
+	q.Set("original_amount", "eq."+strconv.FormatFloat(snapshot.OriginalAmount, 'f', -1, 64))
 	// 解約検討中に変えられた行も進めない
 	q.Set("status", "in.(active,trial)")
+
+	// anchor はトリガが埋めるが、万一 null の行は null のままであることを条件にする
+	if snapshot.RenewalAnchorDay > 0 {
+		q.Set("renewal_anchor_day", "eq."+strconv.Itoa(snapshot.RenewalAnchorDay))
+	} else {
+		q.Set("renewal_anchor_day", "is.null")
+	}
+
 	q.Set("select", "id")
 
 	payload, err := c.do(ctx, http.MethodPatch,

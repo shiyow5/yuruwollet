@@ -22,10 +22,10 @@ type FXFetcher interface {
 type Store interface {
 	UpsertFXRate(ctx context.Context, date string, rate float64) error
 	ListDueSubscriptions(ctx context.Context, today string) ([]supabase.Subscription, error)
-	// UpdateSubscriptionRenewal は expectedDate と一致する行だけを更新する (CAS)。
+	// UpdateSubscriptionRenewal は snapshot と一致する行だけを更新する (CAS)。
 	// 一致しなければ applied=false（その間に人が触ったので、次回の cron で拾う）。
 	UpdateSubscriptionRenewal(
-		ctx context.Context, id, expectedDate string, update supabase.RenewalUpdate,
+		ctx context.Context, snapshot supabase.Subscription, update supabase.RenewalUpdate,
 	) (applied bool, err error)
 	Ping(ctx context.Context) error
 }
@@ -95,7 +95,7 @@ func (j *Job) rollSubscriptions(ctx context.Context, rate *fx.Rate) error {
 		}
 		// 一覧取得から更新までの間に人が編集していたら applied=false。
 		// 古いスナップショットで巻き戻さず、次回の cron で拾えば良いのでエラーにしない。
-		if _, err := j.Store.UpdateSubscriptionRenewal(ctx, sub.ID, sub.NextRenewalDate, update); err != nil {
+		if _, err := j.Store.UpdateSubscriptionRenewal(ctx, sub, update); err != nil {
 			// 1 件の失敗で残りを諦めない
 			errs = append(errs, fmt.Errorf("%s: %w", sub.ID, err))
 		}

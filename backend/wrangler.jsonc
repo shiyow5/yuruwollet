@@ -15,8 +15,11 @@
   "triggers": {
     "crons": ["0 15 * * *"],
   },
-  "vars": {
-    "SUPABASE_URL": "",
-  },
-  // secrets は `wrangler secret put` で: SUPABASE_SERVICE_ROLE_KEY / (FX_API_KEY は frankfurter.dev のため不要)
+  // vars に SUPABASE_URL を空文字で置かない。
+  // 空の var は同名の secret を上書きしてしまい、cron が「未設定」で毎回失敗する。
+  // 環境ごとの値なのでコミットもできない。**デプロイ前に secret として登録する**:
+  //   wrangler secret put SUPABASE_URL
+  //   wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+  // 未登録のまま動かすと cron は成功扱いにせず失敗として報告する (main.go のガード)。
+  // 為替 API (frankfurter.dev) は keyless なのでキー不要。
 }

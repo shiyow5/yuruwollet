@@ -30,17 +30,17 @@ type fakeStore struct {
 	updates  map[string]supabase.RenewalUpdate
 	pinged   int
 	listedAt string
-	// expectedDates は CAS に渡された「一覧取得時の更新日」。
-	expectedDates map[string]string
+	// casSnapshots は CAS に渡された「一覧取得時の行」。
+	casSnapshots map[string]supabase.Subscription
 	// raced[id] = true なら、その行は CAS に一致せず更新されない（人が編集した体）。
 	raced map[string]bool
 }
 
 func newStore() *fakeStore {
 	return &fakeStore{
-		updates:       map[string]supabase.RenewalUpdate{},
-		expectedDates: map[string]string{},
-		raced:         map[string]bool{},
+		updates:      map[string]supabase.RenewalUpdate{},
+		casSnapshots: map[string]supabase.Subscription{},
+		raced:        map[string]bool{},
 	}
 }
 
@@ -58,17 +58,17 @@ func (s *fakeStore) ListDueSubscriptions(_ context.Context, today string) ([]sup
 }
 
 func (s *fakeStore) UpdateSubscriptionRenewal(
-	_ context.Context, id, expectedDate string, u supabase.RenewalUpdate,
+	_ context.Context, snapshot supabase.Subscription, u supabase.RenewalUpdate,
 ) (bool, error) {
 	if s.updateErr != nil {
 		return false, s.updateErr
 	}
-	s.expectedDates[id] = expectedDate
+	s.casSnapshots[snapshot.ID] = snapshot
 	// CAS: 一覧取得後に人が編集した行は更新されない
-	if s.raced[id] {
+	if s.raced[snapshot.ID] {
 		return false, nil
 	}
-	s.updates[id] = u
+	s.updates[snapshot.ID] = u
 	return true, nil
 }
 
@@ -291,22 +291,26 @@ func TestRun_UserEditedInBetween_DoesNotClobber(t *testing.T) {
 	}
 }
 
-// CAS には「一覧取得時に読んだ更新日」を渡す
-func TestRun_PassesReadDateAsCASKey(t *testing.T) {
+// CAS には「一覧取得時に読んだ行そのもの」を渡す。
+// 次の更新日と amount_jpy の計算には currency/original_amount/cycle/anchor も使うため、
+// 更新日だけを条件にすると、金額や周期だけ編集された行を古い値で上書きしてしまう。
+func TestRun_PassesFullSnapshotAsCASKey(t *testing.T) {
 	t.Parallel()
 
-	store := newStore()
-	store.subs = []supabase.Subscription{
-		{ID: "s1", Currency: "JPY", Cycle: "monthly", NextRenewalDate: "2026-07-10", RenewalAnchorDay: 10},
+	sub := supabase.Subscription{
+		ID: "s1", Currency: "USD", OriginalAmount: 20, Cycle: "monthly",
+		NextRenewalDate: "2026-07-10", RenewalAnchorDay: 10,
 	}
+	store := newStore()
+	store.subs = []supabase.Subscription{sub}
 	f := &fakeFX{rate: fx.Rate{Date: "2026-07-13", Rate: 150}}
 	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
 
 	if err := j.Run(context.Background()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got := store.expectedDates["s1"]; got != "2026-07-10" {
-		t.Errorf("CAS キー = %q, want 2026-07-10 (一覧取得時の更新日)", got)
+	if got := store.casSnapshots["s1"]; got != sub {
+		t.Errorf("CAS スナップショット = %+v, want %+v", got, sub)
 	}
 }
 

@@ -10,7 +10,16 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
     <!-- iOS の「ホーム画面に追加」。iOS は manifest の icons を見ない -->
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="manifest" href="/site.webmanifest" />
+    <!--
+      crossorigin="use-credentials" が必須。
+      Cloudflare Access が全パスをゲートしているので、クッキーの無いリクエストは
+      ログイン画面へ 302 される。そして manifest の取得は **既定でクッキーを送らない**
+      （HTML 仕様の CORS settings attribute: crossorigin を省略すると credentials は omit）。
+      これが無いと、ログイン済みでも manifest だけ 302 を食らって読み込めず、
+      「ホーム画面に追加」でアプリ名もアイコンもテーマ色も効かない。
+      favicon と apple-touch-icon は <img> 相当で same-origin のクッキーが載るので影響しない。
+    -->
+    <link rel="manifest" href="/site.webmanifest" crossorigin="use-credentials" />
     <meta name="theme-color" content="#769cbf" />
 
     <title>yuruwollet</title>

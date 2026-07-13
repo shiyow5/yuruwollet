@@ -8,7 +8,13 @@ import type { Checkpoint } from '../../lib/wall/types';
 
 vi.mock('../../lib/supabase', () => ({ supabase: {} }));
 
-const state = vi.hoisted(() => ({ checkpoint: null as Checkpoint | null, balance: 45000 }));
+const state = vi.hoisted(() => ({
+  checkpoint: null as Checkpoint | null,
+  balance: 45000,
+  balanceFails: false,
+  balanceHold: null as Promise<void> | null,
+  confirmHold: null as Promise<void> | null,
+}));
 
 function cp(over: Partial<Checkpoint>): Checkpoint {
   return {
@@ -44,6 +50,7 @@ vi.mock('../../lib/data/checkpoints', () => ({
     };
   }),
   confirmCheckpoint: vi.fn(async (_c: unknown, actual: number) => {
+    if (state.confirmHold) await state.confirmHold;
     state.checkpoint = {
       id: 'cp1',
       household_id: 'main',
@@ -61,9 +68,13 @@ vi.mock('../../lib/data/checkpoints', () => ({
 }));
 
 vi.mock('../../lib/data/aggregates', () => ({
-  getMemberBalances: vi.fn(async () => [
-    { household_id: 'main', member_id: 'yururi', display_name: 'ゆるり', balance: state.balance },
-  ]),
+  getMemberBalances: vi.fn(async () => {
+    if (state.balanceHold) await state.balanceHold;
+    if (state.balanceFails) throw new Error('balance fetch failed');
+    return [
+      { household_id: 'main', member_id: 'yururi', display_name: 'ゆるり', balance: state.balance },
+    ];
+  }),
   listProfiles: vi.fn(async () => []),
   getMonthlySummary: vi.fn(async () => null),
   getCategoryBreakdown: vi.fn(async () => []),
@@ -106,6 +117,9 @@ describe('BalanceWall 統合', () => {
   beforeEach(() => {
     state.checkpoint = null;
     state.balance = 45000;
+    state.balanceFails = false;
+    state.balanceHold = null;
+    state.confirmHold = null;
     vi.clearAllMocks();
   });
 
@@ -231,6 +245,53 @@ describe('BalanceWall 統合', () => {
     expect(await screen.findByText('明日は給料日！')).toBeInTheDocument();
     expect(screen.queryByText(/ズレています/)).toBeNull();
     expect(screen.queryByRole('button', { name: 'はい' })).toBeNull();
+  });
+
+  it('残高の再取得に失敗したら（古いキャッシュが残っていても）確定せずエラー', async () => {
+    renderWall();
+    await screen.findByText('明日は給料日！'); // 45000 をキャッシュ
+    state.balanceFails = true; // 以降の refetch は失敗（data には古い 45000 が残る）
+
+    fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '45000' } });
+    fireEvent.click(screen.getByRole('button', { name: '決定' }));
+
+    // 決定時のフィールドエラー（残高取得失敗のバナーとは別に出る）
+    expect(await screen.findByText(/時間をおいて再度お試しください/)).toBeInTheDocument();
+    expect(confirmCheckpoint).not.toHaveBeenCalled();
+  });
+
+  it('決定の残高確認中は「後で数える」を押せない（確定と競合させない）', async () => {
+    renderWall();
+    await screen.findByText('明日は給料日！');
+    let release!: () => void;
+    state.balanceHold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '50000' } });
+    fireEvent.click(screen.getByRole('button', { name: '決定' }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '後で数える' })).toBeDisabled());
+    release();
+    await screen.findByText(/ズレています/);
+    expect(skipCheckpoint).not.toHaveBeenCalled();
+  });
+
+  it('確定中は「いいえ」で取り消せない（RPC は止まらない）', async () => {
+    renderWall();
+    fireEvent.change(await screen.findByPlaceholderText('0'), { target: { value: '50000' } });
+    fireEvent.click(screen.getByRole('button', { name: '決定' }));
+    await screen.findByText(/ズレています/);
+
+    let release!: () => void;
+    state.confirmHold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'はい' }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'いいえ' })).toBeDisabled());
+    release();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it('確定に失敗したらエラーを表示する', async () => {

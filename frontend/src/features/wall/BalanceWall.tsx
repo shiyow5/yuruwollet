@@ -39,8 +39,9 @@ export function BalanceWall({ now = getNow() }: Props) {
   const ready = selfId !== '' && !cpLoading && !balLoading;
   if (!ready || cpError || !shouldShowWall(now, checkpoint ?? null)) return null;
 
-  // 可視のときだけマウント → 閉じるたびに入力/確認 state が初期化される
-  return <WallDialog selfId={selfId} month={month} />;
+  // 可視のときだけマウントし、月が変わったら key で作り直す
+  // → 閉じたとき・月をまたいだときに入力/確認 state が必ず初期化される
+  return <WallDialog key={month} selfId={selfId} month={month} />;
 }
 
 function WallDialog({ selfId, month }: { selfId: string; month: string }) {
@@ -66,7 +67,9 @@ function WallDialog({ selfId, month }: { selfId: string; month: string }) {
     // （古い残高のまま「差額0」と誤判定して確認なしに調整が入るのを防ぐ）
     const fresh = await refetch();
     setChecking(false);
-    const latest = fresh.data ? selectBalance(fresh.data, selfId) : null;
+    // 再取得が失敗した場合、fresh.data には「前回成功時の古い残高」が残る。
+    // それで差額を計算すると stale 判定になるため、必ずエラーとして扱う。
+    const latest = fresh.isError || !fresh.data ? null : selectBalance(fresh.data, selfId);
     if (latest == null) {
       setError('現在の残高を取得できませんでした。時間をおいて再度お試しください。');
       return;
@@ -131,15 +134,16 @@ function WallDialog({ selfId, month }: { selfId: string; month: string }) {
           )}
 
           <div className="flex gap-3 pt-1">
+            {/* 決定の残高再取得中にスキップされると、確定と競合するため両方を排他にする */}
             <Button
               variant="secondary"
               fullWidth
-              disabled={skip.isPending}
+              disabled={skip.isPending || busy}
               onClick={() => skip.mutate(month)}
             >
               {skip.isPending ? '保存中…' : '後で数える'}
             </Button>
-            <Button fullWidth disabled={busy} onClick={handleDecide}>
+            <Button fullWidth disabled={busy || skip.isPending} onClick={handleDecide}>
               {busy ? '確認中…' : '決定'}
             </Button>
           </div>
@@ -174,9 +178,11 @@ function WallDialog({ selfId, month }: { selfId: string; month: string }) {
           )}
 
           <div className="flex gap-3 pt-1">
+            {/* 確定中に「いいえ」でキャンセルできるように見せない（RPC は止められない） */}
             <Button
               variant="secondary"
               fullWidth
+              disabled={confirm.isPending}
               onClick={() => {
                 setStep('input');
                 setPending(null);

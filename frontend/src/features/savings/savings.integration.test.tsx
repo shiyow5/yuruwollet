@@ -70,21 +70,25 @@ vi.mock('../../lib/data/aggregates', () => ({
   getCategoryBreakdown: vi.fn(async () => []),
 }));
 
-const authedSession: SessionState = {
-  status: 'authenticated',
-  session: {
-    supabaseJwt: 'jwt',
-    expiresAt: 9999999999,
-    member: { id: 'yururi', displayName: 'ゆるり' },
-    householdId: 'main',
-  },
-};
+function session(avatarUrl?: string): SessionState {
+  return {
+    status: 'authenticated',
+    session: {
+      supabaseJwt: 'jwt',
+      expiresAt: 9999999999,
+      member: { id: 'yururi', displayName: 'ゆるり', avatarUrl },
+      householdId: 'main',
+    },
+  };
+}
 
-function renderPage() {
+const authedSession = session();
+
+function renderPage(state: SessionState = authedSession) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <SessionContext.Provider value={authedSession}>
+      <SessionContext.Provider value={state}>
         <MyPage />
       </SessionContext.Provider>
     </QueryClientProvider>,
@@ -219,6 +223,23 @@ describe('MyPage 統合（目標貯金 + プロフィール）', () => {
     const email = await screen.findByText('yururi@example.com');
     const card = email.closest('div')!.parentElement!;
     expect(within(card).getByText('ゆるり')).toBeInTheDocument();
+  });
+
+  // TopAppBar にはアバターを出したのに、マイページには src を渡し忘れていた
+  // （頭文字しか出ない）。**渡し忘れは静かに壊れる**ので回帰で守る。
+  it('プロフィールに Google のプロフィール画像を出す', async () => {
+    const { container } = renderPage(session('https://lh3.googleusercontent.com/a/x'));
+    await screen.findByText('初期残高');
+    const img = container.querySelector('img');
+    expect(img).not.toBeNull();
+    expect(img).toHaveAttribute('src', 'https://lh3.googleusercontent.com/a/x');
+  });
+
+  it('画像が無ければ頭文字にフォールバックする（picture は best-effort）', async () => {
+    const { container } = renderPage(session());
+    await screen.findByText('初期残高');
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByText('ゆ')).toBeInTheDocument();
   });
 
   it('初期残高を更新できる', async () => {

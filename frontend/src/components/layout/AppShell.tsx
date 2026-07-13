@@ -8,7 +8,10 @@ export function AppShell() {
   const session = useSessionContext();
 
   return (
-    <div className="min-h-dvh bg-custom-bg pb-24 md:pb-0">
+    // ボトムナビの高さ + セーフエリアぶん、コンテンツの下に余白を空ける。
+    // 空けないと最後のカードがナビに隠れる。
+    // env() は該当しない端末では 0 なので、PC の見た目は変わらない。
+    <div className="min-h-dvh bg-custom-bg pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-0">
       <TopAppBar />
       {session.status === 'error' && (
         <div

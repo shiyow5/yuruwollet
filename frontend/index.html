@@ -2,7 +2,9 @@
 <html lang="ja">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover が無いと iOS では env(safe-area-inset-*) が常に 0 になり、
+         画面下端のセーフエリア（ホームインジケータ・画面の丸み）を避けられない -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="light" />
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />

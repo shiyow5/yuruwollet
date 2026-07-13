@@ -3,6 +3,7 @@ import { Avatar, Button, Card, Input, Skeleton } from '../../components/ui';
 import { formatYen } from '../../lib/format';
 import { validateOpeningBalance } from '../../lib/savings/schema';
 import { useProfiles, useMemberBalances } from '../shared/members';
+import { useSessionContext } from '../../lib/auth/session-context';
 import { selectBalance } from '../../lib/ledger/members';
 import { useUpdateOpeningBalance } from '../savings/hooks';
 
@@ -12,6 +13,7 @@ interface Props {
 
 /** プロフィール（固定名 + メール）と、初期残高の設定。 */
 export function ProfileCard({ selfId }: Props) {
+  const session = useSessionContext();
   const profiles = useProfiles();
   const balances = useMemberBalances();
   const update = useUpdateOpeningBalance();
@@ -61,7 +63,14 @@ export function ProfileCard({ selfId }: Props) {
     <Card className="flex flex-col gap-6">
       <div className="flex items-center gap-4">
         <div className="h-12 w-12 shrink-0">
-          <Avatar name={me.display_name} memberId={me.member_id} />
+          {/* 画像は **自分の分しか無い**（Access JWT の picture クレームは本人のものだけ）。
+              ProfileCard は自分のプロフィールしか出さないので、セッションのものを渡してよい。
+              画像が無ければ Avatar が頭文字にフォールバックする。 */}
+          <Avatar
+            name={me.display_name}
+            memberId={me.member_id}
+            src={session.status === 'authenticated' ? session.session.member.avatarUrl : undefined}
+          />
         </div>
         <div className="min-w-0">
           <p className="font-headline-md text-body-lg font-medium text-custom-text">

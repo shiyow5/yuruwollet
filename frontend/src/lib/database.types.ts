@@ -648,7 +648,7 @@ export type Database = {
     }
     Functions: {
       confirm_balance_checkpoint: {
-        Args: { p_actual: number }
+        Args: { p_actual: number; p_expected_computed: number }
         Returns: {
           actual: number | null
           checkpoint_month: string
@@ -668,6 +668,7 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      jst_today: { Args: never; Returns: string }
     }
     Enums: {
       category_kind: "expense" | "income" | "system"

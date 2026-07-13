@@ -45,4 +45,12 @@ describe('queryKeys', () => {
     ]);
     expect(queryKeys.fxRate()).toEqual(['fxRate']);
   });
+
+  it('checkpoint は member×月', () => {
+    expect(queryKeys.checkpoint('yururi', '2026-07-01')).toEqual([
+      'checkpoint',
+      'yururi',
+      '2026-07-01',
+    ]);
+  });
 });

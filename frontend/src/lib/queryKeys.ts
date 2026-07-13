@@ -26,4 +26,8 @@ export const queryKeys = {
   subscriptionMonthlyTotal: (memberId: string) => ['subscriptionMonthlyTotal', memberId] as const,
   /** USD/JPY 最新為替 (fx_rates) */
   fxRate: () => ['fxRate'] as const,
+  /** member×月 の残高確認 checkpoint (24日の壁) */
+  checkpoint: (memberId: string, month: string) => ['checkpoint', memberId, month] as const,
+  /** サーバが見ている JST の今日 (壁の表示ゲートの判定に使う) */
+  serverToday: () => ['serverToday'] as const,
 } as const;

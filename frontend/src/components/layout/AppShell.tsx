@@ -1,6 +1,7 @@
 import { Outlet } from 'react-router';
 import { TopAppBar } from './TopAppBar';
 import { BottomNav } from './BottomNav';
+import { BalanceWall } from '../../features/wall/BalanceWall';
 import { useSessionContext } from '../../lib/auth/session-context';
 
 export function AppShell() {
@@ -21,6 +22,8 @@ export function AppShell() {
         <Outlet />
       </main>
       <BottomNav />
+      {/* 毎月24日の残高確認の壁（条件を満たすときだけ全画面ロックで出る） */}
+      <BalanceWall />
     </div>
   );
 }

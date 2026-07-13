@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Input, Modal } from '../../components/ui';
 import { formatYen, jstMonthStart } from '../../lib/format';
 import { getNow } from '../../lib/clock';
@@ -7,6 +7,7 @@ import { selectBalance } from '../../lib/ledger/members';
 import { useMemberBalances } from '../shared/members';
 import {
   shouldShowWall,
+  msUntilNextJstDay,
   computeDiff,
   diffMessage,
   diffDirectionLabel,
@@ -24,8 +25,18 @@ interface Props {
  * JST 24日以降・当月が未確定のときだけ WallDialog をマウントする。
  * checkpoint の取得に失敗したときは**ロックしない**（確認済みの人を締め出さないため fail-open）。
  */
-export function BalanceWall({ now = getNow() }: Props) {
+export function BalanceWall({ now: injectedNow }: Props) {
   const session = useSessionContext();
+  // SPA を開いたまま JST の日付が変わっても壁が出るよう、日付境界で再評価する
+  const [clock, setClock] = useState<Date>(() => injectedNow ?? getNow());
+  const now = injectedNow ?? clock;
+
+  useEffect(() => {
+    if (injectedNow) return; // 注入クロック（テスト/E2E）はタイマー不要
+    const timer = setTimeout(() => setClock(getNow()), msUntilNextJstDay(clock) + 1000);
+    return () => clearTimeout(timer);
+  }, [injectedNow, clock]);
+
   const selfId = session.status === 'authenticated' ? session.session.member.id : '';
   const month = jstMonthStart(now);
 
@@ -34,10 +45,12 @@ export function BalanceWall({ now = getNow() }: Props) {
     isLoading: cpLoading,
     isError: cpError,
   } = useCurrentCheckpoint(selfId, month);
-  const { isLoading: balLoading } = useMemberBalances();
 
-  const ready = selfId !== '' && !cpLoading && !balLoading;
-  if (!ready || cpError || !shouldShowWall(now, checkpoint ?? null)) return null;
+  // 残高の読み込みは待たない（遅い/ハングした残高取得でロックが効かなくなるのを防ぐ）。
+  // 差額判定は WallDialog 側で必ず最新残高を取り直して行う。
+  if (selfId === '' || cpLoading || cpError || !shouldShowWall(now, checkpoint ?? null)) {
+    return null;
+  }
 
   // 可視のときだけマウントし、月が変わったら key で作り直す
   // → 閉じたとき・月をまたいだときに入力/確認 state が必ず初期化される

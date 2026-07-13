@@ -26,6 +26,16 @@ export function shouldShowWall(now: Date, checkpoint: Checkpoint | null): boolea
   return skippedOn < today;
 }
 
+/**
+ * 次の JST 日付境界（翌日 00:00 JST）までのミリ秒。
+ * SPA を開いたまま 23日→24日 をまたいだときに壁を出すため、この時刻に再評価する。
+ */
+export function msUntilNextJstDay(now: Date): number {
+  const todayJstMidnight = new Date(`${jstToday(now)}T00:00:00+09:00`).getTime();
+  const nextJstMidnight = todayJstMidnight + 86_400_000;
+  return Math.max(1000, nextJstMidnight - now.getTime());
+}
+
 /** 実際の残高 − アプリの計算残高。 */
 export function computeDiff(actual: number, computed: number): number {
   return actual - computed;

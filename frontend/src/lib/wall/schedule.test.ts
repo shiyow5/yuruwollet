@@ -3,6 +3,7 @@ import {
   WALL_DAY,
   jstDayOfMonth,
   shouldShowWall,
+  msUntilNextJstDay,
   computeDiff,
   diffMessage,
   diffDirectionLabel,
@@ -65,6 +66,24 @@ describe('shouldShowWall', () => {
   it('前日以前のスキップなら再表示（25日以降も催促）', () => {
     const skippedOn24 = cp({ status: 'skipped', updated_at: '2026-07-24T01:00:00Z' });
     expect(shouldShowWall(on26, skippedOn24)).toBe(true);
+  });
+});
+
+describe('msUntilNextJstDay', () => {
+  it('JST 翌日 00:00 までのミリ秒を返す', () => {
+    // JST 7/23 23:00 → 翌 00:00 まで 1 時間
+    const at2300 = new Date('2026-07-23T23:00:00+09:00');
+    expect(msUntilNextJstDay(at2300)).toBe(60 * 60 * 1000);
+  });
+
+  it('JST 正午なら 12 時間', () => {
+    const noon = new Date('2026-07-23T12:00:00+09:00');
+    expect(msUntilNextJstDay(noon)).toBe(12 * 60 * 60 * 1000);
+  });
+
+  it('最低 1 秒は返す（0 や負にならない）', () => {
+    const justBefore = new Date('2026-07-23T23:59:59.999+09:00');
+    expect(msUntilNextJstDay(justBefore)).toBeGreaterThanOrEqual(1000);
   });
 });
 

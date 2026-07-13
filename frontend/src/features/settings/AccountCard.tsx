@@ -56,6 +56,16 @@ export function AccountCard() {
             <p className="mt-1 text-body-md text-custom-text/60">
               次に開くときは Google でログインし直します。
             </p>
+            {/*
+              Access のログアウトは CF_Authorization を消すが、**Google のセッションは消えない**。
+              Cloudflare の Google IdP には prompt パラメータが無く（API スキーマ上、prompt は
+              Entra ID 専用）、Access 側から再認証を強制する手段が存在しない。
+              黙っていると「ログアウトしたのにすぐ入れる」と混乱するので、先に伝える。
+            */}
+            <p className="mt-2 text-label-sm text-custom-text/50">
+              ブラウザの Google のログイン状態は残ります。同じ端末では、ログインボタンを押すだけで
+              入り直せます。
+            </p>
           </div>
           <div className="flex gap-3">
             <Button variant="secondary" fullWidth onClick={() => setConfirming(false)}>

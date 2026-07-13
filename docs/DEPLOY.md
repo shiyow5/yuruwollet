@@ -289,6 +289,25 @@ VITE_SUPABASE_ANON_KEY=<anon key>
    JWT はログイン時に発行される。設定を入れても、**ログアウト → 再ログイン**するまで
    `custom` は載らない。アプリの `設定` ページからログアウトできる。
 
+#### ログアウトの挙動について（知っておくこと）
+
+アプリの `設定 → ログアウト` は Cloudflare Access のログアウト（`/cdn-cgi/access/logout`）を呼ぶ。
+これで `CF_Authorization` は**確実に消える**（Access のセッションは本当に終わる）。
+
+**しかし Google 側のログインセッションは消えない。**
+
+そのため、Access アプリの `auto_redirect_to_identity`（instant auth）が **有効**だと、
+Access は自分のログイン画面を出さずにいきなり Google へ飛ばし、
+Google が**無言で再認証して返す** → 「ログアウトしたのに、URL を叩いたら一瞬で入れた」となる。
+
+`setup_access.py` は `auto_redirect_to_identity` を **false** にしている。
+これで「Google でログイン」ボタンのある画面が挟まり、**ログアウトしたことが目に見える**。
+代償はログインのたびに 1 クリック増えること。
+
+**根治はできない。** Cloudflare の Google IdP には `prompt` パラメータが無く
+（API スキーマ上、`prompt` は Entra ID 専用）、Access 側から再認証を強制する手段が存在しない。
+共有端末で本当に守りたい場合は、ブラウザ側で Google からログアウトする必要がある。
+
 ### C-3. アプリケーションを作る
 
 1. Zero Trust → **Access → Applications → Add an application → Self-hosted**

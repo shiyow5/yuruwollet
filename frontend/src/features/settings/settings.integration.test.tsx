@@ -79,6 +79,16 @@ describe('SettingsPage', () => {
     expect(logout).not.toHaveBeenCalled();
   });
 
+  // Access のログアウトは CF_Authorization を消すが、**Google のセッションは消えない**。
+  // Cloudflare の Google IdP には prompt パラメータが無く、再認証を強制する手段が無い。
+  // 「ログアウトしたのにすぐ入れる」と混乱するので、事前に伝える。
+  it('確認ダイアログで Google のログイン状態が残ることを伝える', async () => {
+    renderSettings();
+    fireEvent.click(await screen.findByRole('button', { name: 'ログアウト' }));
+    const dialog = await screen.findByRole('dialog', { name: 'ログアウト' });
+    expect(within(dialog).getByText(/Google のログイン状態は残ります/)).toBeInTheDocument();
+  });
+
   it('確認するとログアウトする', async () => {
     renderSettings();
     fireEvent.click(await screen.findByRole('button', { name: 'ログアウト' }));

@@ -1,76 +1,118 @@
 #!/usr/bin/env python3
-"""favicon.svg と同じ形状から PNG / ICO を生成する。
-
-SVG がアイコンの唯一の定義。ここはその形状を Pillow で写して
-ラスタ版（PWA と iOS が要求する）を出す。SVG を直すときは、
-下の GEOMETRY も同じ値に直して再実行すること。
+"""favicon.svg から PNG / ICO を生成する。
 
     python3 scripts/gen-icons.py
 
-依存: Pillow のみ（ImageMagick / rsvg などの外部 SVG レンダラは使わない。
-環境によって描画結果が変わるため）。
+**favicon.svg がアイコンの唯一の定義。** この script はそれを読んで、
+PWA と iOS が要求するラスタ版を出す。形状を変えるときは SVG だけ直せばよい。
+（以前は座標をこちらにも書き写していたが、二重管理はいずれ必ずズレる）
+
+外部の SVG レンダラ（ImageMagick / rsvg / inkscape）は使わない。環境によって
+入っていたり入っていなかったり、描画結果も変わるため。SVG は素直な図形しか
+使っていないので、Pillow で直接描く。
 """
 
+import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from PIL import Image, ImageDraw
 
-PUBLIC = Path(__file__).resolve().parent.parent / "frontend" / "public"
+ROOT = Path(__file__).resolve().parent.parent
+SVG = ROOT / "frontend" / "public" / "favicon.svg"
+PUBLIC = ROOT / "frontend" / "public"
 
-BLUE = (0x76, 0x9C, 0xBF, 0xFF)
-WHITE = (0xFF, 0xFF, 0xFF, 0xFF)
-
-# favicon.svg と同じ 64 単位の座標系。
-GEOMETRY = {
-    "bg_radius": 14,
-    "body": (11, 18, 53, 47),  # x0, y0, x1, y1
-    "body_radius": 7,
-    "pocket": (33, 26, 53, 39),
-    "pocket_radius": 6.5,
-    "clasp": (43.5, 32.5, 3),  # cx, cy, r
-}
+SVG_NS = "{http://www.w3.org/2000/svg}"
 
 # 縮小前に何倍で描くか（アンチエイリアスの代わり）
 SUPERSAMPLE = 8
 
 
-def draw(size: int, *, rounded: bool, content_scale: float = 1.0) -> Image.Image:
-    """アイコンを 1 枚描く。
+def color(value: str) -> tuple[int, int, int, int]:
+    m = re.fullmatch(r"#([0-9a-fA-F]{6})", (value or "").strip())
+    if not m:
+        raise SystemExit(f"favicon.svg: 対応していない色指定です: {value!r}")
+    h = m.group(1)
+    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16), 255)
 
-    rounded=False は maskable 用（角丸は OS 側が被せるので、地は全面に敷く）。
-    content_scale は財布を中央に縮める倍率（maskable のセーフゾーン対策）。
+
+def load_shapes() -> tuple[float, list[dict]]:
+    """favicon.svg を読み、viewBox の一辺と図形のリストを返す。"""
+    root = ET.parse(SVG).getroot()
+
+    box = [float(v) for v in root.get("viewBox", "").split()]
+    if len(box) != 4 or box[0] != 0 or box[1] != 0 or box[2] != box[3]:
+        raise SystemExit(f"favicon.svg: viewBox は '0 0 N N' の正方形にしてください: {box}")
+
+    shapes: list[dict] = []
+    for el in root:
+        if el.tag == f"{SVG_NS}rect":
+            shapes.append(
+                {
+                    "kind": "rect",
+                    "x": float(el.get("x", 0)),
+                    "y": float(el.get("y", 0)),
+                    "w": float(el.get("width")),
+                    "h": float(el.get("height")),
+                    "r": float(el.get("rx", 0)),
+                    "fill": color(el.get("fill")),
+                }
+            )
+        elif el.tag == f"{SVG_NS}circle":
+            shapes.append(
+                {
+                    "kind": "circle",
+                    "cx": float(el.get("cx")),
+                    "cy": float(el.get("cy")),
+                    "r": float(el.get("r")),
+                    "fill": color(el.get("fill")),
+                }
+            )
+        else:
+            raise SystemExit(
+                f"favicon.svg: {el.tag} は描けません。rect / circle だけで作ってください"
+                "（この script は外部の SVG レンダラを使わないため）"
+            )
+
+    if not shapes:
+        raise SystemExit("favicon.svg に図形がありません")
+    return box[2], shapes
+
+
+def draw(size: int, *, rounded: bool, content_scale: float = 1.0) -> Image.Image:
+    """favicon.svg の図形を size x size に描く。
+
+    rounded=False は maskable / apple-touch 用（角丸は OS が被せるので地を全面に敷く）。
+    content_scale は 1 枚目（＝地）以外を中央基準で縮める倍率（maskable のセーフゾーン対策）。
     """
+    side, shapes = load_shapes()
     px = size * SUPERSAMPLE
-    unit = px / 64
+    unit = px / side
+    mid = side / 2
+
     img = Image.new("RGBA", (px, px), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
 
-    if rounded:
-        d.rounded_rectangle(
-            (0, 0, px - 1, px - 1), radius=GEOMETRY["bg_radius"] * unit, fill=BLUE
-        )
-    else:
-        d.rectangle((0, 0, px - 1, px - 1), fill=BLUE)
+    for i, s in enumerate(shapes):
+        background = i == 0
+        scale = 1.0 if background else content_scale
 
-    def s(v: float) -> float:
-        """64 単位の座標を、中央基準で content_scale 倍してピクセルへ。"""
-        return (32 + (v - 32) * content_scale) * unit
+        def to_px(v: float, sc: float = scale) -> float:
+            return (mid + (v - mid) * sc) * unit
 
-    def r(v: float) -> float:
-        return v * content_scale * unit
+        def length(v: float, sc: float = scale) -> float:
+            return v * sc * unit
 
-    x0, y0, x1, y1 = GEOMETRY["body"]
-    d.rounded_rectangle(
-        (s(x0), s(y0), s(x1), s(y1)), radius=r(GEOMETRY["body_radius"]), fill=WHITE
-    )
-
-    x0, y0, x1, y1 = GEOMETRY["pocket"]
-    d.rounded_rectangle(
-        (s(x0), s(y0), s(x1), s(y1)), radius=r(GEOMETRY["pocket_radius"]), fill=BLUE
-    )
-
-    cx, cy, rad = GEOMETRY["clasp"]
-    d.ellipse((s(cx) - r(rad), s(cy) - r(rad), s(cx) + r(rad), s(cy) + r(rad)), fill=WHITE)
+        if s["kind"] == "rect":
+            radius = 0 if (background and not rounded) else length(s["r"])
+            d.rounded_rectangle(
+                (to_px(s["x"]), to_px(s["y"]), to_px(s["x"] + s["w"]), to_px(s["y"] + s["h"])),
+                radius=radius,
+                fill=s["fill"],
+            )
+        else:
+            cx, cy, r = to_px(s["cx"]), to_px(s["cy"]), length(s["r"])
+            d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=s["fill"])
 
     return img.resize((size, size), Image.LANCZOS)
 
@@ -84,7 +126,7 @@ def main() -> None:
         "apple-touch-icon.png": draw(180, rounded=False).convert("RGB"),
         "icon-192.png": draw(192, rounded=True),
         "icon-512.png": draw(512, rounded=True),
-        # maskable: 地を全面に敷き、財布はセーフゾーン（中央 80% の円）に収める
+        # maskable: 地を全面に敷き、図はセーフゾーン（中央 80% の円）に収める
         "icon-maskable-512.png": draw(512, rounded=False, content_scale=0.68),
     }
     for name, img in outputs.items():

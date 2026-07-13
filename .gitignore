@@ -48,3 +48,7 @@ supabase/.temp/
 .DS_Store
 .idea/
 *.log
+
+# Python
+__pycache__/
+*.py[cod]

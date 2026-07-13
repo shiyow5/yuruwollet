@@ -26,6 +26,22 @@ function pngHasAlpha(buf: Buffer): boolean {
   return colorType === 4 || colorType === 6;
 }
 
+/**
+ * ICO に入っている画像の一辺を列挙する。
+ * ICO は PNG とは別物のコンテナ（ICONDIR + ICONDIRENTRY の配列）なので、
+ * PNG のヘッダを読むヘルパは使えない。幅・高さの 0 は 256 を意味する。
+ */
+function icoSizes(buf: Buffer): number[] {
+  expect(buf.readUInt16LE(0), 'ICO の reserved が 0 でない').toBe(0);
+  expect(buf.readUInt16LE(2), 'ICO の type が 1 (icon) でない').toBe(1);
+
+  const count = buf.readUInt16LE(4);
+  return Array.from({ length: count }, (_unused, i) => {
+    const entry = 6 + i * 16;
+    return buf.readUInt8(entry) || 256;
+  }).sort((a, b) => a - b);
+}
+
 describe('サイトアイコン', () => {
   it('index.html が favicon / apple-touch-icon / manifest / theme-color を参照する', () => {
     expect(html).toContain('rel="icon" type="image/svg+xml" href="/favicon.svg"');
@@ -58,6 +74,12 @@ describe('サイトアイコン', () => {
   // 角丸は iOS が自分で被せるので、こちらは不透明の正方形を渡す。
   it('apple-touch-icon は不透明（透過は iOS で黒い角になる）', () => {
     expect(pngHasAlpha(publicFile('apple-touch-icon.png'))).toBe(false);
+  });
+
+  // index.html は sizes="16x16 32x32 48x48" と宣言している。
+  // 実物にその 3 つが入っているかは、ICO のコンテナを読まないと分からない。
+  it('favicon.ico に 16/32/48 が入っている（index.html の宣言どおり）', () => {
+    expect(icoSizes(publicFile('favicon.ico'))).toEqual([16, 32, 48]);
   });
 
   describe('site.webmanifest', () => {

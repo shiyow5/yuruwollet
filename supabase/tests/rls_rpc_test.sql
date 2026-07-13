@@ -1,6 +1,6 @@
 -- pgTAP: RLS の cross-household 分離 + per-member 書込強制 + confirm_balance_checkpoint RPC
 begin;
-select plan(57);
+select plan(60);
 
 -- ============================================================
 -- Block A: ゆるり @ main として認証
@@ -148,6 +148,24 @@ select is(
   (select monthly_amount_jpy from public.subscriptions where household_id = 'main' and name = 'YearlyPlan'),
   1000,
   'yearly の月換算生成列 = round(amount_jpy/12)'
+);
+
+-- 本来の課金日(anchor) は挿入時に next_renewal_date の日から自動で入る
+insert into public.subscriptions
+  (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+values ('main', 'yururi', 'MonthEnd', 'JPY', 800, 800, 'monthly', date '2026-01-31', 'active');
+select is(
+  (select renewal_anchor_day from public.subscriptions where name = 'MonthEnd'),
+  31::smallint,
+  '本来の課金日は next_renewal_date の日から自動で入る'
+);
+
+-- ユーザーが課金日を変えたら anchor も追随する
+update public.subscriptions set next_renewal_date = date '2026-02-10' where name = 'MonthEnd';
+select is(
+  (select renewal_anchor_day from public.subscriptions where name = 'MonthEnd'),
+  10::smallint,
+  'ユーザーが課金日を変えたら本来の課金日も変わる'
 );
 
 -- savings_goals: 自分名義のみ書込可
@@ -390,6 +408,32 @@ select is(
   'f'::"char",
   'wishlist_items は replica identity full（DELETE の old に household_id が乗る）'
 );
+
+-- ============================================================
+-- Block E: cron (service_role) のロールフォワードは本来の課金日を壊さない
+-- ============================================================
+-- cron が丸めた日 (2/28) を anchor に付け直してしまうと、以後ずっと 28 日課金に化ける。
+-- service_role の更新では anchor を保持しなければならない。
+reset role;
+set local role service_role;
+
+-- 1/31 課金 (anchor=31) を作り、cron が 2/28 へ丸めて進めた体で更新する
+insert into public.subscriptions
+  (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+values ('main', 'shiyowo', 'CronRoll', 'JPY', 500, 500, 'monthly', date '2026-01-31', 'active');
+
+update public.subscriptions
+  set next_renewal_date = date '2026-02-28'
+  where name = 'CronRoll';
+
+select is(
+  (select renewal_anchor_day from public.subscriptions where name = 'CronRoll'),
+  31::smallint,
+  'cron のロールフォワードでは本来の課金日 (31) を保持する（28 日に化けない）'
+);
+
+reset role;
+set local role authenticated;
 
 select lives_ok($$ select 1 from public.fx_rates limit 1 $$, 'fx_rates は select 可能');
 select throws_ok(

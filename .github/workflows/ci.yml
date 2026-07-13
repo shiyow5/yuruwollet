@@ -58,7 +58,8 @@ jobs:
       - name: build wasm + report gzip size
         run: |
           go run github.com/syumai/workers/cmd/workers-assets-gen -mode=go
-          GOOS=js GOARCH=wasm go build -o ./build/app.wasm .
+          # -s -w でシンボル/デバッグ情報を落とす。標準 Go の WASM は素だと 3MB 上限に肉薄する。
+          GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w" -o ./build/app.wasm .
           SIZE=$(gzip -c build/app.wasm | wc -c)
           echo "WASM gzip size: ${SIZE} bytes (free plan limit: 3145728)"
           test "${SIZE}" -lt 3145728 || (echo 'WASM exceeds free-plan 3MB gzip limit'; exit 1)

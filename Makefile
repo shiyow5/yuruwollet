@@ -74,8 +74,10 @@ build: build-frontend build-backend ## 全ビルド
 build-frontend: ## フロントを本番ビルド
 	npm run build:frontend
 
-build-backend: ## Go Worker を WASM ビルド
-	cd backend && go run github.com/syumai/workers/cmd/workers-assets-gen -mode=go && GOOS=js GOARCH=wasm go build -o ./build/app.wasm .
+build-backend: ## Go Worker を WASM ビルド (gzip サイズも表示)
+	cd backend && go run github.com/syumai/workers/cmd/workers-assets-gen -mode=go && \
+		GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w" -o ./build/app.wasm . && \
+		printf 'WASM gzip: %s bytes (無料枠上限 3145728)\n' "$$(gzip -c ./build/app.wasm | wc -c)"
 
 # ---- Deploy (手動 / CI) ---------------------------------------------------
 .PHONY: deploy deploy-frontend deploy-backend

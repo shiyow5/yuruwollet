@@ -32,4 +32,7 @@ export const queryKeys = {
   serverToday: () => ['serverToday'] as const,
   /** 二人で共有するウィッシュリスト (archived=true が思い出アーカイブ) */
   wishlist: (archived: boolean) => ['wishlist', archived] as const,
+  /** member×月 の目標貯金と進捗 (v_savings_progress) */
+  savingsProgress: (memberId: string, month: string) =>
+    ['savingsProgress', memberId, month] as const,
 } as const;

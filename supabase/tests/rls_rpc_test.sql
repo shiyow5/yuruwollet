@@ -1,6 +1,6 @@
 -- pgTAP: RLS の cross-household 分離 + per-member 書込強制 + confirm_balance_checkpoint RPC
 begin;
-select plan(47);
+select plan(57);
 
 -- ============================================================
 -- Block A: ゆるり @ main として認証
@@ -148,6 +148,68 @@ select is(
   (select monthly_amount_jpy from public.subscriptions where household_id = 'main' and name = 'YearlyPlan'),
   1000,
   'yearly の月換算生成列 = round(amount_jpy/12)'
+);
+
+-- savings_goals: 自分名義のみ書込可
+select lives_ok(
+  $$ insert into public.savings_goals (household_id, member_id, period_month, target_amount)
+     values ('main', 'yururi', date_trunc('month', now())::date, 30000) $$,
+  '目標貯金を自分名義で設定できる'
+);
+select throws_ok(
+  $$ insert into public.savings_goals (household_id, member_id, period_month, target_amount)
+     values ('main', 'shiyowo', date_trunc('month', now())::date, 50000) $$,
+  null, null,
+  '目標貯金を相手名義で設定するのは拒否'
+);
+
+-- v_savings_progress: 達成判定は「その人の今月の 収入 − 支出 ≥ 目標」
+-- Block A で 1000 の収入(バイト代)を当月に入れている
+select is(
+  (select saved from public.v_savings_progress where member_id = 'yururi'),
+  1000::bigint,
+  '今月の貯金額 = 収入 − 支出'
+);
+select is(
+  (select achieved from public.v_savings_progress where member_id = 'yururi'),
+  false,
+  '目標 30000 に対し 1000 なら未達成'
+);
+
+-- 残高調整(is_system_generated)は貯金額に含めない
+-- （24日の壁で実残高に合わせただけの行を「貯金した」と数えない）
+select lives_ok(
+  $$ update public.savings_goals set target_amount = 1000
+     where member_id = 'yururi' $$,
+  '自分の目標額は更新できる'
+);
+select is(
+  (select achieved from public.v_savings_progress where member_id = 'yururi'),
+  true,
+  '目標 1000 に対し 1000 なら達成'
+);
+
+-- 初期残高は自分の分だけ更新できる
+select lives_ok(
+  $$ update public.profiles set opening_balance = 50000 where member_id = 'yururi' $$,
+  '自分の初期残高は更新できる'
+);
+select is(
+  (select opening_balance from public.profiles where member_id = 'yururi'),
+  50000,
+  '初期残高が更新されている'
+);
+-- 相手の行は update ポリシーの using に一致しない → 対象外なので変更されない
+update public.profiles set opening_balance = 99999 where member_id = 'shiyowo';
+select is(
+  (select opening_balance from public.profiles where member_id = 'shiyowo'),
+  0,
+  '相手の初期残高は変更されない (update ポリシーの対象外)'
+);
+select is(
+  (select balance from public.v_member_balances where member_id = 'yururi'),
+  51000::bigint,
+  '残高 = 初期残高 + 収支（初期残高の変更が残高に効く）'
 );
 
 -- wishlist: 自分名義で挿入可, registrant_id の書換は拒否

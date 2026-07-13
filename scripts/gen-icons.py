@@ -77,7 +77,11 @@ def draw(size: int, *, rounded: bool, content_scale: float = 1.0) -> Image.Image
 
 def main() -> None:
     outputs = {
-        "apple-touch-icon.png": draw(180, rounded=True),
+        # apple-touch-icon は **不透明** でなければならない。
+        # 角丸で作ると角が透明になり、iOS のホーム画面では **黒く** 描画される
+        # （Lighthouse の apple-touch-icon 監査も透過を弾く）。
+        # 角丸は iOS が自分で被せるので、地を全面に敷いた不透明の正方形を渡す。
+        "apple-touch-icon.png": draw(180, rounded=False).convert("RGB"),
         "icon-192.png": draw(192, rounded=True),
         "icon-512.png": draw(512, rounded=True),
         # maskable: 地を全面に敷き、財布はセーフゾーン（中央 80% の円）に収める
@@ -85,7 +89,7 @@ def main() -> None:
     }
     for name, img in outputs.items():
         img.save(PUBLIC / name, "PNG", optimize=True)
-        print(f"  {name}  {img.size[0]}x{img.size[1]}")
+        print(f"  {name}  {img.size[0]}x{img.size[1]}  {img.mode}")
 
     # favicon.ico は 16/32/48 を 1 ファイルに束ねる
     ico = draw(48, rounded=True)

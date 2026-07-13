@@ -20,6 +20,12 @@ function pngSize(buf: Buffer): { width: number; height: number } {
   return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
 }
 
+/** PNG の color type（IHDR の 10 バイト目）。4 と 6 がアルファを持つ。 */
+function pngHasAlpha(buf: Buffer): boolean {
+  const colorType = buf.readUInt8(25);
+  return colorType === 4 || colorType === 6;
+}
+
 describe('サイトアイコン', () => {
   it('index.html が favicon / apple-touch-icon / manifest / theme-color を参照する', () => {
     expect(html).toContain('rel="icon" type="image/svg+xml" href="/favicon.svg"');
@@ -31,12 +37,7 @@ describe('サイトアイコン', () => {
   });
 
   it('index.html が参照するアイコンが実在する', () => {
-    for (const name of [
-      'favicon.svg',
-      'favicon.ico',
-      'apple-touch-icon.png',
-      'site.webmanifest',
-    ]) {
+    for (const name of ['favicon.svg', 'favicon.ico', 'apple-touch-icon.png', 'site.webmanifest']) {
       expect(() => publicFile(name), `${name} が無い`).not.toThrow();
     }
   });
@@ -51,6 +52,12 @@ describe('サイトアイコン', () => {
 
   it('apple-touch-icon は 180×180（iOS のホーム画面）', () => {
     expect(pngSize(publicFile('apple-touch-icon.png'))).toEqual({ width: 180, height: 180 });
+  });
+
+  // 角丸で作ると角が透明になり、iOS のホーム画面では **黒く** 描画される。
+  // 角丸は iOS が自分で被せるので、こちらは不透明の正方形を渡す。
+  it('apple-touch-icon は不透明（透過は iOS で黒い角になる）', () => {
+    expect(pngHasAlpha(publicFile('apple-touch-icon.png'))).toBe(false);
   });
 
   describe('site.webmanifest', () => {

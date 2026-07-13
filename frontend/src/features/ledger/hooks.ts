@@ -29,7 +29,7 @@ import type { Transaction, TransactionDraft, CategoryDraft } from '../../lib/led
  * その人のキーに限定して相手キャッシュの無駄な再取得を避ける。
  * memberBalances は両者を 1 クエリで返すため常に全体を無効化する。
  */
-function invalidateLedger(qc: QueryClient, memberId?: string): void {
+export function invalidateLedger(qc: QueryClient, memberId?: string): void {
   void qc.invalidateQueries({
     queryKey: memberId ? ['transactions', memberId] : ['transactions'],
   });

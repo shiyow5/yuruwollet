@@ -76,7 +76,8 @@ class Stub(BaseHTTPRequestHandler):
                 return
             self._send('{"base":"USD","date":"2026-07-13","rates":{"JPY":150.0}}')
         elif path == "/rest/v1/subscriptions":
-            self._send("[]")  # 更新日が到来したサブスクは無い
+            # 更新日が到来したサブスクが 1 件ある体（精算 RPC が呼ばれることを見る）
+            self._send('[{"id":"11111111-1111-1111-1111-111111111111","name":"Netflix"}]')
         elif path == "/rest/v1/households":  # keep-alive の ping
             self._send('[{"id":"main"}]')
         elif path == "/rest/v1/fx_rates":
@@ -88,6 +89,10 @@ class Stub(BaseHTTPRequestHandler):
         path = self._record()
         length = int(self.headers.get("Content-Length", 0))
         self.rfile.read(length)
+        if path == "/rest/v1/rpc/settle_subscription":
+            # 精算 RPC: 1 件記録し、レート待ちは無い
+            self._send('[{"recorded":1,"needs_fx_on":null}]')
+            return
         self._send("[]", 201)
 
     def log_message(self, *_args) -> None:  # スタブのアクセスログは黙らせる
@@ -177,7 +182,8 @@ def main() -> None:
         expected = [
             r"GET /v1/",  # 為替の取得
             r"POST /rest/v1/fx_rates",  # レートの保存
-            r"GET /rest/v1/subscriptions",  # サブスクの一覧
+            r"GET /rest/v1/subscriptions",  # 到来したサブスクの一覧
+            r"POST /rest/v1/rpc/settle_subscription",  # 精算（計算は DB 側）
             r"GET /rest/v1/households",  # keep-alive
         ]
         for pattern in expected:
@@ -214,8 +220,8 @@ def main() -> None:
                 f"（Supabase が一時停止してアプリが死ぬ）。受けたのは {received}",
                 log,
             )
-        if not any(re.match(r"GET /rest/v1/subscriptions", r) for r in received):
-            fail(f"為替の失敗でサブスクの更新まで止まっています（受けたのは {received}）", log)
+        if not any(re.match(r"POST /rest/v1/rpc/settle_subscription", r) for r in received):
+            fail(f"為替の失敗でサブスクの精算まで止まっています（受けたのは {received}）", log)
 
         print(f"    ✓ 為替が落ちても他の処理は走り、cron は失敗として記録された（HTTP {status}）")
         for r in received:

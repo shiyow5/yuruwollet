@@ -98,156 +98,60 @@ func TestListDueSubscriptions(t *testing.T) {
 	}
 }
 
-// RollSubscriptionCycle は「支払いの記録」と「更新日の前進」を 1 つの RPC
-// (= 1 トランザクション) で行う。2 回の往復に分けると、その隙間でユーザーが
-// 編集/解約したときに **古い金額の支払いだけが台帳に残る**。
-func TestRollSubscriptionCycle(t *testing.T) {
+// SettleSubscription は DB 側の RPC を呼ぶだけ。
+// **ロールフォワードの計算は SQL にしかない**（Go にも書くと 2 箇所でズレる）。
+func TestSettleSubscription(t *testing.T) {
 	t.Parallel()
 
 	var cap captured
-	c := serverFor(t, http.StatusOK, `true`, &cap)
+	c := serverFor(t, http.StatusOK, `[{"recorded":3,"needs_fx_on":null}]`, &cap)
 
-	amount := 3030
-	rate := 151.5
-	date := "2026-07-13"
-	snapshot := Subscription{
-		ID: "s1", Currency: "USD", OriginalAmount: 20, Cycle: "monthly",
-		NextRenewalDate: "2026-07-13", RenewalAnchorDay: 13,
-	}
-	applied, err := c.RollSubscriptionCycle(context.Background(), snapshot,
-		[]Payment{{OccurredOn: "2026-07-13", Amount: 3030}},
-		RenewalUpdate{
-			NextRenewalDate: "2026-08-13",
-			AmountJPY:       &amount,
-			FxRate:          &rate,
-			FxRateDate:      &date,
-		})
+	recorded, needsFX, err := c.SettleSubscription(context.Background(), "s1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !applied {
-		t.Error("applied = false, want true")
+	if recorded != 3 {
+		t.Errorf("recorded = %d, want 3", recorded)
 	}
-
-	if cap.Method != http.MethodPost || cap.Path != "/rest/v1/rpc/roll_subscription_cycle" {
+	if needsFX != "" {
+		t.Errorf("needsFXOn = %q, want empty", needsFX)
+	}
+	if cap.Method != http.MethodPost || cap.Path != "/rest/v1/rpc/settle_subscription" {
 		t.Errorf("%s %s", cap.Method, cap.Path)
 	}
-
-	var body map[string]any
-	if err := json.Unmarshal([]byte(cap.Body), &body); err != nil {
-		t.Fatalf("body: %v", err)
-	}
-	// CAS: 次の更新日と支払額の計算に使った値をすべて渡す。
-	// 更新日だけを見ていると、金額や周期だけ編集された行を古い値で上書きしてしまう。
-	for k, want := range map[string]any{
-		"p_subscription_id":            "s1",
-		"p_expected_next_renewal_date": "2026-07-13",
-		"p_expected_currency":          "USD",
-		"p_expected_cycle":             "monthly",
-		"p_expected_original_amount":   float64(20),
-		"p_expected_anchor_day":        float64(13),
-		"p_next_renewal_date":          "2026-08-13",
-		"p_amount_jpy":                 float64(3030),
-	} {
-		if body[k] != want {
-			t.Errorf("%s = %v, want %v", k, body[k], want)
-		}
-	}
-	if !strings.Contains(cap.Body, `"occurred_on":"2026-07-13"`) {
-		t.Errorf("支払いが渡っていない: %s", cap.Body)
+	if !strings.Contains(cap.Body, `"p_subscription_id":"s1"`) {
+		t.Errorf("body = %s", cap.Body)
 	}
 }
 
-// 一覧取得後にユーザーが編集していた行は CAS に一致せず false が返る。
-// これはレースであってエラーではない（次回の cron が新しい値で拾い直す）。
-func TestRollSubscriptionCycle_CASMiss(t *testing.T) {
+// USD でその支払日のレートが無いと、RPC はそこで止めて日付を返す
+// （SQL は為替 API を叩けない）。cron がそれを取得して呼び直す。
+func TestSettleSubscription_NeedsFX(t *testing.T) {
 	t.Parallel()
 
 	var cap captured
-	c := serverFor(t, http.StatusOK, `false`, &cap)
+	c := serverFor(t, http.StatusOK, `[{"recorded":1,"needs_fx_on":"2026-06-13"}]`, &cap)
 
-	applied, err := c.RollSubscriptionCycle(context.Background(),
-		Subscription{ID: "s1", Currency: "JPY", Cycle: "monthly", NextRenewalDate: "2026-07-13"},
-		[]Payment{{OccurredOn: "2026-07-13", Amount: 1490}},
-		RenewalUpdate{NextRenewalDate: "2026-08-13"})
+	recorded, needsFX, err := c.SettleSubscription(context.Background(), "u1")
 	if err != nil {
-		t.Fatalf("CAS 不一致はエラーにしない: %v", err)
-	}
-	if applied {
-		t.Error("applied = true, want false")
-	}
-}
-
-// JPY では fx 系を送らない (JPY に fx を混ぜると DB 制約に弾かれる)
-func TestRollSubscriptionCycle_JPY_OmitsFX(t *testing.T) {
-	t.Parallel()
-
-	var cap captured
-	c := serverFor(t, http.StatusOK, `true`, &cap)
-
-	if _, err := c.RollSubscriptionCycle(context.Background(),
-		Subscription{ID: "s1", Currency: "JPY", OriginalAmount: 1490, Cycle: "monthly",
-			NextRenewalDate: "2026-07-10", RenewalAnchorDay: 10},
-		[]Payment{{OccurredOn: "2026-07-10", Amount: 1490}},
-		RenewalUpdate{NextRenewalDate: "2026-08-10"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-
-	for _, forbidden := range []string{"p_amount_jpy", "p_fx_rate", "p_fx_rate_date"} {
-		if strings.Contains(cap.Body, forbidden) {
-			t.Errorf("JPY の更新に %s を含めてはいけない: %s", forbidden, cap.Body)
-		}
+	if recorded != 1 {
+		t.Errorf("recorded = %d, want 1（レートがある日までは記録する）", recorded)
+	}
+	if needsFX != "2026-06-13" {
+		t.Errorf("needsFXOn = %q, want 2026-06-13", needsFX)
 	}
 }
 
-func TestRollSubscriptionCycle_ErrorIsReported(t *testing.T) {
+func TestSettleSubscription_ErrorIsReported(t *testing.T) {
 	t.Parallel()
 
 	var cap captured
 	c := serverFor(t, http.StatusNotFound, `{"code":"PT404","message":"カテゴリがありません"}`, &cap)
 
-	if _, err := c.RollSubscriptionCycle(context.Background(),
-		Subscription{ID: "s1"}, []Payment{{OccurredOn: "2026-07-10", Amount: 1}},
-		RenewalUpdate{NextRenewalDate: "2026-08-10"}); err == nil {
+	if _, _, err := c.SettleSubscription(context.Background(), "s1"); err == nil {
 		t.Fatal("RPC の失敗はエラーにするべき")
-	}
-}
-
-// USD の遅延ぶんは **その更新日のレート** で確定する必要がある。
-// キャッシュ済みのレートをその日以前で探す。
-func TestFXRateOn(t *testing.T) {
-	t.Parallel()
-
-	var cap captured
-	c := serverFor(t, http.StatusOK, `[{"rate":142.5,"rate_date":"2026-05-08"}]`, &cap)
-
-	rate, rateDate, found, err := c.FXRateOn(context.Background(), "2026-05-10")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !found || rate != 142.5 || rateDate != "2026-05-08" {
-		t.Errorf("rate=%v date=%q found=%v", rate, rateDate, found)
-	}
-	// 週末や祝日はその日の行が無い。**その日以前で最も新しい** レートを使う。
-	for _, want := range []string{"rate_date=lte.2026-05-10", "order=rate_date.desc", "limit=1"} {
-		if !strings.Contains(cap.Query, want) {
-			t.Errorf("query に %q が無い: %q", want, cap.Query)
-		}
-	}
-}
-
-func TestFXRateOn_NotFound(t *testing.T) {
-	t.Parallel()
-
-	var cap captured
-	c := serverFor(t, http.StatusOK, `[]`, &cap)
-
-	_, _, found, err := c.FXRateOn(context.Background(), "2026-05-10")
-	if err != nil {
-		t.Fatalf("行が無いのはエラーではない: %v", err)
-	}
-	if found {
-		t.Error("found = true, want false")
 	}
 }
 

@@ -119,3 +119,22 @@ export async function deleteSubscription(
   const { error } = await client.from('subscriptions').delete().eq('id', id);
   if (error) throw new Error(`サブスクの削除に失敗しました: ${error.message}`);
 }
+
+/**
+ * 自分の到来済みサブスクを精算する（支払いを台帳に記録し、更新日を進める）。
+ *
+ * **登録・編集した直後に呼ぶ。** これまで支払いの記録は cron（JST 00:00）だけが
+ * 行っていたため、更新日が今日/過去のサブスクを登録しても翌日まで台帳に出なかった。
+ *
+ * 計算（ロールフォワード）は DB 側にしか無い。cron も同じ SQL を通るので、
+ * 規則が 2 箇所に分かれてズレることがない。
+ * 二重計上は unique(subscription_id, occurred_on) が弾くので、
+ * cron と同時に走っても、何度呼んでも増えない。
+ *
+ * @returns 記録した支払いの件数
+ */
+export async function settleMySubscriptions(client: SupabaseClient): Promise<number> {
+  const { data, error } = await client.rpc('settle_my_subscriptions');
+  if (error) throw error;
+  return data ?? 0;
+}

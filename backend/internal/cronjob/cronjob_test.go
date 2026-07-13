@@ -32,43 +32,40 @@ func (f *fakeFX) FetchUSDJPYOn(_ context.Context, date string) (fx.Rate, error) 
 type fakeStore struct {
 	upsertErr error
 	listErr   error
-	updateErr error
+	settleErr error
 	pingErr   error
 
 	subs []supabase.Subscription
 
 	upserted []string
-	updates  map[string]supabase.RenewalUpdate
 	pinged   int
 	listedAt string
-	// casSnapshots は CAS に渡された「一覧取得時の行」。
-	casSnapshots map[string]supabase.Subscription
-	// raced[id] = true なら、その行は CAS に一致せず更新されない（人が編集した体）。
-	raced map[string]bool
 
-	// 記録された支払い（"subID:YYYY-MM-DD" → 金額）
-	payments map[string]int
-
-	// cached[date] = キャッシュ済みの fx_rates 行
-	cached map[string]fx.Rate
+	// settleCalls[subID] = 呼ばれた回数
+	settleCalls map[string]int
+	// needsFX[subID] = その日のレートが揃うまで返し続ける日付
+	needsFX map[string]string
+	// cached[date] = fx_rates に入っているレート（needsFX の解消判定に使う）
+	cached map[string]bool
+	// recorded[subID] = 記録した支払い件数
+	recorded map[string]int
 }
 
 func newStore() *fakeStore {
 	return &fakeStore{
-		updates:      map[string]supabase.RenewalUpdate{},
-		casSnapshots: map[string]supabase.Subscription{},
-		raced:        map[string]bool{},
-		payments:     map[string]int{},
-		cached:       map[string]fx.Rate{},
+		settleCalls: map[string]int{},
+		needsFX:     map[string]string{},
+		cached:      map[string]bool{},
+		recorded:    map[string]int{},
 	}
 }
 
-func (s *fakeStore) UpsertFXRate(_ context.Context, date string, rate float64) error {
+func (s *fakeStore) UpsertFXRate(_ context.Context, date string, _ float64) error {
 	if s.upsertErr != nil {
 		return s.upsertErr
 	}
 	s.upserted = append(s.upserted, date)
-	s.cached[date] = fx.Rate{Date: date, Rate: rate}
+	s.cached[date] = true
 	return nil
 }
 
@@ -77,38 +74,19 @@ func (s *fakeStore) ListDueSubscriptions(_ context.Context, today string) ([]sup
 	return s.subs, s.listErr
 }
 
-// FXRateOn は date 以前で最も新しいキャッシュ行を返す（本物と同じ semantics）。
-func (s *fakeStore) FXRateOn(_ context.Context, date string) (float64, string, bool, error) {
-	best := ""
-	for d := range s.cached {
-		if d <= date && d > best {
-			best = d
-		}
+// SettleSubscription は DB 側の精算 RPC の振る舞いを模す。
+// needsFX に指定した日のレートが fx_rates に無ければ、その日付を返して止まる。
+func (s *fakeStore) SettleSubscription(_ context.Context, id string) (int, string, error) {
+	if s.settleErr != nil {
+		return 0, "", s.settleErr
 	}
-	if best == "" {
-		return 0, "", false, nil
-	}
-	return s.cached[best].Rate, best, true, nil
-}
+	s.settleCalls[id]++
 
-// RollSubscriptionCycle は「支払いの記録」と「更新日の前進」を原子的に行う。
-// CAS に一致しなければ **どちらも起きない**（記録だけ残る、が起きない）。
-func (s *fakeStore) RollSubscriptionCycle(
-	_ context.Context, snapshot supabase.Subscription,
-	payments []supabase.Payment, u supabase.RenewalUpdate,
-) (bool, error) {
-	if s.updateErr != nil {
-		return false, s.updateErr
+	if want, ok := s.needsFX[id]; ok && !s.cached[want] {
+		return 0, want, nil // レート待ち
 	}
-	s.casSnapshots[snapshot.ID] = snapshot
-	if s.raced[snapshot.ID] {
-		return false, nil
-	}
-	for _, p := range payments {
-		s.payments[snapshot.ID+":"+p.OccurredOn] = p.Amount
-	}
-	s.updates[snapshot.ID] = u
-	return true, nil
+	s.recorded[id]++
+	return 1, "", nil
 }
 
 func (s *fakeStore) Ping(context.Context) error {
@@ -127,10 +105,11 @@ func jobAt(t *testing.T, iso string, f FXFetcher, s Store) *Job {
 
 func TestToday_UsesJST(t *testing.T) {
 	t.Parallel()
-	// UTC 2026-07-13 16:00 は JST では 7/14 01:00
-	j := jobAt(t, "2026-07-13T16:00:00Z", &fakeFX{}, newStore())
+
+	// UTC 2026-07-13 15:30 = JST 2026-07-14 00:30 → JST の「今日」は 14 日
+	j := jobAt(t, "2026-07-13T15:30:00Z", &fakeFX{}, newStore())
 	if got := j.Today().Format("2006-01-02"); got != "2026-07-14" {
-		t.Errorf("Today = %s, want 2026-07-14 (JST)", got)
+		t.Errorf("Today() = %s, want 2026-07-14 (JST)", got)
 	}
 }
 
@@ -138,10 +117,8 @@ func TestRun_HappyPath(t *testing.T) {
 	t.Parallel()
 
 	store := newStore()
-	store.subs = []supabase.Subscription{
-		{ID: "jpy1", Currency: "JPY", Cycle: "monthly", NextRenewalDate: "2026-07-10", RenewalAnchorDay: 10, AmountJPY: 1490},
-	}
-	f := &fakeFX{rate: fx.Rate{Date: "2026-07-13", Rate: 150.0}}
+	store.subs = []supabase.Subscription{{ID: "s1", Name: "Netflix"}}
+	f := &fakeFX{rate: fx.Rate{Date: "2026-07-13", Rate: 150}}
 	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
 
 	if err := j.Run(context.Background()); err != nil {
@@ -149,356 +126,31 @@ func TestRun_HappyPath(t *testing.T) {
 	}
 
 	if len(store.upserted) != 1 || store.upserted[0] != "2026-07-13" {
-		t.Errorf("fx upsert = %v, want [2026-07-13]", store.upserted)
+		t.Errorf("為替を保存していない: %v", store.upserted)
 	}
 	if store.listedAt != "2026-07-13" {
-		t.Errorf("listed at %s, want 2026-07-13 (JST)", store.listedAt)
+		t.Errorf("JST の今日で一覧を取っていない: %q", store.listedAt)
 	}
-	if got := store.updates["jpy1"].NextRenewalDate; got != "2026-08-10" {
-		t.Errorf("next renewal = %s, want 2026-08-10", got)
-	}
-	if store.pinged != 1 {
-		t.Errorf("pinged = %d, want 1", store.pinged)
-	}
-}
-
-func TestRun_USD_SnapshotsActualRateOnRenewal(t *testing.T) {
-	t.Parallel()
-
-	store := newStore()
-	store.subs = []supabase.Subscription{
-		{ID: "usd1", Currency: "USD", OriginalAmount: 20, Cycle: "monthly",
-			NextRenewalDate: "2026-07-13", RenewalAnchorDay: 13, AmountJPY: 3000},
-	}
-	f := &fakeFX{rate: fx.Rate{Date: "2026-07-13", Rate: 151.5}}
-	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
-
-	if err := j.Run(context.Background()); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	u := store.updates["usd1"]
-	// 概算 (3000) ではなく、更新日に到来した時点の実レートで確定する
-	if u.AmountJPY == nil || *u.AmountJPY != 3030 { // round(20 * 151.5)
-		t.Errorf("amount_jpy = %v, want 3030", u.AmountJPY)
-	}
-	if u.FxRate == nil || *u.FxRate != 151.5 {
-		t.Errorf("fx_rate = %v, want 151.5", u.FxRate)
-	}
-	if u.FxRateDate == nil || *u.FxRateDate != "2026-07-13" {
-		t.Errorf("fx_rate_date = %v, want 2026-07-13", u.FxRateDate)
-	}
-}
-
-// レートが取れない日に USD を進めると、古い概算のまま「確定した」ことになってしまう。
-func TestRun_FXDown_SkipsUSDButRollsJPY(t *testing.T) {
-	t.Parallel()
-
-	store := newStore()
-	store.subs = []supabase.Subscription{
-		{ID: "usd1", Currency: "USD", OriginalAmount: 20, Cycle: "monthly",
-			NextRenewalDate: "2026-07-10", RenewalAnchorDay: 10},
-		{ID: "jpy1", Currency: "JPY", Cycle: "monthly",
-			NextRenewalDate: "2026-07-10", RenewalAnchorDay: 10},
-	}
-	f := &fakeFX{err: errors.New("fx down")}
-	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
-
-	err := j.Run(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "為替の取得") {
-		t.Fatalf("為替の失敗が報告されるべき: %v", err)
-	}
-
-	if _, rolled := store.updates["usd1"]; rolled {
-		t.Error("レートが無い日に USD を進めてはいけない")
-	}
-	if got := store.updates["jpy1"].NextRenewalDate; got != "2026-08-10" {
-		t.Errorf("JPY は進めるべき: next = %q", got)
-	}
-	// 為替が落ちていても keep-alive は必ず打つ (打たないと Supabase が一時停止する)
-	if store.pinged != 1 {
-		t.Errorf("pinged = %d, want 1", store.pinged)
-	}
-}
-
-// レートの保存に失敗したら、そのレートは信用せず再スナップに使わない。
-func TestRun_FXUpsertFails_DoesNotSnapshotUSD(t *testing.T) {
-	t.Parallel()
-
-	store := newStore()
-	store.upsertErr = errors.New("db down")
-	store.subs = []supabase.Subscription{
-		{ID: "usd1", Currency: "USD", OriginalAmount: 20, Cycle: "monthly",
-			NextRenewalDate: "2026-07-10", RenewalAnchorDay: 10},
-	}
-	f := &fakeFX{rate: fx.Rate{Date: "2026-07-13", Rate: 150}}
-	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
-
-	err := j.Run(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "為替の保存") {
-		t.Fatalf("保存失敗が報告されるべき: %v", err)
-	}
-	if _, rolled := store.updates["usd1"]; rolled {
-		t.Error("保存できなかったレートで USD を確定させてはいけない")
-	}
-}
-
-// 1 件の更新失敗で残りを諦めない
-func TestRun_PartialFailures_ContinueAndReportAll(t *testing.T) {
-	t.Parallel()
-
-	store := newStore()
-	store.updateErr = errors.New("update failed")
-	store.pingErr = errors.New("ping failed")
-	store.subs = []supabase.Subscription{
-		{ID: "a", Currency: "JPY", Cycle: "monthly", NextRenewalDate: "2026-07-10", RenewalAnchorDay: 10},
-	}
-	f := &fakeFX{rate: fx.Rate{Date: "2026-07-13", Rate: 150}}
-	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
-
-	err := j.Run(context.Background())
-	if err == nil {
-		t.Fatal("失敗が報告されるべき")
-	}
-	// 為替は成功、サブスク更新と keep-alive が失敗 → 両方報告される
-	for _, want := range []string{"サブスクの更新", "keep-alive"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("err に %q が含まれるべき: %v", want, err)
-		}
+	if store.settleCalls["s1"] != 1 {
+		t.Errorf("精算 RPC を呼んでいない: %v", store.settleCalls)
 	}
 	if store.pinged != 1 {
-		t.Errorf("サブスク更新が失敗しても keep-alive は打つべき（pinged=%d）", store.pinged)
+		t.Errorf("keep-alive していない")
 	}
 }
 
-func TestRun_NotDue_IsUntouched(t *testing.T) {
+// **cron はロールフォワードを計算しない。** 計算は DB 側（settle_subscription）にある。
+// cron の役割は「SQL が要求した日の為替レートを取ってきて渡すこと」だけ。
+func TestRun_SuppliesRequestedFXRateAndRetries(t *testing.T) {
 	t.Parallel()
 
 	store := newStore()
-	store.subs = []supabase.Subscription{
-		{ID: "future", Currency: "JPY", Cycle: "monthly", NextRenewalDate: "2026-08-10", RenewalAnchorDay: 10},
-	}
-	f := &fakeFX{rate: fx.Rate{Date: "2026-07-13", Rate: 150}}
-	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
+	store.subs = []supabase.Subscription{{ID: "u1", Name: "ChatGPT"}}
+	store.needsFX["u1"] = "2026-05-13" // この日のレートが揃うまで止まる
 
-	if err := j.Run(context.Background()); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(store.updates) != 0 {
-		t.Errorf("未到来のサブスクは触らない: %v", store.updates)
-	}
-}
-
-// 月末課金は本来の課金日 (anchor) から丸め直す
-func TestRun_MonthEndUsesAnchor(t *testing.T) {
-	t.Parallel()
-
-	store := newStore()
-	store.subs = []supabase.Subscription{
-		{ID: "me", Currency: "JPY", Cycle: "monthly", NextRenewalDate: "2026-01-31", RenewalAnchorDay: 31},
-	}
-	f := &fakeFX{rate: fx.Rate{Date: "2026-02-01", Rate: 150}}
-	j := jobAt(t, "2026-01-31T15:00:01Z", f, store) // JST 2026-02-01
-
-	if err := j.Run(context.Background()); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got := store.updates["me"].NextRenewalDate; got != "2026-02-28" {
-		t.Errorf("next = %s, want 2026-02-28", got)
-	}
-}
-
-// 一覧取得から更新までの間にユーザーが課金日を編集していたら、
-// 古いスナップショットで巻き戻してはいけない（CAS で弾かれる）。
-func TestRun_UserEditedInBetween_DoesNotClobber(t *testing.T) {
-	t.Parallel()
-
-	store := newStore()
-	store.subs = []supabase.Subscription{
-		{ID: "s1", Currency: "JPY", Cycle: "monthly", NextRenewalDate: "2026-07-10", RenewalAnchorDay: 10},
-	}
-	store.raced["s1"] = true // その間に人が編集した → CAS に一致しない
-	f := &fakeFX{rate: fx.Rate{Date: "2026-07-13", Rate: 150}}
-	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
-
-	// 人が触っただけなので cron の失敗にはしない（次回の cron で拾えば良い）
-	if err := j.Run(context.Background()); err != nil {
-		t.Fatalf("CAS 不一致はエラーにしない: %v", err)
-	}
-	if _, applied := store.updates["s1"]; applied {
-		t.Error("CAS に一致しない行を更新してはいけない")
-	}
-}
-
-// CAS には「一覧取得時に読んだ行そのもの」を渡す。
-// 次の更新日と amount_jpy の計算には currency/original_amount/cycle/anchor も使うため、
-// 更新日だけを条件にすると、金額や周期だけ編集された行を古い値で上書きしてしまう。
-func TestRun_PassesFullSnapshotAsCASKey(t *testing.T) {
-	t.Parallel()
-
-	sub := supabase.Subscription{
-		ID: "s1", Currency: "USD", OriginalAmount: 20, Cycle: "monthly",
-		NextRenewalDate: "2026-07-10", RenewalAnchorDay: 10,
-	}
-	store := newStore()
-	store.subs = []supabase.Subscription{sub}
 	f := &fakeFX{
 		rate:    fx.Rate{Date: "2026-07-13", Rate: 150},
-		history: map[string]fx.Rate{"2026-07-10": {Date: "2026-07-10", Rate: 149}},
-	}
-	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
-
-	if err := j.Run(context.Background()); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if got := store.casSnapshots["s1"]; got != sub {
-		t.Errorf("CAS スナップショット = %+v, want %+v", got, sub)
-	}
-}
-
-// サブスクは実際の支出。台帳に記録されないと残高がズレ続け、
-// 24日の壁が毎月「ズレています」と言い、残高調整でカテゴリ情報が失われる。
-func TestRun_RecordsSubscriptionPayment(t *testing.T) {
-	t.Parallel()
-
-	store := newStore()
-	store.subs = []supabase.Subscription{
-		{ID: "s1", HouseholdID: "main", OwnerMemberID: "yururi", Name: "Netflix",
-			Currency: "JPY", AmountJPY: 1490, Cycle: "monthly",
-			NextRenewalDate: "2026-07-10", RenewalAnchorDay: 10},
-	}
-	f := &fakeFX{rate: fx.Rate{Date: "2026-07-13", Rate: 150}}
-	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
-
-	if err := j.Run(context.Background()); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if got := store.payments["s1:2026-07-10"]; got != 1490 {
-		t.Errorf("支払いが記録されていない: payments = %v", store.payments)
-	}
-	if got := store.updates["s1"].NextRenewalDate; got != "2026-08-10" {
-		t.Errorf("更新日も進めるべき: %s", got)
-	}
-}
-
-// cron が数ヶ月止まっていたら、その期間ぶんの支払いは **すべて実際に発生している**。
-// 1 回にまとめてはいけない。
-func TestRun_RecordsEveryMissedPayment(t *testing.T) {
-	t.Parallel()
-
-	store := newStore()
-	store.subs = []supabase.Subscription{
-		{ID: "s1", HouseholdID: "main", OwnerMemberID: "yururi", Name: "Netflix",
-			Currency: "JPY", AmountJPY: 1490, Cycle: "monthly",
-			NextRenewalDate: "2026-05-10", RenewalAnchorDay: 10},
-	}
-	f := &fakeFX{rate: fx.Rate{Date: "2026-07-13", Rate: 150}}
-	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
-
-	if err := j.Run(context.Background()); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	for _, day := range []string{"2026-05-10", "2026-06-10", "2026-07-10"} {
-		if store.payments["s1:"+day] != 1490 {
-			t.Errorf("%s ぶんの支払いが記録されていない: %v", day, store.payments)
-		}
-	}
-	if len(store.payments) != 3 {
-		t.Errorf("支払いは 3 件のはず: %v", store.payments)
-	}
-}
-
-// 一覧取得後にユーザーが編集/解約していた場合、**支払いも記録されない**。
-// 記録と前進が別々の往復だと、更新は CAS で弾かれるのに支払いだけが
-// 古い金額で台帳に残ってしまう。1 トランザクションに閉じてこれを消す。
-func TestRun_RacedEdit_RecordsNothing(t *testing.T) {
-	t.Parallel()
-
-	store := newStore()
-	store.raced["s1"] = true // 一覧取得後に人が編集した体
-	store.subs = []supabase.Subscription{
-		{ID: "s1", HouseholdID: "main", OwnerMemberID: "yururi", Name: "Netflix",
-			Currency: "JPY", AmountJPY: 1490, Cycle: "monthly",
-			NextRenewalDate: "2026-07-10", RenewalAnchorDay: 10},
-	}
-	f := &fakeFX{rate: fx.Rate{Date: "2026-07-13", Rate: 150}}
-	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
-
-	if err := j.Run(context.Background()); err != nil {
-		t.Fatalf("レースはエラーにしない（次回の cron で拾う）: %v", err)
-	}
-	if len(store.payments) != 0 {
-		t.Errorf("古いスナップショットの支払いを残してはいけない: %v", store.payments)
-	}
-	if _, advanced := store.updates["s1"]; advanced {
-		t.Error("CAS に一致しないなら更新日も進めない")
-	}
-}
-
-// RPC が落ちたら、支払いも更新日も動かない（原子的なので当然だが、回帰で守る）。
-func TestRun_RollFails_AdvancesNothing(t *testing.T) {
-	t.Parallel()
-
-	store := newStore()
-	store.updateErr = errors.New("db down")
-	store.subs = []supabase.Subscription{
-		{ID: "s1", HouseholdID: "main", OwnerMemberID: "yururi", Name: "Netflix",
-			Currency: "JPY", AmountJPY: 1490, Cycle: "monthly",
-			NextRenewalDate: "2026-07-10", RenewalAnchorDay: 10},
-	}
-	f := &fakeFX{rate: fx.Rate{Date: "2026-07-13", Rate: 150}}
-	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
-
-	if err := j.Run(context.Background()); err == nil {
-		t.Fatal("RPC の失敗は報告されるべき")
-	}
-	if _, advanced := store.updates["s1"]; advanced {
-		t.Error("失敗したなら更新日を進めてはいけない（支払いが失われる）")
-	}
-}
-
-// USD は更新日に到来した時点の実レートで確定した額を記録する
-func TestRun_RecordsUSDPaymentAtActualRate(t *testing.T) {
-	t.Parallel()
-
-	store := newStore()
-	store.subs = []supabase.Subscription{
-		{ID: "u1", HouseholdID: "main", OwnerMemberID: "shiyowo", Name: "ChatGPT",
-			Currency: "USD", OriginalAmount: 20, AmountJPY: 3000, Cycle: "monthly",
-			NextRenewalDate: "2026-07-13", RenewalAnchorDay: 13},
-	}
-	f := &fakeFX{rate: fx.Rate{Date: "2026-07-13", Rate: 151.5}}
-	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
-
-	if err := j.Run(context.Background()); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	// 概算 (3000) ではなく実額 round(20 * 151.5) = 3030
-	if got := store.payments["u1:2026-07-13"]; got != 3030 {
-		t.Errorf("支払額 = %d, want 3030（実レートで確定した額）", got)
-	}
-}
-
-// cron が数ヶ月止まっていた USD サブスク。
-// **各支払いはその支払日のレートで確定する。** 全期を今日のレートで記録すると、
-// 5月・6月の月次収支が実際と食い違う。
-func TestRun_USD_MissedPeriods_UseRateOfEachDueDate(t *testing.T) {
-	t.Parallel()
-
-	store := newStore()
-	store.subs = []supabase.Subscription{
-		{ID: "u1", HouseholdID: "main", OwnerMemberID: "shiyowo", Name: "ChatGPT",
-			Currency: "USD", OriginalAmount: 20, AmountJPY: 3000, Cycle: "monthly",
-			NextRenewalDate: "2026-05-13", RenewalAnchorDay: 13},
-	}
-	f := &fakeFX{
-		rate: fx.Rate{Date: "2026-07-13", Rate: 150},
-		history: map[string]fx.Rate{
-			"2026-05-13": {Date: "2026-05-13", Rate: 140},
-			"2026-06-13": {Date: "2026-06-12", Rate: 145}, // 休日 → 前営業日の基準日
-		},
+		history: map[string]fx.Rate{"2026-05-13": {Date: "2026-05-13", Rate: 140}},
 	}
 	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
 
@@ -506,69 +158,32 @@ func TestRun_USD_MissedPeriods_UseRateOfEachDueDate(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	for day, want := range map[string]int{
-		"2026-05-13": 2800, // 20 * 140
-		"2026-06-13": 2900, // 20 * 145
-		"2026-07-13": 3000, // 20 * 150（当日のレート）
-	} {
-		if got := store.payments["u1:"+day]; got != want {
-			t.Errorf("%s の支払額 = %d, want %d（その日のレートで確定する）", day, got, want)
-		}
+	// SQL が要求した日のレートを取りに行った
+	if len(f.historyOn) != 1 || f.historyOn[0] != "2026-05-13" {
+		t.Errorf("要求された日のレートを取っていない: %v", f.historyOn)
 	}
-
-	// サブスクに書き戻すのは最後に到来した更新日のレート（以後の表示に使う概算）
-	u := store.updates["u1"]
-	if u.FxRate == nil || *u.FxRate != 150 {
-		t.Errorf("fx_rate = %v, want 150（最後に到来した更新日のレート）", u.FxRate)
+	// 保存してから呼び直した
+	if !contains(store.upserted, "2026-05-13") {
+		t.Errorf("取得したレートを保存していない: %v", store.upserted)
 	}
-	if u.AmountJPY == nil || *u.AmountJPY != 3000 {
-		t.Errorf("amount_jpy = %v, want 3000", u.AmountJPY)
+	if store.settleCalls["u1"] != 2 {
+		t.Errorf("レート補給後に呼び直していない: %d 回", store.settleCalls["u1"])
+	}
+	if store.recorded["u1"] != 1 {
+		t.Errorf("精算できていない: %v", store.recorded)
 	}
 }
 
-// 取得済みのレートが fx_rates にあるなら、履歴 API を叩かない
-func TestRun_USD_UsesCachedRate(t *testing.T) {
-	t.Parallel()
-
-	store := newStore()
-	store.cached["2026-05-12"] = fx.Rate{Date: "2026-05-12", Rate: 141}
-	store.subs = []supabase.Subscription{
-		{ID: "u1", HouseholdID: "main", OwnerMemberID: "shiyowo", Name: "ChatGPT",
-			Currency: "USD", OriginalAmount: 20, AmountJPY: 3000, Cycle: "monthly",
-			NextRenewalDate: "2026-05-13", RenewalAnchorDay: 13},
-	}
-	f := &fakeFX{
-		rate:    fx.Rate{Date: "2026-06-13", Rate: 150},
-		history: map[string]fx.Rate{"2026-06-13": {Date: "2026-06-13", Rate: 145}},
-	}
-	j := jobAt(t, "2026-06-13T03:00:00Z", f, store)
-
-	if err := j.Run(context.Background()); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	// 5/13 の行は無いが、その日以前の直近 (5/12) を使う
-	if got := store.payments["u1:2026-05-13"]; got != 2820 { // 20 * 141
-		t.Errorf("支払額 = %d, want 2820（キャッシュ済みの直近レート）", got)
-	}
-	for _, d := range f.historyOn {
-		if d == "2026-05-13" {
-			t.Error("キャッシュがあるのに履歴 API を叩いている")
-		}
-	}
-}
-
-// 過去のレートがどうしても取れないなら、1 件も進めない。
+// レートが取れない期があるなら、そこで止める。
 // 古い概算のまま「確定した」ことにする方が有害（あとから直せない）。
-func TestRun_USD_NoRateForMissedPeriod_AdvancesNothing(t *testing.T) {
+func TestRun_FXUnavailable_StopsAndReports(t *testing.T) {
 	t.Parallel()
 
 	store := newStore()
-	store.subs = []supabase.Subscription{
-		{ID: "u1", HouseholdID: "main", OwnerMemberID: "shiyowo", Name: "ChatGPT",
-			Currency: "USD", OriginalAmount: 20, AmountJPY: 3000, Cycle: "monthly",
-			NextRenewalDate: "2026-05-13", RenewalAnchorDay: 13},
-	}
-	// 履歴レートが取れない (history が空)
+	store.subs = []supabase.Subscription{{ID: "u1", Name: "ChatGPT"}}
+	store.needsFX["u1"] = "2026-05-13"
+
+	// 履歴レートが取れない
 	f := &fakeFX{rate: fx.Rate{Date: "2026-07-13", Rate: 150}}
 	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
 
@@ -576,28 +191,131 @@ func TestRun_USD_NoRateForMissedPeriod_AdvancesNothing(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "レート") {
 		t.Fatalf("レートが取れないことは報告されるべき: %v", err)
 	}
-	if len(store.payments) != 0 {
-		t.Errorf("1 件も記録してはいけない: %v", store.payments)
+	if store.recorded["u1"] != 0 {
+		t.Errorf("レートが無いのに記録している: %v", store.recorded)
 	}
-	if _, advanced := store.updates["u1"]; advanced {
-		t.Error("更新日を進めてはいけない")
+	// keep-alive は実行される（1 つ落ちても他は走る）
+	if store.pinged != 1 {
+		t.Error("為替の失敗で keep-alive まで止まっている")
 	}
 }
 
-func TestRun_BadDate_IsSkipped(t *testing.T) {
+// レートが恒久的に「揃わない」と RPC が言い続けると無限ループになる。上限で打ち切る。
+func TestRun_FXNeverSatisfied_IsCapped(t *testing.T) {
 	t.Parallel()
 
 	store := newStore()
-	store.subs = []supabase.Subscription{
-		{ID: "bad", Currency: "JPY", Cycle: "monthly", NextRenewalDate: "not-a-date"},
+	store.subs = []supabase.Subscription{{ID: "u1", Name: "ChatGPT"}}
+	store.needsFX["u1"] = "2026-05-13"
+
+	// レートは取れるが、保存しても needsFX が解消しない（cached に入らない）体
+	store.upsertErr = nil
+	f := &fakeFX{
+		rate: fx.Rate{Date: "2026-07-13", Rate: 150},
+		// 取得したレートの基準日が要求日と違う（休日で前営業日が返るケースの極端版）
+		history: map[string]fx.Rate{"2026-05-13": {Date: "2026-01-01", Rate: 140}},
 	}
+	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
+
+	err := j.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "超えました") {
+		t.Fatalf("上限で打ち切って報告するべき: %v", err)
+	}
+	if store.settleCalls["u1"] > maxFXFetchPerSubscription {
+		t.Errorf("上限を超えて呼んでいる: %d 回", store.settleCalls["u1"])
+	}
+}
+
+// 為替 API が落ちていても、サブスクの精算（JPY）と keep-alive は実行する。
+// keep-alive が止まると Supabase が一時停止してアプリ全体が死ぬ。
+func TestRun_FXDown_StillSettlesAndPings(t *testing.T) {
+	t.Parallel()
+
+	store := newStore()
+	store.subs = []supabase.Subscription{{ID: "s1", Name: "Netflix"}}
+	f := &fakeFX{err: errors.New("fx down")}
+	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
+
+	err := j.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "為替の取得") {
+		t.Fatalf("為替の失敗は報告されるべき: %v", err)
+	}
+	if store.recorded["s1"] != 1 {
+		t.Error("為替が落ちても JPY サブスクは精算されるべき")
+	}
+	if store.pinged != 1 {
+		t.Error("為替の失敗で keep-alive まで止まっている")
+	}
+}
+
+func TestRun_PartialFailures_ContinueAndReportAll(t *testing.T) {
+	t.Parallel()
+
+	store := newStore()
+	store.subs = []supabase.Subscription{{ID: "s1", Name: "A"}, {ID: "s2", Name: "B"}}
+	store.settleErr = errors.New("db down")
+	store.pingErr = errors.New("ping failed")
+	f := &fakeFX{rate: fx.Rate{Date: "2026-07-13", Rate: 150}}
+	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
+
+	err := j.Run(context.Background())
+	if err == nil {
+		t.Fatal("エラーになるべき")
+	}
+	for _, want := range []string{"サブスクの精算", "keep-alive"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("err に %q が無い: %v", want, err)
+		}
+	}
+	// 1 件目が落ちても 2 件目を試す
+	if store.settleCalls["s2"] == 0 && store.settleErr == nil {
+		t.Error("1 件の失敗で残りを諦めている")
+	}
+	if store.pinged != 1 {
+		t.Error("keep-alive を実行していない")
+	}
+}
+
+func TestRun_NoDueSubscriptions(t *testing.T) {
+	t.Parallel()
+
+	store := newStore()
 	f := &fakeFX{rate: fx.Rate{Date: "2026-07-13", Rate: 150}}
 	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
 
 	if err := j.Run(context.Background()); err != nil {
-		t.Fatalf("壊れた行で cron 全体を落とさない: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(store.updates) != 0 {
-		t.Error("壊れた日付の行は触らない")
+	if len(store.settleCalls) != 0 {
+		t.Errorf("到来したサブスクが無いのに精算している: %v", store.settleCalls)
 	}
+	if store.pinged != 1 {
+		t.Error("keep-alive していない")
+	}
+}
+
+func TestRun_ListFails_IsReported(t *testing.T) {
+	t.Parallel()
+
+	store := newStore()
+	store.listErr = errors.New("list failed")
+	f := &fakeFX{rate: fx.Rate{Date: "2026-07-13", Rate: 150}}
+	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
+
+	err := j.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "サブスクの精算") {
+		t.Fatalf("一覧の失敗は報告されるべき: %v", err)
+	}
+	if store.pinged != 1 {
+		t.Error("keep-alive を実行していない")
+	}
+}
+
+func contains(xs []string, want string) bool {
+	for _, x := range xs {
+		if x == want {
+			return true
+		}
+	}
+	return false
 }

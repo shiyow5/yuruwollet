@@ -682,6 +682,14 @@ export type Database = {
         }
       }
       jst_today: { Args: never; Returns: string }
+      next_renewal_after: {
+        Args: {
+          p_anchor: number
+          p_current: string
+          p_cycle: Database["public"]["Enums"]["sub_cycle"]
+        }
+        Returns: string
+      }
       roll_subscription_cycle: {
         Args: {
           p_amount_jpy?: number
@@ -697,6 +705,14 @@ export type Database = {
           p_subscription_id: string
         }
         Returns: boolean
+      }
+      settle_my_subscriptions: { Args: never; Returns: number }
+      settle_subscription: {
+        Args: { p_subscription_id: string }
+        Returns: {
+          needs_fx_on: string
+          recorded: number
+        }[]
       }
     }
     Enums: {

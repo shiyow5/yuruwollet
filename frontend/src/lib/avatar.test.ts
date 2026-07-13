@@ -37,10 +37,17 @@ describe('isDisplayableAvatarUrl', () => {
     expect(isDisplayableAvatarUrl('https://lh3.googleusercontent.com/a/x')).toBe(true);
   });
 
-  // <img src> に javascript: や data: を流さない（CSP がまだ無いので特に）
-  it('https 以外は捨てる', () => {
+  it('lh4/lh5/lh6 も通す（Google は複数ホストを使う）', () => {
+    expect(isDisplayableAvatarUrl('https://lh5.googleusercontent.com/a/y')).toBe(true);
+  });
+
+  // <img src> に javascript: や data: を流さない（CSP がまだ無いので特に）。
+  // ホストも固定する: スキームだけ見ると任意のホストから画像を読みに行ける。
+  it('https でない / Google 以外のホストは捨てる', () => {
     for (const bad of [
-      'http://example.com/a.png',
+      'http://lh3.googleusercontent.com/a/x',
+      'https://evil.example.com/a.png',
+      'https://googleusercontent.com.evil.example.com/a.png',
       'data:image/png;base64,AAAA',
       'javascript:alert(1)',
       '//example.com/a.png',

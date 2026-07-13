@@ -28,9 +28,27 @@ export function avatarToneClass(memberId: string): string {
 /**
  * `<img src>` に流してよい URL か。
  *
- * **https の絶対 URL だけを通す。** `javascript:` や `data:` を弾く
- * （CSP をまだ入れていないので、ここが唯一の関門になる）。
+ * **https で、かつ Google のプロフィール画像ホストだけ**を通す。
+ *
+ * スキームだけ見て `https://` を通すと、任意のホストから画像を読みに行ける。
+ * 今の経路（自分の Access JWT の picture クレーム）では攻撃者が値を仕込めないが、
+ * これはアプリ初の「外部から取ってくる動的な <img src>」なので、
+ * ホストまで固定して多層防御にする。IdP を増やしたときに緩むのも防げる。
+ *
+ * 外れても実害は無い（頭文字にフォールバックするだけ）。CSP はまだ入っていないので、
+ * ここが唯一の関門になる（#41 で img-src を足す）。
  */
 export function isDisplayableAvatarUrl(value: unknown): value is string {
-  return typeof value === 'string' && value.startsWith('https://');
+  if (typeof value !== 'string') return false;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  return (
+    url.protocol === 'https:' &&
+    // Google のプロフィール画像は lh3 のほか lh4/lh5/lh6 も使われる
+    (url.hostname === 'googleusercontent.com' || url.hostname.endsWith('.googleusercontent.com'))
+  );
 }

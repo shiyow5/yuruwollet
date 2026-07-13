@@ -1,4 +1,5 @@
 import { SignJWT, jwtVerify, importJWK, type JWTVerifyGetKey, type KeyLike, type JWK } from 'jose';
+import { isDisplayableAvatarUrl } from '../avatar';
 
 /** Access で認証された 1 メンバー (ゆるり / しよを) */
 export interface Member {
@@ -99,15 +100,15 @@ export interface AccessIdentity {
  * （届かないことがある）。**無い経路が通常経路**として扱うこと。
  * https://developers.cloudflare.com/cloudflare-one/identity/authorization-cookie/application-token/
  *
- * `<img src>` に流すので **https の絶対 URL だけ**を通す（`javascript:` / `data:` を弾く。
- * CSP をまだ入れていないので、ここが唯一の関門になる）。
+ * `<img src>` に流すので、許可した URL だけを通す（判定は lib/avatar.ts と共有する。
+ * 許可リストが 2 箇所にあると必ずズレる）。
  */
 export function extractAvatarUrl(payload: unknown): string | undefined {
   if (typeof payload !== 'object' || payload === null) return undefined;
   const custom = (payload as { custom?: unknown }).custom;
   if (typeof custom !== 'object' || custom === null) return undefined;
   const picture = (custom as { picture?: unknown }).picture;
-  return typeof picture === 'string' && picture.startsWith('https://') ? picture : undefined;
+  return isDisplayableAvatarUrl(picture) ? picture : undefined;
 }
 
 /**

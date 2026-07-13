@@ -69,6 +69,40 @@ describe('logout', () => {
     expect(order).toEqual(['clear', 'navigate']);
   });
 
+  // **黙って失敗するのが一番まずい。** clearCaches が投げて navigate に到達しないと、
+  // Access のクッキーが生き残ったまま「ログアウトしたつもり」になる
+  // （ボタンは押せたのに、実際にはログインしたまま）。共有端末で開く前提のアプリなので。
+  it('キャッシュ破棄が失敗しても必ず遷移する', async () => {
+    const navigate = vi.fn();
+    const boom = new Error('clear failed');
+
+    await expect(
+      logout({
+        clearCaches: () => {
+          throw boom;
+        },
+        navigate,
+      }),
+    ).rejects.toThrow(boom);
+
+    expect(navigate).toHaveBeenCalledWith(ACCESS_LOGOUT_URL);
+  });
+
+  it('キャッシュ破棄が失敗しても Supabase JWT は捨てられている', async () => {
+    const fetchImpl = vi.fn(async () => sessionResponse());
+    await fetchSession(fetchImpl);
+
+    await logout({
+      clearCaches: () => {
+        throw new Error('clear failed');
+      },
+      navigate: vi.fn(),
+    }).catch(() => {});
+
+    await getFreshSupabaseToken(fetchImpl);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
   it('clearCaches を渡さなくても動く', async () => {
     const navigate = vi.fn();
     await expect(logout({ navigate })).resolves.toBeUndefined();

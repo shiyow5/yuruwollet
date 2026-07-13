@@ -27,8 +27,15 @@ interface Options {
  */
 export async function logout({ clearCaches, navigate = assign }: Options = {}): Promise<void> {
   resetSessionCache();
-  clearCaches?.();
-  navigate(ACCESS_LOGOUT_URL);
+  try {
+    clearCaches?.();
+  } finally {
+    // **キャッシュ破棄が失敗しても必ず遷移する。**
+    // ここで例外が抜けると navigate に到達せず、Access のクッキーが生き残ったまま
+    // 「ログアウトしたつもり」になる（ボタンは押せたのに何も起きない）。
+    // 共有端末で家計簿を開く前提のアプリなので、黙って失敗するのが一番まずい。
+    navigate(ACCESS_LOGOUT_URL);
+  }
 }
 
 function assign(url: string): void {

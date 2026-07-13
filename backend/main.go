@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"time"
@@ -30,9 +31,13 @@ func runDaily(ctx context.Context) error {
 	baseURL := cloudflare.Getenv("SUPABASE_URL")
 	serviceKey := cloudflare.Getenv("SUPABASE_SERVICE_ROLE_KEY")
 	if baseURL == "" || serviceKey == "" {
-		// 黙って何もしないと、fx_rates が空のまま USD サブスクを登録できない状態に気づけない。
-		log.Println("cron: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY が未設定のため中止します")
-		return nil
+		// **成功扱いにしてはいけない**。設定漏れのまま「正常終了」と記録されると、
+		// 為替もサブスクの更新も keep-alive も止まったまま気づけず、
+		// やがて Supabase が一時停止してアプリ全体が死ぬ。
+		// cron の失敗として表に出す。
+		err := errors.New("SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY が未設定です")
+		log.Printf("cron: %v", err)
+		return err
 	}
 
 	httpClient := &http.Client{Timeout: 15 * time.Second}

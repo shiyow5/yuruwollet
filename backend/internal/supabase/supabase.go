@@ -116,14 +116,40 @@ type RenewalUpdate struct {
 }
 
 // UpdateSubscriptionRenewal は 1 件のサブスクを次の更新日へ進める。
+//
+// expectedDate は一覧取得時に読んだ next_renewal_date。**その値のままの行だけを更新する** (CAS)。
+// 一覧取得から PATCH までの間にユーザーが更新日を編集/解約すると、id だけで更新すると
+// **cron が古いスナップショットからの計算でユーザーの編集を巻き戻してしまう**
+// (例: 課金日を 7/13 → 12/31 に変えた直後に cron が 8/13 へ戻す)。
+//
+// 一致する行が無ければ「その間に人が触った」だけなので、次回の cron で拾えば良い。
+// エラーではなく applied=false を返す。
+//
 // renewal_anchor_day は送らない: service_role の更新では DB トリガが anchor を保持する
 // (丸めた日で上書きすると、月末課金が 28 日に固定化してしまう)。
-func (c *Client) UpdateSubscriptionRenewal(ctx context.Context, id string, update RenewalUpdate) error {
+func (c *Client) UpdateSubscriptionRenewal(
+	ctx context.Context, id, expectedDate string, update RenewalUpdate,
+) (applied bool, err error) {
 	q := url.Values{}
 	q.Set("id", "eq."+id)
+	q.Set("next_renewal_date", "eq."+expectedDate)
+	// 解約検討中に変えられた行も進めない
+	q.Set("status", "in.(active,trial)")
+	q.Set("select", "id")
 
-	_, err := c.do(ctx, http.MethodPatch, "/rest/v1/subscriptions?"+q.Encode(), update, "return=minimal")
-	return err
+	payload, err := c.do(ctx, http.MethodPatch,
+		"/rest/v1/subscriptions?"+q.Encode(), update, "return=representation")
+	if err != nil {
+		return false, err
+	}
+
+	var updated []struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(payload, &updated); err != nil {
+		return false, fmt.Errorf("supabase: 更新結果を解釈できませんでした: %w", err)
+	}
+	return len(updated) > 0, nil
 }
 
 // Ping は Supabase Free の自動一時停止 (約7日アイドル) を避けるための軽い読み取り。

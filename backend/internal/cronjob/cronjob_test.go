@@ -30,10 +30,18 @@ type fakeStore struct {
 	updates  map[string]supabase.RenewalUpdate
 	pinged   int
 	listedAt string
+	// expectedDates は CAS に渡された「一覧取得時の更新日」。
+	expectedDates map[string]string
+	// raced[id] = true なら、その行は CAS に一致せず更新されない（人が編集した体）。
+	raced map[string]bool
 }
 
 func newStore() *fakeStore {
-	return &fakeStore{updates: map[string]supabase.RenewalUpdate{}}
+	return &fakeStore{
+		updates:       map[string]supabase.RenewalUpdate{},
+		expectedDates: map[string]string{},
+		raced:         map[string]bool{},
+	}
 }
 
 func (s *fakeStore) UpsertFXRate(_ context.Context, date string, _ float64) error {
@@ -49,12 +57,19 @@ func (s *fakeStore) ListDueSubscriptions(_ context.Context, today string) ([]sup
 	return s.subs, s.listErr
 }
 
-func (s *fakeStore) UpdateSubscriptionRenewal(_ context.Context, id string, u supabase.RenewalUpdate) error {
+func (s *fakeStore) UpdateSubscriptionRenewal(
+	_ context.Context, id, expectedDate string, u supabase.RenewalUpdate,
+) (bool, error) {
 	if s.updateErr != nil {
-		return s.updateErr
+		return false, s.updateErr
+	}
+	s.expectedDates[id] = expectedDate
+	// CAS: 一覧取得後に人が編集した行は更新されない
+	if s.raced[id] {
+		return false, nil
 	}
 	s.updates[id] = u
-	return nil
+	return true, nil
 }
 
 func (s *fakeStore) Ping(context.Context) error {
@@ -251,6 +266,47 @@ func TestRun_MonthEndUsesAnchor(t *testing.T) {
 	}
 	if got := store.updates["me"].NextRenewalDate; got != "2026-02-28" {
 		t.Errorf("next = %s, want 2026-02-28", got)
+	}
+}
+
+// 一覧取得から更新までの間にユーザーが課金日を編集していたら、
+// 古いスナップショットで巻き戻してはいけない（CAS で弾かれる）。
+func TestRun_UserEditedInBetween_DoesNotClobber(t *testing.T) {
+	t.Parallel()
+
+	store := newStore()
+	store.subs = []supabase.Subscription{
+		{ID: "s1", Currency: "JPY", Cycle: "monthly", NextRenewalDate: "2026-07-10", RenewalAnchorDay: 10},
+	}
+	store.raced["s1"] = true // その間に人が編集した → CAS に一致しない
+	f := &fakeFX{rate: fx.Rate{Date: "2026-07-13", Rate: 150}}
+	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
+
+	// 人が触っただけなので cron の失敗にはしない（次回の cron で拾えば良い）
+	if err := j.Run(context.Background()); err != nil {
+		t.Fatalf("CAS 不一致はエラーにしない: %v", err)
+	}
+	if _, applied := store.updates["s1"]; applied {
+		t.Error("CAS に一致しない行を更新してはいけない")
+	}
+}
+
+// CAS には「一覧取得時に読んだ更新日」を渡す
+func TestRun_PassesReadDateAsCASKey(t *testing.T) {
+	t.Parallel()
+
+	store := newStore()
+	store.subs = []supabase.Subscription{
+		{ID: "s1", Currency: "JPY", Cycle: "monthly", NextRenewalDate: "2026-07-10", RenewalAnchorDay: 10},
+	}
+	f := &fakeFX{rate: fx.Rate{Date: "2026-07-13", Rate: 150}}
+	j := jobAt(t, "2026-07-13T03:00:00Z", f, store)
+
+	if err := j.Run(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := store.expectedDates["s1"]; got != "2026-07-10" {
+		t.Errorf("CAS キー = %q, want 2026-07-10 (一覧取得時の更新日)", got)
 	}
 }
 

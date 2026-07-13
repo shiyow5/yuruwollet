@@ -102,12 +102,12 @@ func TestUpdateSubscriptionRenewal(t *testing.T) {
 	t.Parallel()
 
 	var cap captured
-	c := serverFor(t, http.StatusNoContent, ``, &cap)
+	c := serverFor(t, http.StatusOK, `[{"id":"s1"}]`, &cap)
 
 	amount := 3030
 	rate := 151.5
 	date := "2026-07-13"
-	err := c.UpdateSubscriptionRenewal(context.Background(), "s1", RenewalUpdate{
+	applied, err := c.UpdateSubscriptionRenewal(context.Background(), "s1", "2026-07-13", RenewalUpdate{
 		NextRenewalDate: "2026-08-13",
 		AmountJPY:       &amount,
 		FxRate:          &rate,
@@ -116,9 +116,17 @@ func TestUpdateSubscriptionRenewal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if !applied {
+		t.Error("applied = false, want true")
+	}
 
 	if cap.Method != http.MethodPatch || !strings.Contains(cap.Query, "id=eq.s1") {
 		t.Errorf("%s ?%s", cap.Method, cap.Query)
+	}
+	// CAS: 一覧取得時に読んだ更新日と一致する行だけを更新する。
+	// id だけで更新すると、その間にユーザーが編集した課金日を巻き戻してしまう。
+	if !strings.Contains(cap.Query, "next_renewal_date=eq.2026-07-13") {
+		t.Errorf("CAS 条件が無い: %q", cap.Query)
 	}
 	// anchor は送らない (送ると丸めた日で上書きされ、月末課金が 28 日に固定化する)
 	if strings.Contains(cap.Body, "renewal_anchor_day") {
@@ -134,9 +142,9 @@ func TestUpdateSubscriptionRenewal_JPY_OmitsFX(t *testing.T) {
 	t.Parallel()
 
 	var cap captured
-	c := serverFor(t, http.StatusNoContent, ``, &cap)
+	c := serverFor(t, http.StatusOK, `[{"id":"s1"}]`, &cap)
 
-	if err := c.UpdateSubscriptionRenewal(context.Background(), "s1",
+	if _, err := c.UpdateSubscriptionRenewal(context.Background(), "s1", "2026-07-10",
 		RenewalUpdate{NextRenewalDate: "2026-08-10"}); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -175,5 +183,23 @@ func TestErrorStatus(t *testing.T) {
 	// 原因を追えるようにステータスと本文を残す
 	if !strings.Contains(err.Error(), "401") || !strings.Contains(err.Error(), "invalid key") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+// 一覧取得後にユーザーが編集していた行は CAS に一致せず、0 件更新になる。
+// これはレースであってエラーではない（次回の cron で拾う）。
+func TestUpdateSubscriptionRenewal_CASMiss(t *testing.T) {
+	t.Parallel()
+
+	var cap captured
+	c := serverFor(t, http.StatusOK, `[]`, &cap)
+
+	applied, err := c.UpdateSubscriptionRenewal(context.Background(), "s1", "2026-07-13",
+		RenewalUpdate{NextRenewalDate: "2026-08-13"})
+	if err != nil {
+		t.Fatalf("CAS 不一致はエラーにしない: %v", err)
+	}
+	if applied {
+		t.Error("applied = true, want false")
 	}
 }

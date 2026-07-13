@@ -48,6 +48,10 @@ WORKER_BOOT_TIMEOUT = 180  # 秒。初回は workerd の取得とビルドで時
 received: list[str] = []
 
 
+# fx_down = True のとき、為替 API だけが 503 を返す（部分失敗のシナリオ）
+fx_down = False
+
+
 class Stub(BaseHTTPRequestHandler):
     """為替 API と Supabase PostgREST の両方を兼ねる。"""
 
@@ -67,6 +71,9 @@ class Stub(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         path = self._record()
         if path.startswith("/v1/"):  # frankfurter (最新 or 履歴)
+            if fx_down:
+                self._send('{"error":"unavailable"}', 503)
+                return
             self._send('{"base":"USD","date":"2026-07-13","rates":{"JPY":150.0}}')
         elif path == "/rest/v1/subscriptions":
             self._send("[]")  # 更新日が到来したサブスクは無い
@@ -142,19 +149,25 @@ def main() -> None:
 
     threading.Thread(target=drain, daemon=True).start()
 
-    try:
-        print(f"wrangler dev を起動中（最大 {WORKER_BOOT_TIMEOUT}s）…")
-        wait_for_worker(proc, log)
-        print("起動しました。scheduled イベントを投げます。")
+    global fx_down
 
+    def fire() -> int:
         url = f"http://127.0.0.1:{WORKER_PORT}/__scheduled?cron=0+15+*+*+*"
         try:
             with urllib.request.urlopen(url, timeout=60) as res:
-                status = res.status
+                code = res.status
         except urllib.error.HTTPError as e:
-            status = e.code
-
+            code = e.code
         time.sleep(1)  # スタブへの最後の呼び出しが届くのを待つ
+        return code
+
+    try:
+        print(f"wrangler dev を起動中（最大 {WORKER_BOOT_TIMEOUT}s）…")
+        wait_for_worker(proc, log)
+
+        # ---- シナリオ 1: 正常系 ------------------------------------------------
+        print("\n[1] 正常系: scheduled イベントを投げます")
+        status = fire()
 
         if status != 200:
             fail(f"scheduled イベントが {status} で失敗しました（200 を期待）", log)
@@ -169,20 +182,46 @@ def main() -> None:
         ]
         for pattern in expected:
             if not any(re.match(pattern, r) for r in received):
-                fail(
-                    f"cron が {pattern} を呼んでいません（受けたのは {received}）",
-                    log,
-                )
+                fail(f"cron が {pattern} を呼んでいません（受けたのは {received}）", log)
 
-        # panic は 200 を返しつつログにだけ出ることがある
         joined = "".join(log)
         for bad in ("panic:", "Illegal invocation", "Uncaught"):
             if bad in joined:
-                fail(f"Worker のログに {bad!r} が出ています", log)
+                fail(f"正常系なのに Worker のログに {bad!r} が出ています", log)
 
-        print(f"\n✓ cron が workerd 上で完走しました（{len(received)} 本の外向き HTTP）")
+        print(f"    ✓ 完走（{len(received)} 本の外向き HTTP）")
         for r in received:
-            print(f"    {r}")
+            print(f"      {r}")
+
+        # ---- シナリオ 2: 為替 API だけが落ちている --------------------------------
+        # **ハッピーパスだけでは不十分。** 為替が落ちた日でも
+        #   - サブスクの更新と keep-alive は実行される（1 つ落ちても他は走る）
+        #   - keep-alive が止まると Supabase が一時停止してアプリ全体が死ぬので、これは必須
+        #   - cron 自体は「失敗」として記録される（黙って成功にしない）
+        # ことを確認する。
+        print("\n[2] 部分失敗: 為替 API だけ 503 にして投げます")
+        received.clear()
+        fx_down = True
+        status = fire()
+
+        if status == 200:
+            fail("為替が落ちた日に cron が成功扱いになっています（失敗として記録すべき）", log)
+
+        # ここが本題。為替が落ちても keep-alive まで到達しているか。
+        if not any(re.match(r"GET /rest/v1/households", r) for r in received):
+            fail(
+                "為替の失敗で keep-alive まで止まっています"
+                f"（Supabase が一時停止してアプリが死ぬ）。受けたのは {received}",
+                log,
+            )
+        if not any(re.match(r"GET /rest/v1/subscriptions", r) for r in received):
+            fail(f"為替の失敗でサブスクの更新まで止まっています（受けたのは {received}）", log)
+
+        print(f"    ✓ 為替が落ちても他の処理は走り、cron は失敗として記録された（HTTP {status}）")
+        for r in received:
+            print(f"      {r}")
+
+        print("\n✓ cron スモークテスト 完了")
     finally:
         try:
             os.killpg(os.getpgid(proc.pid), signal.SIGTERM)

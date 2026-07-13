@@ -47,13 +47,28 @@ func runDaily(ctx context.Context) error {
 	// （2026-07-13: これで cron が毎回 scriptThrewException で死んでいた。
 	//   ネイティブの go test は WASM の fetch 経路を通らないので捕まらない。
 	//   CI の scheduled スモークテストが唯一の防波堤）。
-	httpClient := fetch.NewClient().HTTPClient(fetch.RedirectModeFollow)
-	httpClient.Timeout = 15 * time.Second
+	//
+	// **タイムアウトは設定しない。** このトランスポートは workerd の fetch() の
+	// Promise を待つだけで、http.Client.Timeout も context の deadline も見ない
+	// （jsutil.AwaitPromise が ctx.Done() を select していない）。設定すると
+	// 「効いている」と誤解させるだけなので置かない。実行時間の上限は Cloudflare の
+	// cron 実行制限に委ねる。
+	//
+	// **リダイレクトは追わない。** Supabase へのリクエストには service_role キーを
+	// Authorization に載せている。別オリジンへリダイレクトされたときに workerd の
+	// fetch がこのヘッダを落とす保証が無いので、追わせない。
+	// manual なら 3xx がそのまま返り、こちらのコードが非 2xx として弾く。
+	// （RedirectModeError は使えない。workerd は "error" を実装しておらず、
+	//   "Invalid redirect value" で全リクエストが落ちる。スモークテストで検出した）
+	// 正常系では Supabase も frankfurter もリダイレクトしない。
+	httpClient := fetch.NewClient().HTTPClient(fetch.RedirectModeManual)
 
 	fxClient := fx.New(httpClient)
 	// 為替 API のベース URL は差し替え可能にする（CI のスモークテストをスタブに向けるため）。
 	// 未設定なら keyless の frankfurter.dev。
+	// 本番で誤って設定されると為替が黙って別のホストから来るので、**必ずログに残す**。
 	if base := cloudflare.Getenv("FX_BASE_URL"); base != "" {
+		log.Printf("cron: FX_BASE_URL の上書きが有効です: %s", base)
 		fxClient.BaseURL = base
 	}
 
@@ -64,7 +79,17 @@ func runDaily(ctx context.Context) error {
 	}
 
 	if err := job.Run(ctx); err != nil {
-		// 部分失敗も含めてログに出す (Cloudflare の cron ログで追える)
+		// 部分失敗も含めてログに出す。
+		//
+		// **ここで err を返すと、syumai/workers の cron スケジューラは panic する**
+		// (cloudflare/cron/scheduler.go: `if err != nil { panic(err) }`)。
+		// つまり Cloudflare 側では scriptThrewException として記録される。
+		// それでよい。cron が黙って失敗し続けるより、失敗として表に出るべきで、
+		// **job.Run は 3 つの処理を全部やり終えてから** エラーを束ねて返す
+		// （1 つ落ちても他は実行される）。失敗した内容はこのログに出る。
+		//
+		// 中身を追うには Worker のログが要る。wrangler.jsonc で observability を
+		// 有効にしてある（無効のままだと、今回のように例外の中身が一切取れない）。
 		log.Printf("cron: 一部の処理に失敗しました: %v", err)
 		return err
 	}

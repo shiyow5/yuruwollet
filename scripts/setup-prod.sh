@@ -20,10 +20,14 @@ die() {
 }
 
 [ -f .env ] || die ".env がありません。cp .env.example .env して値を埋めてください。"
-set -a
-# shellcheck disable=SC1091
-source .env
-set +a
+
+# **source を使わない。**
+# bash は行を shell の構文として解釈するため、JSON の値
+#   SUPABASE_SIGNING_KEY={"kty":"EC",...}
+# からクォートを剥がしてしまう（→ {kty:EC,...}）。それが Pages の secret に入り、
+# Pages Function の JSON.parse が落ちて /api/session が毎回 500 になる。
+# env_export.py は値をテキストとして読み、shlex.quote で包み直す。
+eval "$(python3 scripts/env_export.py .env)" || die ".env を読めませんでした"
 
 require() {
   for name in "$@"; do
@@ -39,6 +43,22 @@ require SUPABASE_URL SUPABASE_ANON_KEY SUPABASE_SERVICE_ROLE_KEY DATABASE_URL \
 # 署名鍵は URL やキーからは導出できない。Pages Function が JWT を自分で発行するため必須。
 if [ -z "${SUPABASE_JWT_SECRET:-}" ] && [ -z "${SUPABASE_SIGNING_KEY:-}" ]; then
   die "SUPABASE_JWT_SECRET か SUPABASE_SIGNING_KEY のどちらかを埋めてください（.env の 1) 参照）"
+fi
+
+# ES256 を選んだ場合、鍵は JWK（JSON）。壊れた JSON を secret に入れると
+# /api/session が 500 になる。**入れる前に**弾く。
+if [ -n "${SUPABASE_SIGNING_KEY:-}" ]; then
+  python3 -c "
+import json, sys
+try:
+    jwk = json.loads(sys.argv[1])
+except Exception as e:
+    sys.exit(f'SUPABASE_SIGNING_KEY が JSON として読めません: {e}\n'
+             '.env ではシングルクォートで囲んでください: SUPABASE_SIGNING_KEY=\'{\"kty\":...}\'')
+for f in ('kty', 'alg'):
+    if f not in jwk:
+        sys.exit(f'SUPABASE_SIGNING_KEY に {f} がありません')
+" "$SUPABASE_SIGNING_KEY" || die "SUPABASE_SIGNING_KEY が不正です"
 fi
 
 # 末尾の / があると PostgREST の URL が壊れる
@@ -109,6 +129,37 @@ step "B. Cloudflare Pages — プロジェクト"
 export CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID
 if npx --yes wrangler pages project list 2>/dev/null | grep -q "\b${PAGES_PROJECT}\b"; then
   ok "Pages プロジェクトは作成済み (${PAGES_PROJECT})"
+
+  # **production branch が main であることを確認する。**
+  # 別ブランチで最初に作られていると、`--branch main` のデプロイは preview 扱いになり、
+  # 本番 URL は古い内容を出し続ける（デプロイは成功と報告される）。
+  python3 - <<'PY' || die "Pages プロジェクトの production branch を確認できませんでした"
+import json, os, sys, urllib.request, urllib.error
+
+acct = os.environ["CLOUDFLARE_ACCOUNT_ID"]
+tok = os.environ["CLOUDFLARE_API_TOKEN"]
+base = f"https://api.cloudflare.com/client/v4/accounts/{acct}/pages/projects/yuruwollet"
+
+
+def call(method, body=None):
+    req = urllib.request.Request(
+        base,
+        method=method,
+        data=json.dumps(body).encode() if body else None,
+        headers={"Authorization": f"Bearer {tok}", "Content-Type": "application/json"},
+    )
+    return json.load(urllib.request.urlopen(req))["result"]
+
+
+current = call("GET").get("production_branch")
+if current == "main":
+    print("   ✓ production branch = main")
+    sys.exit(0)
+
+print(f"   production branch が {current!r} でした。main に直します。")
+call("PATCH", {"production_branch": "main"})
+print("   ✓ production branch を main に更新しました")
+PY
 else
   npx --yes wrangler pages project create "$PAGES_PROJECT" --production-branch main >/dev/null
   ok "Pages プロジェクトを作成 (${PAGES_PROJECT})"
@@ -126,10 +177,19 @@ put_secret EMAIL_SHIYOWO "$EMAIL_SHIYOWO"
 # ACCESS_* は必ず 2 つ揃えて入れる（片方だけだと /api/session は 500 で拒否する）
 put_secret ACCESS_TEAM_DOMAIN "$ACCESS_TEAM_DOMAIN"
 put_secret ACCESS_AUD "$ACCESS_AUD"
+# 署名方式は 1 つだけ。**使わない方の secret は消す。**
+# ランタイムは SUPABASE_SIGNING_KEY(ES256) を優先するので、ES256 → HS256 に切り替えても
+# 古い ES256 の secret が残っていると **古い鍵が使われ続け、切替が効かない**。
+delete_secret() { # delete_secret NAME（無ければ黙って成功）
+  (cd frontend && npx --yes wrangler pages secret delete "$1" \
+    --project-name "$PAGES_PROJECT" >/dev/null 2>&1) && info "$1 を削除（未使用の署名鍵）" || true
+}
 if [ -n "${SUPABASE_SIGNING_KEY:-}" ]; then
   put_secret SUPABASE_SIGNING_KEY "$SUPABASE_SIGNING_KEY"
+  delete_secret SUPABASE_JWT_SECRET
 else
   put_secret SUPABASE_JWT_SECRET "$SUPABASE_JWT_SECRET"
+  delete_secret SUPABASE_SIGNING_KEY
 fi
 
 step "B. Cloudflare Pages — フロントをビルドしてデプロイ"

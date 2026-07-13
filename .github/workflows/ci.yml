@@ -5,6 +5,11 @@ on:
   push:
     branches: [main]
 
+# 既定の GITHUB_TOKEN は読み取りだけでよい。
+# デプロイ先の資格情報は secrets（Cloudflare / Supabase）で、GITHUB_TOKEN は使わない。
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -121,3 +126,20 @@ jobs:
           name: playwright-report
           path: e2e/playwright-report
           retention-days: 7
+
+  # main への push で、4 つのジョブが **全部緑のときだけ** 本番へ出す。
+  #
+  # ここ（CI と同じワークフロー・同じイベント）に置くのが要点。
+  # 別ワークフロー + workflow_run にすると、fork の PR で走った CI の成功を拾って
+  # deploy が **secrets 付きで攻撃者の commit** を実行してしまう（"pwn request"）。
+  # このリポジトリは public なので、それは「誰でも本番 DB に任意の SQL を流せる」に等しい。
+  #
+  # if の event チェックが唯一の門番:
+  #   - pull_request（fork 含む）では push ではないので走らない
+  #   - そもそも fork の PR には secrets が渡らない
+  deploy:
+    name: deploy (production)
+    needs: [frontend, backend, supabase, e2e]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/deploy.yml
+    secrets: inherit

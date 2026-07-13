@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 )
 
 // DefaultBaseURL は keyless の為替 API (API キー不要)。
@@ -28,10 +27,15 @@ type Client struct {
 	BaseURL string
 }
 
-// New は既定の設定でクライアントを作る。
+// New はクライアントを作る。
+//
+// httpClient は **必須**。nil を渡して net/http の既定トランスポートに落ちてはいけない。
+// workerd では標準トランスポートが fetch を不正な this で呼び、Illegal invocation で
+// panic する（それで cron が本番で毎回死んでいた）。ネイティブの go test は
+// この経路を通らないので、既定値へのフォールバックを残すと**静かに再発する**。
 func New(httpClient *http.Client) *Client {
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 10 * time.Second}
+		panic("fx: httpClient は必須です（workerd では net/http の既定トランスポートが panic する）")
 	}
 	return &Client{HTTP: httpClient, BaseURL: DefaultBaseURL}
 }

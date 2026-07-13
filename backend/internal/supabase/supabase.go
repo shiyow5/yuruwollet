@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"time"
 )
 
 // Client は Supabase REST クライアント (service_role)。
@@ -20,9 +19,14 @@ type Client struct {
 }
 
 // New はクライアントを作る。
+//
+// httpClient は **必須**。nil を渡して net/http の既定トランスポートに落ちてはいけない。
+// workerd では標準トランスポートが fetch を不正な this で呼び、Illegal invocation で
+// panic する（それで cron が本番で毎回死んでいた）。ネイティブの go test は
+// この経路を通らないので、既定値へのフォールバックを残すと**静かに再発する**。
 func New(httpClient *http.Client, baseURL, serviceKey string) *Client {
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 15 * time.Second}
+		panic("supabase: httpClient は必須です（workerd では net/http の既定トランスポートが panic する）")
 	}
 	return &Client{HTTP: httpClient, BaseURL: baseURL, ServiceKey: serviceKey}
 }

@@ -23,6 +23,16 @@ const baseEnv: TestEnv = {
   ACCESS_AUD: 'aud-tag',
 };
 
+/**
+ * ローカル / CI の env。Access はまだ設定されていないので ACCESS_* は入らない。
+ * dev バイパスは **この状態でのみ** 効く（本番では isAccessConfigured により無効化される）。
+ */
+const devEnv: TestEnv = {
+  ...baseEnv,
+  ACCESS_TEAM_DOMAIN: undefined,
+  ACCESS_AUD: undefined,
+};
+
 function ctx(env: TestEnv, init: RequestInit = {}) {
   return {
     request: new Request('https://yuruwollet.shiyow.dev/api/session', init),
@@ -47,7 +57,7 @@ describe('onRequest /api/session', () => {
   });
 
   it('dev bypass で 200 + 発行 JWT とメンバー情報', async () => {
-    const res = await onRequest(ctx({ ...baseEnv, DEV_BYPASS_EMAIL: 'yururi@example.com' }));
+    const res = await onRequest(ctx({ ...devEnv, DEV_BYPASS_EMAIL: 'yururi@example.com' }));
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       supabase_jwt: string;
@@ -63,7 +73,7 @@ describe('onRequest /api/session', () => {
     const { privateKey } = await generateKeyPair('ES256');
     const jwk = { ...(await exportJWK(privateKey)), alg: 'ES256', kid: 'k1' };
     const env: TestEnv = {
-      ...baseEnv,
+      ...devEnv,
       SUPABASE_JWT_SECRET: undefined,
       SUPABASE_SIGNING_KEY: JSON.stringify(jwk),
       DEV_BYPASS_EMAIL: 'yururi@example.com',
@@ -78,7 +88,14 @@ describe('onRequest /api/session', () => {
   });
 
   it('未登録の bypass email は 403', async () => {
-    const res = await onRequest(ctx({ ...baseEnv, DEV_BYPASS_EMAIL: 'stranger@example.com' }));
+    const res = await onRequest(ctx({ ...devEnv, DEV_BYPASS_EMAIL: 'stranger@example.com' }));
+    expect(res.status).toBe(403);
+  });
+
+  // 本番で DEV_BYPASS_EMAIL を消し忘れても、Access を迂回してログインできてはいけない。
+  // 「消し忘れないこと」に頼らず、Access 設定済みなら構造的に効かないようにしている。
+  it('Access 設定済みの env では DEV_BYPASS_EMAIL があっても 403', async () => {
+    const res = await onRequest(ctx({ ...baseEnv, DEV_BYPASS_EMAIL: 'yururi@example.com' }));
     expect(res.status).toBe(403);
   });
 });

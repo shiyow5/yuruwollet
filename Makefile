@@ -80,11 +80,15 @@ build-backend: ## Go Worker を WASM ビルド (gzip サイズも表示)
 		printf 'WASM gzip: %s bytes (無料枠上限 3145728)\n' "$$(gzip -c ./build/app.wasm | wc -c)"
 
 # ---- Deploy (手動 / CI) ---------------------------------------------------
-.PHONY: deploy deploy-frontend deploy-backend check-worker-secrets
+.PHONY: setup-prod deploy deploy-frontend deploy-backend check-worker-secrets
+
+setup-prod: ## .env を読んで本番を構築する（Supabase / Access / Pages / Cron）
+	./scripts/setup-prod.sh
+
 deploy: deploy-frontend deploy-backend ## 本番デプロイ
 
 deploy-frontend: build-frontend ## Cloudflare Pages へデプロイ
-	cd frontend && npx wrangler pages deploy dist
+	cd frontend && npx wrangler pages deploy dist --branch main
 
 deploy-backend: check-worker-secrets build-backend ## Go Cron Worker をデプロイ
 	cd backend && npx wrangler deploy

@@ -3,6 +3,11 @@
   "main": "./build/worker.mjs",
   "compatibility_date": "2026-07-01",
   "compatibility_flags": ["nodejs_compat"],
+  // この Worker は cron 専用。**HTTP の公開ルートを持たせない**。
+  // 既定のままだと *.workers.dev に公開され、service_role で Supabase を触る Worker が
+  // インターネットから叩ける状態になる（/health しか返さないとはいえ、攻撃面を増やす理由がない）。
+  "workers_dev": false,
+  "preview_urls": false,
   "build": {
     // -s -w でシンボル/デバッグ情報を落とす。素のままだと gzip 2.89MB となり、
     // 無料枠の 3MB 上限に対して余裕が 100KB ほどしか残らない（実測値、CI でも検査している）。

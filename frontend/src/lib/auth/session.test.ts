@@ -8,6 +8,7 @@ import {
   mintSupabaseJwt,
   resolveSigningKey,
   createSession,
+  accessMode,
   SessionError,
   type SessionConfig,
   type SigningKey,
@@ -180,9 +181,12 @@ describe('createSession', () => {
     expect(payload.member_id).toBe('yururi');
   });
 
+  // ローカル/CI は ACCESS_AUD / ACCESS_TEAM_DOMAIN が未設定 → '' になる
+  const devCfg: SessionConfig = { ...cfg, accessAud: '', accessIssuer: '' };
+
   it('token 無し + devBypassEmail でセッション発行 (getAccessKey は呼ばれない)', async () => {
     let called = false;
-    const session = await createSession(requestWith({}), cfg, {
+    const session = await createSession(requestWith({}), devCfg, {
       getAccessKey: () => {
         called = true;
         return keyResolver;
@@ -191,6 +195,44 @@ describe('createSession', () => {
     });
     expect(called).toBe(false);
     expect(session.member.id).toBe('shiyowo');
+  });
+
+  // バイパスは「Access ヘッダが無いリクエストをそのまま信頼する」ものなので、
+  // 本番で DEV_BYPASS_EMAIL を消し忘れると、Access を迂回できる経路
+  // （Access の対象外になっている *.pages.dev など）から誰でもログインできてしまう。
+  // 「消し忘れないこと」に頼らず、Access が設定されていたら構造的に効かないようにする。
+  it('Access が設定されていれば devBypassEmail は効かない（本番での消し忘れを無害化）', async () => {
+    await expect(
+      createSession(requestWith({}), cfg, {
+        getAccessKey,
+        devBypassEmail: 'shiyowo@example.com',
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('accessMode: 両方揃えば enforced、両方無ければ unconfigured、片方だけなら partial', () => {
+    expect(accessMode(cfg)).toBe('enforced');
+    expect(accessMode(devCfg)).toBe('unconfigured');
+    expect(accessMode({ accessAud: 'aud', accessIssuer: '' })).toBe('partial');
+    expect(accessMode({ accessAud: '', accessIssuer: 'https://x' })).toBe('partial');
+  });
+
+  // 本番の環境変数は「Access を作ってから後で入れる」ため、片方だけ入った瞬間が実在する。
+  // そこで unconfigured に倒すと、その瞬間だけバイパスが生き返り認証が丸ごと外れる。
+  it.each([
+    ['AUD だけ設定', { accessAud: 'aud-tag', accessIssuer: '' }],
+    ['team domain だけ設定', { accessAud: '', accessIssuer: 'https://team.cloudflareaccess.com' }],
+  ])('Access 設定が中途半端(%s)なら bypass を許さず 500 で落とす', async (_name, partial) => {
+    await expect(
+      createSession(
+        requestWith({}),
+        { ...cfg, ...partial },
+        {
+          getAccessKey,
+          devBypassEmail: 'yururi@example.com',
+        },
+      ),
+    ).rejects.toMatchObject({ status: 500 });
   });
 
   it('token 無し + bypass 無しは SessionError(403)', async () => {

@@ -138,21 +138,60 @@ export async function mintSupabaseJwt(
   return { token, expiresAt };
 }
 
+/** Access の設定状態。 */
+export type AccessMode =
+  /** AUD と team domain が揃っている = 本番。Access token を必須にする。 */
+  | 'enforced'
+  /** どちらも無い = ローカル/CI。dev バイパスを許す。 */
+  | 'unconfigured'
+  /** 片方だけある = 設定ミス。**判断できないので拒否する**。 */
+  | 'partial';
+
+/**
+ * Access の設定状態を判定する。
+ *
+ * dev バイパスは「Access ヘッダが無いリクエストをそのまま信頼する」ものなので、
+ * 本番で DEV_BYPASS_EMAIL が残っていると、Access を迂回して到達できる経路
+ * （例: Access の対象外になっている `*.pages.dev`）から**誰でもログインできてしまう**。
+ *
+ * ここで **片方だけ設定されている状態を 'unconfigured' に倒してはいけない**。
+ * 本番の環境変数は「Access を作ってから後で入れる」ため、AUD だけ入れて team domain を
+ * 入れ忘れた瞬間や、片方を打ち間違えた瞬間に、バイパスが生き返ってしまう。
+ * 中途半端な設定は**設定ミスとして拒否する**（fail closed）。
+ */
+export function accessMode(cfg: Pick<SessionConfig, 'accessAud' | 'accessIssuer'>): AccessMode {
+  const hasAud = cfg.accessAud !== '';
+  const hasIssuer = cfg.accessIssuer !== '';
+  if (hasAud && hasIssuer) return 'enforced';
+  if (!hasAud && !hasIssuer) return 'unconfigured';
+  return 'partial';
+}
+
 /**
  * リクエストからセッションを生成する。
- * Access JWT があれば検証、無ければ devBypassEmail(ローカル/CI) を使用。
+ * Access JWT があれば検証、無ければ devBypassEmail(Access 未設定のときのみ) を使用。
  */
 export async function createSession(
   request: Request,
   cfg: SessionConfig,
   opts: { getAccessKey: () => AccessKey; devBypassEmail?: string },
 ): Promise<SessionResult> {
+  const mode = accessMode(cfg);
+  if (mode === 'partial') {
+    // 片方だけ設定されている = 本番のつもりで設定を誤っている可能性が高い。
+    // バイパスを許すと認証が丸ごと外れるので、何もせず落とす。
+    throw new SessionError('incomplete Access configuration', 500);
+  }
+
   const token = extractAccessToken(request);
+  // Access を設定した環境ではバイパスを無効化する（本番での消し忘れを無害にする）
+  const bypass = mode === 'unconfigured' ? opts.devBypassEmail : undefined;
+
   let email: string;
   if (token) {
     email = await verifyAccessEmail(token, opts.getAccessKey(), cfg);
-  } else if (opts.devBypassEmail) {
-    email = opts.devBypassEmail.toLowerCase();
+  } else if (bypass) {
+    email = bypass.toLowerCase();
   } else {
     throw new SessionError('missing Access token');
   }

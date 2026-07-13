@@ -8,7 +8,7 @@ import type { Checkpoint } from '../../lib/wall/types';
 
 vi.mock('../../lib/supabase', () => ({ supabase: {} }));
 
-const state = vi.hoisted(() => ({ checkpoint: null as Checkpoint | null }));
+const state = vi.hoisted(() => ({ checkpoint: null as Checkpoint | null, balance: 45000 }));
 
 function cp(over: Partial<Checkpoint>): Checkpoint {
   return {
@@ -62,14 +62,18 @@ vi.mock('../../lib/data/checkpoints', () => ({
 
 vi.mock('../../lib/data/aggregates', () => ({
   getMemberBalances: vi.fn(async () => [
-    { household_id: 'main', member_id: 'yururi', display_name: 'ゆるり', balance: 45000 },
+    { household_id: 'main', member_id: 'yururi', display_name: 'ゆるり', balance: state.balance },
   ]),
   listProfiles: vi.fn(async () => []),
   getMonthlySummary: vi.fn(async () => null),
   getCategoryBreakdown: vi.fn(async () => []),
 }));
 
-import { skipCheckpoint, confirmCheckpoint } from '../../lib/data/checkpoints';
+import {
+  skipCheckpoint,
+  confirmCheckpoint,
+  getCurrentCheckpoint,
+} from '../../lib/data/checkpoints';
 
 const authedSession: SessionState = {
   status: 'authenticated',
@@ -83,21 +87,25 @@ const authedSession: SessionState = {
 
 const ON_24 = new Date('2026-07-24T12:00:00+09:00');
 const ON_23 = new Date('2026-07-23T12:00:00+09:00');
+const NEXT_MONTH_24 = new Date('2026-08-24T12:00:00+09:00');
 
 function renderWall(now: Date = ON_24) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const ui = (n: Date) => (
     <QueryClientProvider client={qc}>
       <SessionContext.Provider value={authedSession}>
-        <BalanceWall now={now} />
+        <BalanceWall now={n} />
       </SessionContext.Provider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const utils = render(ui(now));
+  return { ...utils, rerenderWith: (n: Date) => utils.rerender(ui(n)) };
 }
 
 describe('BalanceWall 統合', () => {
   beforeEach(() => {
     state.checkpoint = null;
+    state.balance = 45000;
     vi.clearAllMocks();
   });
 
@@ -180,6 +188,49 @@ describe('BalanceWall 統合', () => {
     fireEvent.click(await screen.findByRole('button', { name: '決定' }));
     expect(await screen.findByText('残高を入力してください')).toBeInTheDocument();
     expect(confirmCheckpoint).not.toHaveBeenCalled();
+  });
+
+  it('checkpoint の取得に失敗したらロックしない（確認済みの人を締め出さない）', async () => {
+    (
+      getCurrentCheckpoint as unknown as {
+        mockImplementationOnce: (f: () => Promise<never>) => void;
+      }
+    ).mockImplementationOnce(async () => {
+      throw new Error('network');
+    });
+    renderWall();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('キャッシュが古くても最新残高で差額判定する（確認なしの調整を防ぐ）', async () => {
+    renderWall();
+    await screen.findByText('明日は給料日！'); // 初回は 45000 をキャッシュ
+    // 別端末で取引が入り、実際の計算残高は 50000 になった
+    state.balance = 50000;
+
+    // 古いキャッシュ(45000)と同額を入力 → 素朴実装なら「差額0」で即確定してしまう
+    fireEvent.change(screen.getByPlaceholderText('0'), { target: { value: '45000' } });
+    fireEvent.click(screen.getByRole('button', { name: '決定' }));
+
+    // 最新(50000)で再判定され、差額 -5000 の確認ダイアログが出る
+    expect(await screen.findByText(/【¥5,000】ズレています/)).toBeInTheDocument();
+    expect(screen.getByText(/支出として調整します/)).toBeInTheDocument();
+    expect(confirmCheckpoint).not.toHaveBeenCalled();
+  });
+
+  it('壁が閉じて翌月に再表示されたとき、前回の確認画面が残らない', async () => {
+    const { rerenderWith } = renderWall(ON_24);
+    fireEvent.change(await screen.findByPlaceholderText('0'), { target: { value: '50000' } });
+    fireEvent.click(screen.getByRole('button', { name: '決定' }));
+    await screen.findByText(/ズレています/); // 確認ステップ
+
+    // 翌月へ（checkpoint は未作成のまま）→ 壁は一度閉じて開き直る
+    rerenderWith(NEXT_MONTH_24);
+
+    // 入力ステップから再開（古い確認画面・古い金額が残っていない）
+    expect(await screen.findByText('明日は給料日！')).toBeInTheDocument();
+    expect(screen.queryByText(/ズレています/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'はい' })).toBeNull();
   });
 
   it('確定に失敗したらエラーを表示する', async () => {

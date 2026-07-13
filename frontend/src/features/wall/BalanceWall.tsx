@@ -20,50 +20,68 @@ interface Props {
 }
 
 /**
- * 毎月24日の残高確認の壁。JST 24日以降、当月が未確定なら全画面ロックで表示する。
- * 決定時にアプリの計算残高との差額を確認し、RPC で原子的に「残高調整」を計上する。
+ * 毎月24日の残高確認の壁（表示ゲート）。
+ * JST 24日以降・当月が未確定のときだけ WallDialog をマウントする。
+ * checkpoint の取得に失敗したときは**ロックしない**（確認済みの人を締め出さないため fail-open）。
  */
 export function BalanceWall({ now = getNow() }: Props) {
   const session = useSessionContext();
   const selfId = session.status === 'authenticated' ? session.session.member.id : '';
   const month = jstMonthStart(now);
 
-  const { data: checkpoint, isLoading: cpLoading } = useCurrentCheckpoint(selfId, month);
-  const { data: balances = [], isLoading: balLoading, isError: balError } = useMemberBalances();
+  const {
+    data: checkpoint,
+    isLoading: cpLoading,
+    isError: cpError,
+  } = useCurrentCheckpoint(selfId, month);
+  const { isLoading: balLoading } = useMemberBalances();
+
+  const ready = selfId !== '' && !cpLoading && !balLoading;
+  if (!ready || cpError || !shouldShowWall(now, checkpoint ?? null)) return null;
+
+  // 可視のときだけマウント → 閉じるたびに入力/確認 state が初期化される
+  return <WallDialog selfId={selfId} month={month} />;
+}
+
+function WallDialog({ selfId, month }: { selfId: string; month: string }) {
+  const { isError: balError, refetch } = useMemberBalances();
   const skip = useSkipCheckpoint();
   const confirm = useConfirmCheckpoint();
 
   const [step, setStep] = useState<'input' | 'confirm'>('input');
   const [actualText, setActualText] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
   const [pending, setPending] = useState<{ actual: number; diff: number } | null>(null);
 
-  const computed = selectBalance(balances, selfId);
-
-  // 判定に必要なデータが揃うまでは出さない（ちらつき防止）
-  const ready = selfId !== '' && !cpLoading && !balLoading;
-  if (!ready || !shouldShowWall(now, checkpoint ?? null)) return null;
-
-  function handleDecide() {
+  async function handleDecide() {
     const result = validateActualBalance(actualText);
     if (!result.ok) {
       setError(result.error);
       return;
     }
-    if (computed == null) {
+    setError(null);
+    setChecking(true);
+    // 差額判定はキャッシュではなく最新残高で行う
+    // （古い残高のまま「差額0」と誤判定して確認なしに調整が入るのを防ぐ）
+    const fresh = await refetch();
+    setChecking(false);
+    const latest = fresh.data ? selectBalance(fresh.data, selfId) : null;
+    if (latest == null) {
       setError('現在の残高を取得できませんでした。時間をおいて再度お試しください。');
       return;
     }
-    setError(null);
-    const diff = computeDiff(result.value, computed);
+    const diff = computeDiff(result.value, latest);
     if (diff === 0) {
-      // ズレ無し → 確認ダイアログ無しでそのまま確定（RPC は取引を挿入しない）
+      // ズレ無し → 確認ダイアログ無しで確定（RPC も取引を挿入しない）
       confirm.mutate(result.value);
       return;
     }
     setPending({ actual: result.value, diff });
     setStep('confirm');
   }
+
+  const busy = checking || confirm.isPending;
 
   return (
     <Modal open locked label="今月の残高確認">
@@ -121,8 +139,8 @@ export function BalanceWall({ now = getNow() }: Props) {
             >
               {skip.isPending ? '保存中…' : '後で数える'}
             </Button>
-            <Button fullWidth disabled={confirm.isPending} onClick={handleDecide}>
-              {confirm.isPending ? '確定中…' : '決定'}
+            <Button fullWidth disabled={busy} onClick={handleDecide}>
+              {busy ? '確認中…' : '決定'}
             </Button>
           </div>
         </div>
@@ -137,7 +155,9 @@ export function BalanceWall({ now = getNow() }: Props) {
           <dl className="flex flex-col gap-1 rounded-2xl bg-surface-container-high p-4">
             <div className="flex justify-between">
               <dt className="text-label-sm text-custom-text/60">アプリの計算</dt>
-              <dd className="text-body-md text-custom-text">{formatYen(computed ?? 0)}</dd>
+              <dd className="text-body-md text-custom-text">
+                {formatYen(pending.actual - pending.diff)}
+              </dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-label-sm text-custom-text/60">実際の残高</dt>

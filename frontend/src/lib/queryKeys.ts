@@ -30,4 +30,6 @@ export const queryKeys = {
   checkpoint: (memberId: string, month: string) => ['checkpoint', memberId, month] as const,
   /** サーバが見ている JST の今日 (壁の表示ゲートの判定に使う) */
   serverToday: () => ['serverToday'] as const,
+  /** 二人で共有するウィッシュリスト (archived=true が思い出アーカイブ) */
+  wishlist: (archived: boolean) => ['wishlist', archived] as const,
 } as const;

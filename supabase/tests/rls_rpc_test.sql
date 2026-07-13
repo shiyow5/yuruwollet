@@ -1,6 +1,6 @@
 -- pgTAP: RLS の cross-household 分離 + per-member 書込強制 + confirm_balance_checkpoint RPC
 begin;
-select plan(44);
+select plan(47);
 
 -- ============================================================
 -- Block A: ゆるり @ main として認証
@@ -175,6 +175,8 @@ select set_config(
 select is((select count(*) from public.profiles)::int, 0, '別 household は profile 0 件');
 select is((select count(*) from public.categories)::int, 0, '別 household は category 0 件');
 select is((select count(*) from public.transactions)::int, 0, '別 household は transaction 0 件');
+-- wishlist は household 共有だが、別 household からは見えない（Realtime も RLS に従う）
+select is((select count(*) from public.wishlist_items)::int, 0, '別 household は wishlist 0 件');
 
 -- ============================================================
 -- Block C: しよを @ main で残高確認 RPC
@@ -311,6 +313,22 @@ select is(
 -- ============================================================
 -- Block D: fx_rates は読取のみ
 -- ============================================================
+-- wishlist は Realtime で配信する（publication 未登録だと postgres_changes が一切飛ばない）
+select is(
+  (select count(*)::int from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'wishlist_items'),
+  1,
+  'wishlist_items は supabase_realtime publication に含まれる'
+);
+
+-- replica identity full が無いと DELETE の old レコードが主キーのみになり、
+-- household_id フィルタに一致せず削除イベントを受け取れない
+select is(
+  (select relreplident from pg_class where oid = 'public.wishlist_items'::regclass),
+  'f'::"char",
+  'wishlist_items は replica identity full（DELETE の old に household_id が乗る）'
+);
+
 select lives_ok($$ select 1 from public.fx_rates limit 1 $$, 'fx_rates は select 可能');
 select throws_ok(
   $$ insert into public.fx_rates (rate_date, rate) values (current_date, 150) $$,

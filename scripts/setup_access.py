@@ -66,7 +66,19 @@ google = next((i for i in idps if i.get("type") == "google"), None)
 idp_body = {
     "name": "Google",
     "type": "google",
-    "config": {"client_id": GOOGLE_ID, "client_secret": GOOGLE_SECRET},
+    "config": {
+        "client_id": GOOGLE_ID,
+        "client_secret": GOOGLE_SECRET,
+        # Google のプロフィール画像を Access JWT の custom クレームに載せる
+        # （TopAppBar のアバターに使う）。
+        #
+        # Cloudflare は custom クレームの配送を **"on a best-effort basis"** と明記しており、
+        # 届かないことがある。アプリ側は必ず頭文字にフォールバックする。
+        #
+        # **既にログイン済みのセッション（30日）の JWT には載らない。**
+        # 反映には、この設定を入れたうえで **ログアウト → 再ログイン** が要る。
+        "claims": ["picture"],
+    },
 }
 
 if google:

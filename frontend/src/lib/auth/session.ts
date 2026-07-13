@@ -1,4 +1,5 @@
 import { SignJWT, jwtVerify, importJWK, type JWTVerifyGetKey, type KeyLike, type JWK } from 'jose';
+import { isDisplayableAvatarUrl } from '../avatar';
 
 /** Access で認証された 1 メンバー (ゆるり / しよを) */
 export interface Member {
@@ -54,7 +55,8 @@ export async function resolveSigningKey(opts: {
 export interface SessionResult {
   supabaseJwt: string;
   expiresAt: number;
-  member: { id: string; displayName: string };
+  /** avatarUrl は **任意**。Access の picture クレームは best-effort で届かないことがある */
+  member: { id: string; displayName: string; avatarUrl?: string };
   householdId: string;
 }
 
@@ -83,12 +85,43 @@ export function extractAccessToken(request: Request): string | null {
   return null;
 }
 
-/** Access JWT を検証して email クレームを取り出す (小文字化) */
-export async function verifyAccessEmail(
+/** Access JWT から取り出す本人情報 */
+export interface AccessIdentity {
+  /** 小文字化した email。認証の主キー */
+  email: string;
+  /** Google のプロフィール画像。**無いことの方が普通**（下記） */
+  avatarUrl?: string;
+}
+
+/**
+ * Access JWT の `custom.picture` から画像 URL を取り出す。
+ *
+ * Cloudflare は custom クレームの配送を **"on a best-effort basis"** と明記している
+ * （届かないことがある）。**無い経路が通常経路**として扱うこと。
+ * https://developers.cloudflare.com/cloudflare-one/identity/authorization-cookie/application-token/
+ *
+ * `<img src>` に流すので、許可した URL だけを通す（判定は lib/avatar.ts と共有する。
+ * 許可リストが 2 箇所にあると必ずズレる）。
+ */
+export function extractAvatarUrl(payload: unknown): string | undefined {
+  if (typeof payload !== 'object' || payload === null) return undefined;
+  const custom = (payload as { custom?: unknown }).custom;
+  if (typeof custom !== 'object' || custom === null) return undefined;
+  const picture = (custom as { picture?: unknown }).picture;
+  return isDisplayableAvatarUrl(picture) ? picture : undefined;
+}
+
+/**
+ * Access JWT を検証して本人情報を取り出す。
+ *
+ * email だけでなく画像も返すのは、JWT を 2 回検証しないため
+ * （payload を関数内に閉じ込めると、picture を取るのに再検証が必要になる）。
+ */
+export async function verifyAccessIdentity(
   token: string,
   key: AccessKey,
   cfg: Pick<SessionConfig, 'accessAud' | 'accessIssuer'>,
-): Promise<string> {
+): Promise<AccessIdentity> {
   const { payload } = await jwtVerify(token, key, {
     audience: cfg.accessAud,
     issuer: cfg.accessIssuer,
@@ -97,7 +130,7 @@ export async function verifyAccessEmail(
   if (!email) {
     throw new SessionError('access token has no email claim');
   }
-  return email.toLowerCase();
+  return { email: email.toLowerCase(), avatarUrl: extractAvatarUrl(payload) };
 }
 
 /** email から Member を引く (未登録は 403) */
@@ -187,21 +220,27 @@ export async function createSession(
   // Access を設定した環境ではバイパスを無効化する（本番での消し忘れを無害にする）
   const bypass = mode === 'unconfigured' ? opts.devBypassEmail : undefined;
 
-  let email: string;
+  let identity: AccessIdentity;
   if (token) {
-    email = await verifyAccessEmail(token, opts.getAccessKey(), cfg);
+    identity = await verifyAccessIdentity(token, opts.getAccessKey(), cfg);
   } else if (bypass) {
-    email = bypass.toLowerCase();
+    // dev バイパスには JWT が無い → 画像も無い（ローカルは常に頭文字表示になる。これが正常）
+    identity = { email: bypass.toLowerCase() };
   } else {
     throw new SessionError('missing Access token');
   }
 
-  const member = mapEmailToMember(email, cfg.members);
+  const member = mapEmailToMember(identity.email, cfg.members);
   const { token: supabaseJwt, expiresAt } = await mintSupabaseJwt(member, cfg);
   return {
     supabaseJwt,
     expiresAt,
-    member: { id: member.memberId, displayName: member.displayName },
+    member: {
+      id: member.memberId,
+      displayName: member.displayName,
+      // 画像が無くてもセッションは有効。認証には一切影響しない
+      ...(identity.avatarUrl ? { avatarUrl: identity.avatarUrl } : {}),
+    },
     householdId: member.householdId,
   };
 }

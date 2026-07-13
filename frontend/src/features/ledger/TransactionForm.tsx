@@ -91,7 +91,12 @@ export function TransactionForm({
 
   return (
     <form className="flex flex-col gap-5" onSubmit={handleSubmit} aria-label="収支フォーム">
-      <SegmentedControl options={TYPE_OPTIONS} value={values.type} onChange={handleTypeChange} />
+      <SegmentedControl
+        fullWidth
+        options={TYPE_OPTIONS}
+        value={values.type}
+        onChange={handleTypeChange}
+      />
 
       <div>
         <Input

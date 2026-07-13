@@ -72,7 +72,7 @@ export function CategoryManager() {
       <h3 className="font-headline-md text-headline-md text-custom-text">カテゴリ管理</h3>
 
       <form className="flex flex-col gap-4" onSubmit={handleAdd} aria-label="カテゴリ追加フォーム">
-        <SegmentedControl options={KIND_OPTIONS} value={kind} onChange={setKind} />
+        <SegmentedControl fullWidth options={KIND_OPTIONS} value={kind} onChange={setKind} />
         <Input
           label="カテゴリ名"
           placeholder="食費 / 給与 など"

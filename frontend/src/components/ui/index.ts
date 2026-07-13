@@ -1,4 +1,5 @@
 export { Icon } from './Icon';
+export { Avatar } from './Avatar';
 export { Button } from './Button';
 export { Card } from './Card';
 export { Chip, type ChipTone } from './Chip';

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Button, Card, Icon, Input, Skeleton } from '../../components/ui';
+import { Avatar, Button, Card, Input, Skeleton } from '../../components/ui';
 import { formatYen } from '../../lib/format';
 import { validateOpeningBalance } from '../../lib/savings/schema';
 import { useProfiles, useMemberBalances } from '../shared/members';
@@ -60,8 +60,8 @@ export function ProfileCard({ selfId }: Props) {
   return (
     <Card className="flex flex-col gap-6">
       <div className="flex items-center gap-4">
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-container-high">
-          <Icon name="person" className="text-custom-text/60" />
+        <div className="h-12 w-12 shrink-0">
+          <Avatar name={me.display_name} memberId={me.member_id} />
         </div>
         <div className="min-w-0">
           <p className="font-headline-md text-body-lg font-medium text-custom-text">

@@ -11,6 +11,10 @@
   --color-custom-text: #25271f;
   --color-custom-accent: #769cbf;
   --color-primary: #769cbf;
+  /* メンバー色。アバターの頭文字フォールバックで使う（Google の画像が
+     届かないことがあるため。Access の picture クレームは best-effort）。 */
+  --color-member-yururi: #769cbf;
+  --color-member-shiyowo: #c294b8;
   --color-on-primary: #ffffff;
   --color-surface: #ffffff;
   --color-surface-container-lowest: #ffffff;

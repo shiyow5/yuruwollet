@@ -17,8 +17,7 @@
 -- c) は削除ポリシー側で塞ぐ。
 
 -- ---- 1) cron が作った支払い行はユーザーが削除できない ----
--- 更新も既存の guard_subscription_txn トリガ（before insert or update）が弾いている。
--- 削除だけがトリガの対象外だったため、ポリシーで塞ぐ。
+-- 削除だけがトリガ（before insert or update）の対象外だったため、ポリシーで塞ぐ。
 -- サブスク自体を削除した場合は FK が subscription_id を null にするので、
 -- 「ただの支出」として通常どおり編集・削除できるようになる（履歴は残る）。
 drop policy transactions_delete on public.transactions;
@@ -29,6 +28,52 @@ create policy transactions_delete on public.transactions for delete to authentic
     and is_system_generated = false
     and subscription_id is null
   );
+
+-- ---- 1b) subscription_id を外して「ただの取引」に化けさせることもできない ----
+-- 旧トリガは new.subscription_id しか見ていなかった。そのため
+--   UPDATE transactions SET subscription_id = null WHERE ...
+-- は通ってしまい（new は null なので素通り）、その後は上の削除ポリシーも
+-- すり抜けて消せた。UI がボタンを隠しても、API を直接叩けば同じことができる。
+-- **old 側も見る。**
+--
+-- ただしサブスク本体を削除したときの FK (on delete set null) による更新は通す。
+-- そのときは参照先のサブスクが既に消えているので、それを条件にする。
+create or replace function public.guard_subscription_txn()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if current_user = 'service_role' then
+    return new;
+  end if;
+
+  -- ユーザーが subscription_id を付けると、cron の冪等キー (subscription_id, occurred_on)
+  -- と衝突してその月の自動記録が失敗する
+  if new.subscription_id is not null then
+    raise exception 'subscription_id 付きの取引は cron のみが作成できます'
+      using errcode = 'PT403';
+  end if;
+
+  if tg_op = 'UPDATE' and old.subscription_id is not null then
+    -- サブスク削除に伴う FK の set null だけは通す（履歴はただの支出として残る）
+    if new.subscription_id is null
+       and not exists (select 1 from public.subscriptions where id = old.subscription_id)
+    then
+      return new;
+    end if;
+    raise exception 'サブスクの支払いはユーザーが変更できません'
+      using errcode = 'PT403';
+  end if;
+
+  return new;
+end;
+$$;
+
+comment on function public.guard_subscription_txn() is
+  'サブスクの支払い (subscription_id 付き) は cron 専用。ユーザーは作成も変更もできない。'
+  'subscription_id を外して削除ポリシーをすり抜ける経路も塞ぐ。'
+  'サブスク本体の削除に伴う FK の set null だけは通す。';
 
 -- ---- 2) 支払いの記録と更新日の前進を 1 トランザクションで行う ----
 --
@@ -81,11 +126,14 @@ begin
   -- 一覧取得から今までの間に人が編集/解約していたら、古い計算で上書きしない。
   -- 次回の cron が新しい値で拾い直す（エラーではない）。
   -- 次の更新日と支払額の計算に使った値を **すべて** 突き合わせる。
+  -- anchor は nullable。Go 側は null を 0 として受け取る（int のゼロ値）ので、
+  -- そのまま突き合わせると null <> 0 で **常に不一致** になり、
+  -- そのサブスクは永久に進まなくなる。両方 0 に寄せて比較する。
   if v_sub.next_renewal_date is distinct from p_expected_next_renewal_date
      or v_sub.currency is distinct from p_expected_currency
      or v_sub.original_amount is distinct from p_expected_original_amount
      or v_sub.cycle is distinct from p_expected_cycle
-     or v_sub.renewal_anchor_day is distinct from p_expected_anchor_day
+     or coalesce(v_sub.renewal_anchor_day, 0) <> coalesce(p_expected_anchor_day, 0)
      or v_sub.status not in ('active', 'trial')
   then
     return false;

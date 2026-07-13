@@ -1,6 +1,6 @@
 -- pgTAP: RLS の cross-household 分離 + per-member 書込強制 + confirm_balance_checkpoint RPC
 begin;
-select plan(78);
+select plan(85);
 
 -- ============================================================
 -- Block A: ゆるり @ main として認証
@@ -637,6 +637,36 @@ select is(
   'サブスク由来でない取引はこれまでどおり削除できる'
 );
 
+-- **subscription_id を外して「ただの取引」に化けさせる経路も塞ぐ。**
+-- 旧トリガは new.subscription_id しか見ていなかったので、null を書き込む UPDATE は
+-- 素通りし、その後は削除ポリシー (subscription_id is null) もすり抜けて消せた。
+-- UI がボタンを隠しても、API を直接叩けば同じことができる。
+select throws_ok(
+  $$ update public.transactions set subscription_id = null
+      where subscription_id = (select id from public.subscriptions where name = 'RpcSub') $$,
+  'PT403', null,
+  'ユーザーは cron の支払いから subscription_id を外せない'
+);
+select throws_ok(
+  $$ update public.transactions set amount = 1
+      where subscription_id = (select id from public.subscriptions where name = 'RpcSub') $$,
+  'PT403', null,
+  'ユーザーは cron の支払いの金額を書き換えられない'
+);
+
+-- ただしサブスク本体を削除したら、支払いは「ただの支出」として残り、通常どおり扱える。
+-- （実際に使ったお金なので履歴からは消さない。FK の on delete set null）
+select lives_ok(
+  $$ delete from public.subscriptions where name = 'RpcSub' $$,
+  'サブスク本体は削除できる（支払い履歴の FK set null がトリガに弾かれない）'
+);
+select is(
+  (select count(*)::int from public.transactions
+     where owner_member_id = 'yururi' and memo = 'RpcSub' and subscription_id is null),
+  3,
+  'サブスクを消しても支払い履歴は「ただの支出」として残る'
+);
+
 -- RPC は cron 専用。クライアントからは実行できない。
 select throws_ok(
   $$ select public.roll_subscription_cycle(
@@ -644,6 +674,52 @@ select throws_ok(
        '[]'::jsonb, current_date) $$,
   '42501', null,
   'authenticated は roll_subscription_cycle を実行できない'
+);
+
+-- ============================================================
+-- Block G: anchor が null のサブスクでも CAS が通る
+-- ============================================================
+-- renewal_anchor_day は nullable。Go 側は null を 0 (int のゼロ値) として受け取るので、
+-- RPC が null と 0 を別物として扱うと CAS が **常に不一致** になり、
+-- そのサブスクは永久に進まない（支払いも記録されない）。
+reset role;
+set local role service_role;
+
+insert into public.subscriptions
+  (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+values ('main', 'shiyowo', 'NullAnchor', 'JPY', 800, 800, 'monthly', date '2026-06-05', 'active');
+
+-- 通常はトリガが必ず埋めるので null にはならない。
+-- ここではトリガを一時停止して「万一 null が残った行」を作る
+-- （20260713060000 が明示的に想定しているケース）。
+reset role;
+alter table public.subscriptions disable trigger set_renewal_anchor_on_write;
+update public.subscriptions set renewal_anchor_day = null where name = 'NullAnchor';
+alter table public.subscriptions enable trigger set_renewal_anchor_on_write;
+set local role service_role;
+
+select is(
+  (select renewal_anchor_day from public.subscriptions where name = 'NullAnchor'),
+  null::smallint,
+  'anchor が null の行を用意した'
+);
+
+-- Go は null を 0 として送ってくる
+select is(
+  public.roll_subscription_cycle(
+    (select id from public.subscriptions where name = 'NullAnchor'),
+    date '2026-06-05', 'JPY', 800, 'monthly', 0,
+    '[{"occurred_on":"2026-06-05","amount":800}]'::jsonb,
+    date '2026-07-05'
+  ),
+  true,
+  'anchor が null でも CAS が通る（null と 0 を同じ扱いにする）'
+);
+select is(
+  (select count(*)::int from public.transactions
+     where subscription_id = (select id from public.subscriptions where name = 'NullAnchor')),
+  1,
+  'anchor が null のサブスクでも支払いが記録される'
 );
 
 select * from finish();

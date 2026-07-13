@@ -1,6 +1,6 @@
 -- pgTAP: RLS の cross-household 分離 + per-member 書込強制 + confirm_balance_checkpoint RPC
 begin;
-select plan(41);
+select plan(44);
 
 -- ============================================================
 -- Block A: ゆるり @ main として認証
@@ -202,6 +202,24 @@ select throws_ok(
 );
 
 select set_config('test.today', '2026-07-24', true);
+
+-- 引数の検証: UI を迂回した呼び出しでもあり得ない実残高は confirmed にしない
+select throws_ok(
+  $$ select public.confirm_balance_checkpoint(null::integer, 0) $$,
+  'PT400', null,
+  'confirm_balance_checkpoint: actual = null は拒否'
+);
+select throws_ok(
+  $$ select public.confirm_balance_checkpoint(-1, 0) $$,
+  'PT400', null,
+  'confirm_balance_checkpoint: actual < 0 は拒否'
+);
+
+-- 台帳の書込は profiles の SHARE ロックを取り、確定 (FOR UPDATE) と直列化される
+select has_trigger(
+  'public', 'transactions', 'lock_owner_profile_on_write',
+  '台帳の書込は owner の profiles 行をロックし、残高確定と直列化される'
+);
 
 -- CAS: ユーザーが見た「アプリの計算」と現在の計算残高が食い違えば拒否
 select throws_ok(

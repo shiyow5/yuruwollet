@@ -29,6 +29,47 @@ as $$ select (now() at time zone 'Asia/Tokyo')::date $$;
 comment on function public.jst_today() is
   'JST の今日。24日ガードの単一の真実。テストのみ CREATE OR REPLACE で差し替える。';
 
+-- 壁の表示ゲートもサーバ時刻で判定できるよう、クライアントから直接読めるようにする。
+-- 端末時計が **遅れて** いると壁がそもそも開かず、24日の確認を丸ごと素通りできてしまうため
+-- （サーバ側の PT403 は早すぎる確定しか止められない）。
+revoke all on function public.jst_today() from public;
+grant execute on function public.jst_today() to authenticated;
+grant execute on function public.jst_today() to service_role;
+
+-- 台帳への書込を「確定」と直列化する。
+-- confirm_balance_checkpoint は profiles を FOR UPDATE でロックした上で transactions を集計するが、
+-- 通常の取引 insert/update/delete はそのロックを取らないため、CAS が通ってから調整取引が入るまでの間に
+-- 相手が取引を追加でき、最終残高がユーザーの承認した実残高とズレてしまう。
+-- 取引の書込側にも同じ profiles 行の SHARE ロックを取らせて、確定中は待たせる。
+create or replace function public.lock_owner_profile()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if tg_op = 'DELETE' then
+    perform 1 from public.profiles
+      where member_id = old.owner_member_id and household_id = old.household_id
+      for share;
+    return old;
+  end if;
+
+  perform 1 from public.profiles
+    where member_id = new.owner_member_id and household_id = new.household_id
+    for share;
+  return new;
+end;
+$$;
+
+comment on function public.lock_owner_profile() is
+  '台帳の書込に owner の profiles 行の SHARE ロックを取らせ、残高確定 (FOR UPDATE) と直列化する。';
+
+drop trigger if exists lock_owner_profile_on_write on public.transactions;
+create trigger lock_owner_profile_on_write
+  before insert or update or delete on public.transactions
+  for each row execute function public.lock_owner_profile();
+
 -- シグネチャが変わるため旧版を落とす。
 -- 残しておくと overload となり、検証を通らない 1 引数版を呼べてしまう。
 drop function if exists public.confirm_balance_checkpoint(integer);
@@ -55,6 +96,13 @@ declare
 begin
   if v_household is null or v_member is null then
     raise exception 'missing household/member claim';
+  end if;
+
+  -- [0] 引数の検証。confirmed に至る唯一の経路なので、UI を迂回した呼び出しもここで弾く。
+  -- null は差額が null のまま confirmed を書き込み、負値はあり得ない実残高を記録してしまう。
+  if p_actual is null or p_actual < 0 then
+    raise exception 'actual balance must be a non-negative integer (got %)', p_actual
+      using errcode = 'PT400';
   end if;
 
   -- [1] 24日ガード: 判定はサーバ時刻のみ。クライアントの now は信用しない。

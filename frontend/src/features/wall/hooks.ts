@@ -8,6 +8,23 @@ import {
   confirmCheckpoint,
   type ConfirmInput,
 } from '../../lib/data/checkpoints';
+import { getServerToday } from '../../lib/data/serverClock';
+
+/**
+ * サーバの JST 日付。壁を出すかどうかはこれで判定する（端末時計は信用しない）。
+ * タブを開いたまま日付をまたいでも壁が出るよう、定期的に取り直す。
+ * enabled=false のときは `?now=` による偽装が効いている（開発/E2E）。
+ */
+export function useServerToday(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.serverToday(),
+    queryFn: () => getServerToday(supabase),
+    enabled,
+    refetchOnWindowFocus: true,
+    refetchInterval: 5 * 60 * 1000,
+    staleTime: 60 * 1000,
+  });
+}
 
 /**
  * 当月の残高確認 checkpoint。

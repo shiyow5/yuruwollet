@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   WALL_DAY,
-  jstDayOfMonth,
+  dayOfMonth,
   shouldShowWall,
   msUntilNextJstDay,
   computeDiff,
@@ -26,18 +26,18 @@ function cp(over: Partial<Checkpoint>): Checkpoint {
   };
 }
 
-describe('jstDayOfMonth', () => {
-  it('JST の日を返す', () => {
-    expect(jstDayOfMonth(new Date('2026-07-24T12:00:00+09:00'))).toBe(24);
-    // UTC 2026-07-23T23:00 は JST 2026-07-24 08:00
-    expect(jstDayOfMonth(new Date('2026-07-23T23:00:00Z'))).toBe(24);
+describe('dayOfMonth', () => {
+  it('JST 日付文字列の日を返す', () => {
+    expect(dayOfMonth('2026-07-24')).toBe(24);
+    expect(dayOfMonth('2026-07-03')).toBe(3);
   });
 });
 
 describe('shouldShowWall', () => {
-  const on24 = new Date('2026-07-24T12:00:00+09:00');
-  const on23 = new Date('2026-07-23T12:00:00+09:00');
-  const on26 = new Date('2026-07-26T12:00:00+09:00');
+  // サーバの JST 日付（端末時計ではない）
+  const on24 = '2026-07-24';
+  const on23 = '2026-07-23';
+  const on26 = '2026-07-26';
 
   it('WALL_DAY は 24', () => {
     expect(WALL_DAY).toBe(24);

@@ -28,4 +28,6 @@ export const queryKeys = {
   fxRate: () => ['fxRate'] as const,
   /** member×月 の残高確認 checkpoint (24日の壁) */
   checkpoint: (memberId: string, month: string) => ['checkpoint', memberId, month] as const,
+  /** サーバが見ている JST の今日 (壁の表示ゲートの判定に使う) */
+  serverToday: () => ['serverToday'] as const,
 } as const;

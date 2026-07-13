@@ -4,21 +4,25 @@ import type { Checkpoint } from './types';
 /** 給料日前日 = 残高を数える日 */
 export const WALL_DAY = 24;
 
-/** JST 暦日（1-31） */
-export function jstDayOfMonth(now: Date): number {
-  return Number(jstToday(now).slice(8, 10));
+/** JST 暦日（1-31）。today は 'YYYY-MM-DD'。 */
+export function dayOfMonth(today: string): number {
+  return Number(today.slice(8, 10));
 }
 
 /**
  * 24日の壁を表示するかを判定する純関数。
+ *
+ * today は **サーバの JST 日付**（取得できないときのみ端末時計にフォールバック）。
+ * 端末時計が遅れていると壁がそもそも開かず、24日の確認を丸ごと素通りできてしまうため、
+ * 表示ゲートの判定にクライアントの日付を使わない。
+ *
  * - JST 24日未満は表示しない
  * - 当月の checkpoint が無ければ表示
  * - confirmed なら表示しない（その月は確認済み）
  * - skipped: その skip が「今日」なら表示しない。前日以前の skip なら再表示（25日以降も催促）
  */
-export function shouldShowWall(now: Date, checkpoint: Checkpoint | null): boolean {
-  const today = jstToday(now);
-  if (Number(today.slice(8, 10)) < WALL_DAY) return false;
+export function shouldShowWall(today: string, checkpoint: Checkpoint | null): boolean {
+  if (dayOfMonth(today) < WALL_DAY) return false;
   if (!checkpoint) return true;
   if (checkpoint.status === 'confirmed') return false;
   // skipped: スキップした JST 日付が今日より前なら再表示

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Button, Input, Modal } from '../../components/ui';
-import { formatYen, jstMonthStart } from '../../lib/format';
-import { getNow } from '../../lib/clock';
+import { formatYen, jstToday, monthStartOf } from '../../lib/format';
+import { clockOverrideDate } from '../../lib/clock';
 import { useSessionContext } from '../../lib/auth/session-context';
 import { selectBalance } from '../../lib/ledger/members';
 import { useMemberBalances } from '../shared/members';
@@ -14,10 +14,19 @@ import {
 } from '../../lib/wall/schedule';
 import { validateActualBalance } from '../../lib/wall/validate';
 import { confirmErrorMessage, kindOfConfirmError } from '../../lib/wall/errors';
-import { useCurrentCheckpoint, useSkipCheckpoint, useConfirmCheckpoint } from './hooks';
+import {
+  useServerToday,
+  useCurrentCheckpoint,
+  useSkipCheckpoint,
+  useConfirmCheckpoint,
+} from './hooks';
 
 interface Props {
-  /** テスト/E2E 用の注入クロック（既定は ?now= を尊重する実時刻） */
+  /**
+   * テスト用の端末時計。表示ゲートは通常サーバ日付で判定するため、
+   * これはサーバ日付が取れないときのフォールバックに使われるだけ。
+   * E2E で日付ごと偽装するには `?now=YYYY-MM-DD`（開発/E2E ビルドのみ有効）を使う。
+   */
   now?: Date;
 }
 
@@ -35,18 +44,28 @@ interface Pending {
  */
 export function BalanceWall({ now: injectedNow }: Props) {
   const session = useSessionContext();
-  // SPA を開いたまま JST の日付が変わっても壁が出るよう、日付境界で再評価する
-  const [clock, setClock] = useState<Date>(() => injectedNow ?? getNow());
-  const now = injectedNow ?? clock;
+  // 開発/E2E の `?now=` 偽装。効いている間はサーバ日付を問い合わせず、偽装日付だけで判定する。
+  const override = clockOverrideDate();
+  const fixed = injectedNow ?? override;
+
+  // サーバ日付が取れないときのフォールバック用。日付境界で再評価する。
+  const [clock, setClock] = useState<Date>(() => fixed ?? new Date());
+  const now = fixed ?? clock;
 
   useEffect(() => {
-    if (injectedNow) return; // 注入クロック（テスト/E2E）はタイマー不要
-    const timer = setTimeout(() => setClock(getNow()), msUntilNextJstDay(clock) + 1000);
+    if (fixed) return; // 固定クロック（テスト/E2E）は進めない
+    const timer = setTimeout(() => setClock(new Date()), msUntilNextJstDay(clock) + 1000);
     return () => clearTimeout(timer);
-  }, [injectedNow, clock]);
+  }, [fixed, clock]);
 
   const selfId = session.status === 'authenticated' ? session.session.member.id : '';
-  const month = jstMonthStart(now);
+
+  // 表示ゲートはサーバの JST 日付で判定する。端末時計が **遅れて** いると壁がそもそも開かず、
+  // その月の残高確認を丸ごと素通りできてしまうため（サーバの 24日ガードは早すぎる確定しか止められない）。
+  // 取得できないときだけ端末時計にフォールバックする（壁が永久に出ないより良い）。
+  const serverToday = useServerToday(override == null);
+  const today = serverToday.data ?? jstToday(now);
+  const month = monthStartOf(today);
 
   const {
     data: checkpoint,
@@ -56,7 +75,13 @@ export function BalanceWall({ now: injectedNow }: Props) {
 
   // 残高の読み込みは待たない（遅い/ハングした残高取得でロックが効かなくなるのを防ぐ）。
   // 差額判定は WallDialog 側で必ず最新残高を取り直して行う。
-  if (selfId === '' || cpLoading || cpError || !shouldShowWall(now, checkpoint ?? null)) {
+  if (
+    selfId === '' ||
+    serverToday.isLoading ||
+    cpLoading ||
+    cpError ||
+    !shouldShowWall(today, checkpoint ?? null)
+  ) {
     return null;
   }
 

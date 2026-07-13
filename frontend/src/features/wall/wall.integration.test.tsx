@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SessionContext } from '../../lib/auth/session-context';
+import { jstToday } from '../../lib/format';
 import type { SessionState } from '../../lib/auth/useSession';
 import { BalanceWall } from './BalanceWall';
 import type { Checkpoint } from '../../lib/wall/types';
@@ -15,6 +16,15 @@ const state = vi.hoisted(() => ({
   balanceFails: false,
   balanceHold: null as Promise<void> | null,
   confirmHold: null as Promise<void> | null,
+  /** サーバが返す JST 日付。null なら取得失敗（端末時計にフォールバックする）。 */
+  serverToday: null as string | null,
+}));
+
+vi.mock('../../lib/data/serverClock', () => ({
+  getServerToday: vi.fn(async () => {
+    if (state.serverToday == null) throw new Error('server clock unavailable');
+    return state.serverToday;
+  }),
 }));
 
 function cp(over: Partial<Checkpoint>): Checkpoint {
@@ -101,7 +111,12 @@ const ON_24 = new Date('2026-07-24T12:00:00+09:00');
 const ON_23 = new Date('2026-07-23T12:00:00+09:00');
 const NEXT_MONTH_24 = new Date('2026-08-24T12:00:00+09:00');
 
-function renderWall(now: Date = ON_24) {
+/**
+ * now = 端末時計。serverToday を省略すると端末時計と一致した日付をサーバも返す。
+ * ズレを再現したいテストだけ serverToday を明示する。
+ */
+function renderWall(now: Date = ON_24, serverToday: string | null = jstToday(now)) {
+  state.serverToday = serverToday;
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const ui = (n: Date) => (
     <QueryClientProvider client={qc}>
@@ -111,7 +126,15 @@ function renderWall(now: Date = ON_24) {
     </QueryClientProvider>
   );
   const utils = render(ui(now));
-  return { ...utils, rerenderWith: (n: Date) => utils.rerender(ui(n)) };
+  return {
+    ...utils,
+    /** 時間を進める（端末時計とサーバ日付の両方）。 */
+    rerenderWith: (n: Date) => {
+      state.serverToday = jstToday(n);
+      void qc.invalidateQueries({ queryKey: ['serverToday'] });
+      utils.rerender(ui(n));
+    },
+  };
 }
 
 describe('BalanceWall 統合', () => {
@@ -127,6 +150,23 @@ describe('BalanceWall 統合', () => {
   it('24日未満は壁を出さない', async () => {
     renderWall(ON_23);
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  // 端末時計が遅れていると壁がそもそも開かず、その月の確認を丸ごと素通りできてしまう。
+  // 表示ゲートはサーバ日付で判定する。
+  it('端末時計が23日でもサーバが24日なら壁を出す', async () => {
+    renderWall(ON_23, '2026-07-24');
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('端末時計が24日でもサーバが23日なら壁を出さない', async () => {
+    renderWall(ON_24, '2026-07-23');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('サーバ日付を取得できないときは端末時計にフォールバックする（壁が永久に出ないより良い）', async () => {
+    renderWall(ON_24, null);
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
   });
 
   it('24日で未確認なら全画面ロックの壁を出す', async () => {

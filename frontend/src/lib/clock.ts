@@ -11,16 +11,27 @@ export function isClockOverrideAllowed(): boolean {
 }
 
 /**
+ * `?now=YYYY-MM-DD` で指定された偽装日時。許可されていない/指定が無いときは null。
+ * 偽装が効いているかどうかを呼び出し側が知る必要がある（効いているならサーバ時刻を問い合わせない）。
+ */
+export function clockOverrideDate(
+  search: string = typeof window === 'undefined' ? '' : window.location.search,
+  allowOverride: boolean = isClockOverrideAllowed(),
+): Date | null {
+  if (!allowOverride) return null;
+  const override = new URLSearchParams(search).get('now');
+  if (override && ISO_DATE.test(override)) {
+    return new Date(`${override}T12:00:00+09:00`);
+  }
+  return null;
+}
+
+/**
  * 現在時刻。開発/E2E に限り `?now=YYYY-MM-DD` で JST の日付を偽装できる（表示判定用の seam）。
  */
 export function getNow(
   search: string = typeof window === 'undefined' ? '' : window.location.search,
   allowOverride: boolean = isClockOverrideAllowed(),
 ): Date {
-  if (!allowOverride) return new Date();
-  const override = new URLSearchParams(search).get('now');
-  if (override && ISO_DATE.test(override)) {
-    return new Date(`${override}T12:00:00+09:00`);
-  }
-  return new Date();
+  return clockOverrideDate(search, allowOverride) ?? new Date();
 }

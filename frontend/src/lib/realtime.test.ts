@@ -159,6 +159,49 @@ describe('subscribeToTable', () => {
     expect(onStatus).toHaveBeenCalledWith('error');
   });
 
+  // 認証が腐ったままチャンネルだけ join できると、変更は一切届かないのに画面は健全に見える
+  it('認証に失敗したままなら SUBSCRIBED でも connected と名乗らない', async () => {
+    const rt = makeRealtimeMock();
+    const onStatus = vi.fn();
+    (
+      rt.client.realtime.setAuth as unknown as { mockRejectedValueOnce: (e: Error) => void }
+    ).mockRejectedValueOnce(new Error('session down'));
+
+    subscribeToTable(rt.client, {
+      table: 'wishlist_items',
+      householdId: 'main',
+      onChange: vi.fn(),
+      onStatus,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    rt.emitStatus('SUBSCRIBED');
+    expect(onStatus).toHaveBeenLastCalledWith('error');
+    expect(onStatus).not.toHaveBeenCalledWith('connected');
+  });
+
+  it('再認証が成功したら connected に戻る（購読が生きている場合）', async () => {
+    const rt = makeRealtimeMock();
+    const onStatus = vi.fn();
+    (
+      rt.client.realtime.setAuth as unknown as { mockRejectedValueOnce: (e: Error) => void }
+    ).mockRejectedValueOnce(new Error('session down'));
+
+    subscribeToTable(rt.client, {
+      table: 'wishlist_items',
+      householdId: 'main',
+      onChange: vi.fn(),
+      onStatus,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    rt.emitStatus('SUBSCRIBED');
+    expect(onStatus).toHaveBeenLastCalledWith('error');
+
+    // 次の定期再認証は成功する
+    await vi.advanceTimersByTimeAsync(REALTIME_AUTH_REFRESH_MS);
+    expect(onStatus).toHaveBeenLastCalledWith('connected');
+  });
+
   it('変更イベントで onChange を呼ぶ', async () => {
     const rt = makeRealtimeMock();
     const onChange = vi.fn();

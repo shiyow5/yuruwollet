@@ -39,29 +39,42 @@ export function subscribeToTable(
   let disposed = false;
   let channel: RealtimeChannel | null = null;
 
+  // 認証と購読はどちらも欠けたら同期が止まる。両方揃ったときだけ connected と名乗る。
+  // 認証が腐ったままチャンネルだけ join できると、**変更は一切届かないのに画面は健全に見える**。
+  let authOk = true;
+  let subscribed = false;
+
+  const report = () => {
+    if (disposed) return;
+    onStatus(authOk && subscribed ? 'connected' : 'error');
+  };
+
   // 引数なし = accessToken コールバック方式（毎回フレッシュな JWT を取りに行く）
   const reauth = () => client.realtime.setAuth();
 
   /**
-   * 定期再認証。/api/session やネットワークが一時的に落ちると setAuth() は reject する。
-   * 握り潰すと unhandled rejection になる上、**購読は「接続中」に見えたまま認証だけ腐る**。
-   * 失敗は必ず表に出す。
+   * 認証（初回・定期の両方）。/api/session やネットワークが落ちると setAuth() は reject する。
+   * 握り潰すと unhandled rejection になる上、購読だけ生きて認証が腐った状態を検知できない。
+   * 失敗したら error のままにし、**次の再認証が成功するまで connected に戻さない**。
    */
   const refreshAuth = async () => {
     try {
       await reauth();
+      if (disposed) return;
+      if (!authOk) {
+        authOk = true;
+        report(); // 認証が回復した（購読も生きていれば connected に戻る）
+      }
     } catch {
-      if (!disposed) onStatus('error');
+      if (disposed) return;
+      authOk = false;
+      report();
     }
   };
 
   void (async () => {
-    try {
-      await reauth();
-    } catch {
-      // 認証に失敗しても購読は試みる（サーバ側で弾かれれば onStatus('error') になる）
-      if (!disposed) onStatus('error');
-    }
+    // 認証に失敗しても購読自体は試みる（後続の再認証で回復しうる）が、connected とは名乗らない
+    await refreshAuth();
     if (disposed) return;
 
     channel = client
@@ -79,11 +92,13 @@ export function subscribeToTable(
       .subscribe((status) => {
         if (disposed) return;
         if (status === 'SUBSCRIBED') {
-          onStatus('connected');
+          subscribed = true;
+          report();
           // 切断中の変更を取りこぼさないよう、購読確立のたびに取り直す
           onChange();
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-          onStatus('error');
+          subscribed = false;
+          report();
         }
       });
   })();

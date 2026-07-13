@@ -70,23 +70,26 @@ npx supabase db push
 
 > `db push` はマイグレーションのみを流す。**seed は流れない**。
 
-### A-4. seed（世帯とメンバー）を入れる
+### A-4. メンバーのメールを入れる
 
-`supabase/seed.sql` はローカル用に固定メールが入っている。本番では**実際の Gmail** が要る。
-Supabase ダッシュボードの **SQL Editor** で以下を実行する（`<...>` を置き換える）:
+**世帯・メンバー 2 名・カテゴリ（`残高調整` を含む）は `db push` で入っている。**
+（`supabase/migrations/20260712141714_seed_baseline.sql` が投入する。`seed.sql` ではない）
+
+残っているのは **email だけ**。リポジトリは public なので実メールはコミットしていない。
+Supabase ダッシュボードの **SQL Editor** で実行する:
 
 ```sql
-insert into public.households (id, name) values ('main', 'yuruwollet')
-  on conflict (id) do nothing;
+update public.profiles set email = '<ゆるりの Gmail>'  where member_id = 'yururi';
+update public.profiles set email = '<しよをの Gmail>' where member_id = 'shiyowo';
 
-insert into public.profiles (member_id, household_id, display_name, email, opening_balance) values
-  ('yururi',  'main', 'ゆるり', '<ゆるりの Gmail>',  0),
-  ('shiyowo', 'main', 'しよを', '<しよをの Gmail>', 0)
-  on conflict (member_id) do update set email = excluded.email;
+-- 確認
+select member_id, display_name, email, opening_balance from public.profiles order by member_id;
 ```
 
-カテゴリ（`残高調整` を含む）は `supabase/seed.sql` の該当部分をコピーして同じく SQL Editor で実行する。
-
+> このメールは **B-2a の `EMAIL_YURURI` / `EMAIL_SHIYOWO`** と
+> **C-3 の Access ポリシー**に入れるメールと**完全に一致**させること。
+> 食い違うと `/api/session` が 403 になる。
+>
 > 初期残高は 0 で入る。アプリの**マイページから各自が設定**できるので、ここでは 0 のままで良い。
 
 ---

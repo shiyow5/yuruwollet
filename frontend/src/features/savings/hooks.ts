@@ -19,6 +19,8 @@ export function useSavingsProgress(memberId: string, month: string) {
 
 function invalidateSavings(qc: QueryClient): void {
   void qc.invalidateQueries({ queryKey: ['savingsProgress'] });
+  // 貯金履歴グラフは目標そのものを描く。落とさないとグラフだけ古い目標のままになる。
+  void qc.invalidateQueries({ queryKey: ['savingsHistory'] });
 }
 
 export function useSaveSavingsGoal(month: string) {

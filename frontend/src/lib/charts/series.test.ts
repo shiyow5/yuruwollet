@@ -104,14 +104,37 @@ describe('buildCategorySlices', () => {
     const slices = buildCategorySlices(many);
 
     expect(slices).toHaveLength(MAX_SLICES);
-    expect(slices[MAX_SLICES - 1].name).toBe('その他');
+    expect(slices.map((s) => s.name)).toContain('その他');
     // 合計は保たれる（丸めて捨てない）
     const total = many.reduce((s, r) => s + r.total, 0);
     expect(slices.reduce((s, x) => s + x.value, 0)).toBe(total);
+    // 大きい順に並ぶ（「その他」も値に応じた位置に入る）
+    const values = slices.map((s) => s.value);
+    expect([...values].sort((a, b) => b - a)).toEqual(values);
   });
 
   it('0 円のカテゴリは描かない', () => {
     expect(buildCategorySlices([{ category_name: 'x', type: 'expense', total: 0 }])).toEqual([]);
+  });
+
+  // カテゴリ未設定の「その他」が既に上位にいる状態で畳むと、同名スライスが 2 つ並び、
+  // 凡例が重複し DonutChart の React key も衝突する。
+  it('カテゴリ未設定の「その他」と、畳んだ「その他」を 1 つに合算する', () => {
+    const rows = [
+      { category_name: null, type: 'expense' as const, total: 5000 }, // → その他
+      ...Array.from({ length: MAX_SLICES + 2 }, (_, i) => ({
+        category_name: `c${i}`,
+        type: 'expense' as const,
+        total: 1000 - i,
+      })),
+    ];
+    const slices = buildCategorySlices(rows);
+
+    expect(slices.filter((s) => s.name === 'その他')).toHaveLength(1);
+    expect(new Set(slices.map((s) => s.name)).size).toBe(slices.length);
+    // 合計は保たれる
+    const total = rows.reduce((s, r) => s + r.total, 0);
+    expect(slices.reduce((s, x) => s + x.value, 0)).toBe(total);
   });
 });
 

@@ -34,6 +34,12 @@ export function ChartsBoard() {
   const subs = useSubscriptionSlices(activeMember);
   const savings = useSavingsHistory(activeMember, fromMonth);
 
+  // セッション/プロフィールが解決するまで activeMember は ''。このときクエリは disabled で、
+  // TanStack の disabled クエリは isLoading にならない。そのまま描くと
+  // **データが無いのか読み込み中なのか分からないまま「まだ記録がありません」と言ってしまう**。
+  const memberPending = activeMember === '';
+  const loading = (query: { isLoading: boolean }) => memberPending || query.isLoading;
+
   const trendData = useMemo(() => buildTrend(trend.data ?? [], TREND_MONTHS), [trend.data]);
   const categorySlices = useMemo(
     () => buildCategorySlices(categories.data ?? []),
@@ -52,7 +58,7 @@ export function ChartsBoard() {
       <ChartCard
         title="収支の推移"
         description={`直近${TREND_MONTHS}ヶ月（残高調整は除く）`}
-        isLoading={trend.isLoading}
+        isLoading={loading(trend)}
         isError={trend.isError}
         isEmpty={trendEmpty}
         emptyTitle="まだ記録がありません"
@@ -64,7 +70,7 @@ export function ChartsBoard() {
       <ChartCard
         title="カテゴリ別の支出"
         description={`${formatMonthLabel(month)}（残高調整は除く）`}
-        isLoading={categories.isLoading}
+        isLoading={loading(categories)}
         isError={categories.isError}
         isEmpty={categorySlices.length === 0}
         emptyTitle="今月の支出はまだありません"
@@ -76,7 +82,7 @@ export function ChartsBoard() {
       <ChartCard
         title="サブスクの内訳"
         description="月換算（解約検討中は除く）"
-        isLoading={subs.isLoading}
+        isLoading={loading(subs)}
         isError={subs.isError}
         isEmpty={subSlices.length === 0}
         emptyTitle="サブスクはまだありません"
@@ -88,7 +94,7 @@ export function ChartsBoard() {
       <ChartCard
         title="貯金の履歴"
         description="目標と実績"
-        isLoading={savings.isLoading}
+        isLoading={loading(savings)}
         isError={savings.isError}
         isEmpty={savingsData.length === 0}
         emptyTitle="目標を立てた月がありません"

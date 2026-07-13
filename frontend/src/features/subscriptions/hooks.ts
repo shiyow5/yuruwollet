@@ -46,6 +46,10 @@ function invalidateSubs(qc: QueryClient, memberId?: string): void {
       ? queryKeys.subscriptionMonthlyTotal(memberId)
       : ['subscriptionMonthlyTotal'],
   });
+  // サブスク内訳グラフもこのデータから作られる。落とさないとグラフだけ古いままになる。
+  void qc.invalidateQueries({
+    queryKey: memberId ? ['subscriptionSlices', memberId] : ['subscriptionSlices'],
+  });
 }
 
 export function useCreateSubscription() {

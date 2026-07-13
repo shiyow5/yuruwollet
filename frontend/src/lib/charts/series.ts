@@ -81,18 +81,38 @@ export interface CategoryRow {
   total: number | null;
 }
 
-/** 上位を残し、あふれた分を「その他」に畳む（合計は保つ）。 */
+export const OTHER = 'その他';
+
+/**
+ * 上位を残し、あふれた分を「その他」に畳む（合計は保つ）。
+ *
+ * 上位にすでに「その他」（カテゴリ未設定ぶん）がいる場合、畳んだ分をもう 1 つ足すと
+ * 凡例に同名スライスが 2 行並び、DonutChart の React key も衝突する。**必ず 1 つに合算する**。
+ */
 function collapse(entries: { name: string; value: number }[]): Slice[] {
   const sorted = [...entries].sort((a, b) => b.value - a.value);
-  if (sorted.length <= MAX_SLICES) {
-    return sorted.map((e, i) => ({ ...e, color: sliceColor(i) }));
+
+  let head = sorted;
+  let overflow = 0;
+  if (sorted.length > MAX_SLICES) {
+    head = sorted.slice(0, MAX_SLICES - 1);
+    overflow = sorted.slice(MAX_SLICES - 1).reduce((sum, e) => sum + e.value, 0);
   }
-  const head = sorted.slice(0, MAX_SLICES - 1);
-  const restTotal = sorted.slice(MAX_SLICES - 1).reduce((s, e) => s + e.value, 0);
-  return [...head, { name: 'その他', value: restTotal }].map((e, i) => ({
-    ...e,
-    color: sliceColor(i),
-  }));
+
+  const merged = [...head];
+  if (overflow > 0) {
+    const existing = merged.findIndex((e) => e.name === OTHER);
+    if (existing >= 0) {
+      merged[existing] = { ...merged[existing], value: merged[existing].value + overflow };
+    } else {
+      merged.push({ name: OTHER, value: overflow });
+    }
+  }
+
+  // 合算で「その他」が大きくなることがあるので、並べ直してから色を振る
+  return merged
+    .sort((a, b) => b.value - a.value)
+    .map((entry, i) => ({ ...entry, color: sliceColor(i) }));
 }
 
 /** カテゴリ別の**支出**内訳（収入は混ぜない）。 */

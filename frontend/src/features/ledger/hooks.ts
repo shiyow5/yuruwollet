@@ -45,6 +45,13 @@ function invalidateLedger(qc: QueryClient, memberId?: string): void {
   void qc.invalidateQueries({
     queryKey: memberId ? ['savingsProgress', memberId] : ['savingsProgress'],
   });
+  // グラフ（収支推移・貯金履歴）も取引から作られる。落とさないとグラフだけ古いままになる。
+  void qc.invalidateQueries({
+    queryKey: memberId ? ['monthlyTrend', memberId] : ['monthlyTrend'],
+  });
+  void qc.invalidateQueries({
+    queryKey: memberId ? ['savingsHistory', memberId] : ['savingsHistory'],
+  });
 }
 
 // ---- Queries ----

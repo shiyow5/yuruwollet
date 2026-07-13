@@ -35,4 +35,10 @@ export const queryKeys = {
   /** member×月 の目標貯金と進捗 (v_savings_progress) */
   savingsProgress: (memberId: string, month: string) =>
     ['savingsProgress', memberId, month] as const,
+  /** グラフ用: 直近月の収支推移 / 貯金履歴 / サブスク内訳 */
+  monthlyTrend: (memberId: string, fromMonth: string) =>
+    ['monthlyTrend', memberId, fromMonth] as const,
+  savingsHistory: (memberId: string, fromMonth: string) =>
+    ['savingsHistory', memberId, fromMonth] as const,
+  subscriptionSlices: (memberId: string) => ['subscriptionSlices', memberId] as const,
 } as const;

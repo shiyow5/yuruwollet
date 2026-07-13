@@ -16,6 +16,11 @@ on:
   workflow_dispatch:
 
 # デプロイは直列化する。並走すると migration とデプロイの順序が崩れる。
+# 既定の GITHUB_TOKEN は読み取りだけでよい。
+# デプロイ先の資格情報は secrets（Cloudflare / Supabase）で、GITHUB_TOKEN は使わない。
+permissions:
+  contents: read
+
 concurrency:
   group: deploy-production
   cancel-in-progress: false

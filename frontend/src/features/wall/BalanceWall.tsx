@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '../../lib/queryKeys';
 import { Button, Input, Modal } from '../../components/ui';
 import { formatYen, jstToday, monthStartOf } from '../../lib/format';
 import { clockOverrideDate } from '../../lib/clock';
@@ -52,11 +54,21 @@ export function BalanceWall({ now: injectedNow }: Props) {
   const [clock, setClock] = useState<Date>(() => fixed ?? new Date());
   const now = fixed ?? clock;
 
+  // JST の日付境界で、端末時計とサーバ日付の両方を取り直す。
+  // サーバ日付を取り直さないと、23日をキャッシュしたタブが 24日になっても
+  // 定期再取得/フォーカスまで壁を出さないままになる。
+  const qc = useQueryClient();
   useEffect(() => {
-    if (fixed) return; // 固定クロック（テスト/E2E）は進めない
-    const timer = setTimeout(() => setClock(new Date()), msUntilNextJstDay(clock) + 1000);
+    if (override) return; // `?now=` 偽装中は日付を進めない（E2E）
+    const timer = setTimeout(
+      () => {
+        setClock(new Date());
+        void qc.invalidateQueries({ queryKey: queryKeys.serverToday() });
+      },
+      msUntilNextJstDay(now) + 1000,
+    );
     return () => clearTimeout(timer);
-  }, [fixed, clock]);
+  }, [override, now, qc]);
 
   const selfId = session.status === 'authenticated' ? session.session.member.id : '';
 

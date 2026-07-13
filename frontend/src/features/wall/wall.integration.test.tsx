@@ -174,6 +174,20 @@ describe('BalanceWall 統合', () => {
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
   });
 
+  // タブを開いたまま JST の日付をまたいだとき、端末時計だけ進めてサーバ日付を
+  // 取り直さないと、23日をキャッシュしたタブが 24日になっても壁を出さないままになる。
+  it('JST の日付境界でサーバ日付を取り直し、23日→24日で壁が開く', async () => {
+    // 端末時計は JST 23日の 23:59:59.999（境界タイマーは約 1 秒後に発火）
+    renderWall(new Date('2026-07-23T23:59:59.999+09:00'), '2026-07-23');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    // 日付が変わり、サーバも 24日を返すようになる
+    state.serverToday = '2026-07-24';
+
+    // 境界タイマーがサーバ日付を取り直して壁が開く
+    expect(await screen.findByRole('dialog', {}, { timeout: 5000 })).toBeInTheDocument();
+  }, 10000);
+
   // 再取得が失敗しても data には前回成功時の日付が残る。それを使い続けると、
   // 日付境界の再取得が落ちたタブが古い日付のまま壁を出さなくなる。
   it('サーバ日付の再取得が失敗したら、古い日付を使わず端末時計に落とす', async () => {

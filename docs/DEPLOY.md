@@ -93,17 +93,42 @@ insert into public.profiles (member_id, household_id, display_name, email, openi
 
 ## B. Cloudflare Pages（フロント + /api/session）
 
-### B-1. Pages プロジェクトを作る
+### B-1. Pages プロジェクトを作る（Direct Upload）
 
-1. Cloudflare ダッシュボード → **Workers & Pages → Create → Pages → Connect to Git**
-2. `shiyow5/yuruwollet` を選ぶ
-3. ビルド設定:
-   - **Framework preset**: なし
-   - **Build command**: `npm run build:frontend`
-   - **Build output directory**: `frontend/dist`
-   - **Root directory**: （空欄＝リポジトリルート）
+**Git 連携（Connect to Git）は使わない。**
+Pages Functions は「Pages プロジェクトのルート直下の `functions/`」しか拾わない。
+このリポジトリの Functions は `frontend/functions/api/session.ts` にあるため、
+Git 連携でリポジトリルートを指定すると **`/api/session` が配信されず、ログイン後に何も動かない**。
+
+代わりに **Direct Upload**（`wrangler pages deploy` / GitHub Actions）を使う。
+`frontend` ディレクトリから叩くので、`frontend/functions` が正しく Functions として束ねられる。
+
+```bash
+cd /home/satosho/yuruwollet/yuruwollet
+
+npx wrangler login
+npx wrangler pages project create yuruwollet --production-branch main
+```
+
+（ダッシュボードから作る場合は **Workers & Pages → Create → Pages → Upload assets**。
+Connect to Git は選ばない。）
+
+初回のデプロイは B-2 の環境変数を入れたあとで:
+
+```bash
+make deploy-frontend
+```
 
 ### B-2. 環境変数を入れる
+
+環境変数は **2 種類あり、置く場所が違う**。ここを混同すると動かない。
+
+- **実行時（Pages Functions が読む）** → **Cloudflare Pages の環境変数**に置く
+- **ビルド時（Vite がバンドルに焼き込む）** → **ビルドを実行する場所**に渡す
+  （GitHub Actions なら GitHub secrets、手元から `make deploy-frontend` するなら `.env`）
+  → `VITE_` 接頭辞のものはこちら。**Pages の環境変数に入れても届かない**
+
+#### B-2a. Cloudflare Pages の環境変数（実行時）
 
 **Settings → Environment variables → Production**:
 
@@ -113,15 +138,29 @@ insert into public.profiles (member_id, household_id, display_name, email, openi
 | `SUPABASE_SIGNING_KEY` **または** `SUPABASE_JWT_SECRET` | A-2 で取得したもの | **Secret（暗号化）** |
 | `EMAIL_YURURI` | ゆるりの Gmail | Secret |
 | `EMAIL_SHIYOWO` | しよをの Gmail | Secret |
-| `VITE_SUPABASE_URL` | `https://<ref>.supabase.co` | Plaintext |
-| `VITE_SUPABASE_ANON_KEY` | anon key | Plaintext（ブラウザに出る前提） |
 | `ACCESS_TEAM_DOMAIN` | C-1 で決まる。**C の後に設定** | Plaintext |
 | `ACCESS_AUD` | C-3 で決まる。**C の後に設定** | Plaintext |
 
 > **`DEV_BYPASS_EMAIL` は絶対に設定しない。**
-> 設定するとローカル用の認証バイパスが本番で有効になりうる。
-> （なお `ACCESS_AUD` と `ACCESS_TEAM_DOMAIN` が入っていれば、コード側でバイパスは無効化される。
-> それでも入れない。）
+> ローカル用の認証バイパス（Access ヘッダが無いリクエストをそのまま信頼する）が本番で有効になる。
+>
+> なお `ACCESS_AUD` と `ACCESS_TEAM_DOMAIN` が**両方**入っていればコード側で無効化される。
+> **片方だけ入っている状態は「設定ミス」として 500 で拒否する**（片方だけ入れた瞬間に
+> バイパスが生き返るのを防ぐため）。C-4 では 2 つを**同時に**入れること。
+
+#### B-2b. ビルド時の変数
+
+`VITE_SUPABASE_URL` と `VITE_SUPABASE_ANON_KEY` は **Vite がビルド時にバンドルへ焼き込む**。
+渡し忘れると、ローカル用の既定値（`127.0.0.1` + demo anon key）を焼いたバンドルが本番に出る。
+
+- **GitHub Actions からデプロイする場合** → E で GitHub secrets に登録する
+- **手元から `make deploy-frontend` する場合** → リポジトリルートの `.env` に書く
+
+```bash
+# .env（gitignore 済み）
+VITE_SUPABASE_URL=https://<ref>.supabase.co
+VITE_SUPABASE_ANON_KEY=<anon key>
+```
 
 ### B-3. カスタムドメインを割り当てる
 
@@ -199,9 +238,12 @@ make deploy-backend
 
 ---
 
-## E. GitHub Actions（自動デプロイ）
+## E. GitHub Actions（デプロイを CI から回す）
 
-`main` に push したら自動でデプロイされるようにする。
+`.github/workflows/deploy.yml` は **手動トリガ（workflow_dispatch）**。
+`main` への push では自動実行されない（secrets 未設定のうちから main を赤くしないため）。
+
+### E-1. secrets を登録する
 
 ```bash
 cd /home/satosho/yuruwollet/yuruwollet
@@ -211,11 +253,33 @@ gh secret set CLOUDFLARE_ACCOUNT_ID     # Cloudflare ダッシュボード右側
 gh secret set SUPABASE_ACCESS_TOKEN     # https://supabase.com/dashboard/account/tokens
 gh secret set SUPABASE_PROJECT_REF      # A-1 の Reference ID
 gh secret set SUPABASE_DB_PASSWORD      # A-1 の DB パスワード
+
+# ビルド時にバンドルへ焼き込む（B-2b）。渡さないとローカル用の既定値が本番に出る
+gh secret set VITE_SUPABASE_URL         # https://<ref>.supabase.co
+gh secret set VITE_SUPABASE_ANON_KEY    # anon key
 ```
 
 `CLOUDFLARE_API_TOKEN` に必要な権限:
 - **Account → Cloudflare Pages → Edit**
 - **Account → Workers Scripts → Edit**
+
+### E-2. 実行する
+
+```bash
+gh workflow run deploy.yml
+gh run watch
+```
+
+### E-3.（任意）main への push で自動デプロイにする
+
+F の確認がすべて通ってから有効にする。`.github/workflows/deploy.yml` の冒頭を変える:
+
+```yaml
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+```
 
 ---
 
@@ -249,8 +313,11 @@ gh secret set SUPABASE_DB_PASSWORD      # A-1 の DB パスワード
 
 | 症状 | 原因 |
 |---|---|
+| `/api/session` が **404** | Pages Functions が束ねられていない。**Git 連携で作った**か、`wrangler pages deploy` を `frontend` 以外から実行した（B-1） |
 | `/api/session` が 403 | `EMAIL_YURURI` / `EMAIL_SHIYOWO` と、Access のポリシーに入れたメールが**食い違っている** |
+| `/api/session` が 500 + `incomplete Access configuration` | `ACCESS_AUD` と `ACCESS_TEAM_DOMAIN` の**片方だけ**しか入っていない（B-2a）。両方入れて再デプロイする |
 | `/api/session` が 500 | `SUPABASE_SIGNING_KEY` / `SUPABASE_JWT_SECRET` が未設定または不正 |
+| ログインできるが Supabase に繋がらない（localhost を見に行く） | `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` を**ビルド時**に渡していない（B-2b / E-1） |
 | ログインできるがデータが見えない | seed（`households` / `profiles`）が本番に入っていない（A-4） |
 | USD サブスクが登録できない | `fx_rates` が空。cron が 1 回も成功していない（D を確認） |
 | 数日後にアプリが応答しない | Supabase が一時停止した。cron の keep-alive が失敗している（D を確認） |

@@ -8,7 +8,7 @@ import {
   mintSupabaseJwt,
   resolveSigningKey,
   createSession,
-  isAccessConfigured,
+  accessMode,
   SessionError,
   type SessionConfig,
   type SigningKey,
@@ -210,11 +210,29 @@ describe('createSession', () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it('isAccessConfigured は AUD と team domain の両方が揃ったときだけ true', () => {
-    expect(isAccessConfigured(cfg)).toBe(true);
-    expect(isAccessConfigured(devCfg)).toBe(false);
-    expect(isAccessConfigured({ accessAud: 'aud', accessIssuer: '' })).toBe(false);
-    expect(isAccessConfigured({ accessAud: '', accessIssuer: 'https://x' })).toBe(false);
+  it('accessMode: 両方揃えば enforced、両方無ければ unconfigured、片方だけなら partial', () => {
+    expect(accessMode(cfg)).toBe('enforced');
+    expect(accessMode(devCfg)).toBe('unconfigured');
+    expect(accessMode({ accessAud: 'aud', accessIssuer: '' })).toBe('partial');
+    expect(accessMode({ accessAud: '', accessIssuer: 'https://x' })).toBe('partial');
+  });
+
+  // 本番の環境変数は「Access を作ってから後で入れる」ため、片方だけ入った瞬間が実在する。
+  // そこで unconfigured に倒すと、その瞬間だけバイパスが生き返り認証が丸ごと外れる。
+  it.each([
+    ['AUD だけ設定', { accessAud: 'aud-tag', accessIssuer: '' }],
+    ['team domain だけ設定', { accessAud: '', accessIssuer: 'https://team.cloudflareaccess.com' }],
+  ])('Access 設定が中途半端(%s)なら bypass を許さず 500 で落とす', async (_name, partial) => {
+    await expect(
+      createSession(
+        requestWith({}),
+        { ...cfg, ...partial },
+        {
+          getAccessKey,
+          devBypassEmail: 'yururi@example.com',
+        },
+      ),
+    ).rejects.toMatchObject({ status: 500 });
   });
 
   it('token 無し + bypass 無しは SessionError(403)', async () => {

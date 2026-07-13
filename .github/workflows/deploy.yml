@@ -33,9 +33,18 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
 
+      # VITE_ 変数は **ビルド時**にバンドルへ埋め込まれる。
+      # ここで渡さないと、Cloudflare Pages 側の環境変数（= 実行時）は届かず、
+      # ローカル用の既定値（127.0.0.1 + demo anon key）を焼き込んだバンドルが本番に出てしまう。
       - name: build frontend
         run: npm run build --workspace @yuruwollet/frontend
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
+      # frontend から実行すること。wrangler は **カレントディレクトリの functions/** を
+      # Pages Functions としてバンドルする。リポジトリルートから叩くと
+      # frontend/functions/api/session.ts が拾われず、/api/session が消える。
       - name: deploy frontend (Cloudflare Pages)
         run: cd frontend && npx wrangler pages deploy dist --project-name yuruwollet
         env:

@@ -117,8 +117,32 @@ describe('buildCategorySlices', () => {
     expect(buildCategorySlices([{ category_name: 'x', type: 'expense', total: 0 }])).toEqual([]);
   });
 
-  // カテゴリ未設定の「その他」が既に上位にいる状態で畳むと、同名スライスが 2 つ並び、
-  // 凡例が重複し DonutChart の React key も衝突する。
+  // 「その他」という名前のカテゴリが実在すると、カテゴリ未設定ぶんと名前が衝突する。
+  // 畳み込みが起きない件数でも重複しうる。
+  it('同名のスライスは畳み込みが無くても 1 つに合算する', () => {
+    const slices = buildCategorySlices([
+      { category_name: 'その他', type: 'expense', total: 3000 }, // 実在するカテゴリ
+      { category_name: null, type: 'expense', total: 2000 }, // カテゴリ未設定
+      { category_name: '食費', type: 'expense', total: 5000 },
+    ]);
+
+    expect(slices.filter((s) => s.name === 'その他')).toHaveLength(1);
+    expect(slices.find((s) => s.name === 'その他')!.value).toBe(5000);
+  });
+
+  // 同額のまま入力順に任せると、再取得のたびに色と凡例の位置が入れ替わる
+  it('同額なら名前順に並べる（再取得で色が入れ替わらない）', () => {
+    const rows = [
+      { category_name: 'b', type: 'expense' as const, total: 1000 },
+      { category_name: 'a', type: 'expense' as const, total: 1000 },
+    ];
+    const first = buildCategorySlices(rows);
+    const second = buildCategorySlices([...rows].reverse());
+
+    expect(first.map((s) => s.name)).toEqual(['a', 'b']);
+    expect(second).toEqual(first); // 入力順が変わっても同じ色・同じ順序
+  });
+
   it('カテゴリ未設定の「その他」と、畳んだ「その他」を 1 つに合算する', () => {
     const rows = [
       { category_name: null, type: 'expense' as const, total: 5000 }, // → その他

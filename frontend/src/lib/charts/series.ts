@@ -83,36 +83,49 @@ export interface CategoryRow {
 
 export const OTHER = 'その他';
 
+interface Entry {
+  name: string;
+  value: number;
+}
+
 /**
- * 上位を残し、あふれた分を「その他」に畳む（合計は保つ）。
+ * 同名のスライスを 1 つに合算する。
  *
- * 上位にすでに「その他」（カテゴリ未設定ぶん）がいる場合、畳んだ分をもう 1 つ足すと
- * 凡例に同名スライスが 2 行並び、DonutChart の React key も衝突する。**必ず 1 つに合算する**。
+ * カテゴリ未設定ぶんも「その他」と表示するため、**「その他」という名前のカテゴリが
+ * 実在するとスライスが 2 つできる**（凡例が 2 行に割れ、DonutChart の React key も衝突する）。
+ * 畳み込みの有無に関わらず、名前が同じものは必ず 1 つにする。
  */
-function collapse(entries: { name: string; value: number }[]): Slice[] {
-  const sorted = [...entries].sort((a, b) => b.value - a.value);
+function mergeByName(entries: Entry[]): Entry[] {
+  const byName = new Map<string, number>();
+  for (const entry of entries) {
+    byName.set(entry.name, (byName.get(entry.name) ?? 0) + entry.value);
+  }
+  return [...byName].map(([name, value]) => ({ name, value }));
+}
 
-  let head = sorted;
-  let overflow = 0;
+/**
+ * 大きい順。**同額なら名前順**にする。
+ *
+ * 同額のまま入力順に任せると、再取得のたびに順序が入れ替わりうる。
+ * 色は index で振るので、同じカテゴリの色と凡例の位置が毎回変わってしまう。
+ */
+function byValueThenName(a: Entry, b: Entry): number {
+  return b.value - a.value || a.name.localeCompare(b.name);
+}
+
+/** 上位を残し、あふれた分を「その他」に畳む（合計は保つ）。 */
+function collapse(entries: Entry[]): Slice[] {
+  const sorted = mergeByName(entries).sort(byValueThenName);
+
+  let merged = sorted;
   if (sorted.length > MAX_SLICES) {
-    head = sorted.slice(0, MAX_SLICES - 1);
-    overflow = sorted.slice(MAX_SLICES - 1).reduce((sum, e) => sum + e.value, 0);
+    const head = sorted.slice(0, MAX_SLICES - 1);
+    const overflow = sorted.slice(MAX_SLICES - 1).reduce((sum, e) => sum + e.value, 0);
+    // head にすでに「その他」が居ることがあるので、合算してから並べ直す
+    merged = mergeByName([...head, { name: OTHER, value: overflow }]).sort(byValueThenName);
   }
 
-  const merged = [...head];
-  if (overflow > 0) {
-    const existing = merged.findIndex((e) => e.name === OTHER);
-    if (existing >= 0) {
-      merged[existing] = { ...merged[existing], value: merged[existing].value + overflow };
-    } else {
-      merged.push({ name: OTHER, value: overflow });
-    }
-  }
-
-  // 合算で「その他」が大きくなることがあるので、並べ直してから色を振る
-  return merged
-    .sort((a, b) => b.value - a.value)
-    .map((entry, i) => ({ ...entry, color: sliceColor(i) }));
+  return merged.map((entry, i) => ({ ...entry, color: sliceColor(i) }));
 }
 
 /** カテゴリ別の**支出**内訳（収入は混ぜない）。 */

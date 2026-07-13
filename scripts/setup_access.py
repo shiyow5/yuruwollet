@@ -63,18 +63,28 @@ def call(method: str, path: str, body: dict | None = None):
 idps = call("GET", f"/accounts/{ACCOUNT}/access/identity_providers")
 google = next((i for i in idps if i.get("type") == "google"), None)
 
+idp_body = {
+    "name": "Google",
+    "type": "google",
+    "config": {"client_id": GOOGLE_ID, "client_secret": GOOGLE_SECRET},
+}
+
 if google:
-    log(f"✓ Google IdP は登録済み ({google['id']})")
-else:
+    # **既存 IdP をそのまま再利用してはいけない。**
+    # 古い OAuth クライアントが登録されたままだと、セットアップは成功と報告するのに
+    # ログインだけが Google 側で失敗する（原因が Cloudflare 側に見えず、追いにくい）。
+    # .env の資格情報で必ず上書きする。
+    # client_secret は API が返さないので、client_id が一致していても毎回入れ直す。
+    old_id = (google.get("config") or {}).get("client_id")
     google = call(
-        "POST",
-        f"/accounts/{ACCOUNT}/access/identity_providers",
-        {
-            "name": "Google",
-            "type": "google",
-            "config": {"client_id": GOOGLE_ID, "client_secret": GOOGLE_SECRET},
-        },
+        "PUT", f"/accounts/{ACCOUNT}/access/identity_providers/{google['id']}", idp_body
     )
+    if old_id and old_id != GOOGLE_ID:
+        log(f"✓ Google IdP の client_id を更新 ({old_id} → {GOOGLE_ID})")
+    else:
+        log(f"✓ Google IdP を .env の資格情報で更新 ({google['id']})")
+else:
+    google = call("POST", f"/accounts/{ACCOUNT}/access/identity_providers", idp_body)
     log(f"✓ Google IdP を登録 ({google['id']})")
 
 # ---- アプリ + ポリシー -------------------------------------------------------

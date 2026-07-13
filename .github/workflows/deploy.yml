@@ -40,7 +40,7 @@ jobs:
       # Pages Functions としてバンドルする。リポジトリルートから叩くと
       # frontend/functions/api/session.ts が拾われず、/api/session が消える。
       - name: deploy frontend (Cloudflare Pages)
-        run: cd frontend && npx wrangler pages deploy dist --project-name yuruwollet
+        run: cd frontend && npx wrangler pages deploy dist --project-name yuruwollet --branch main
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

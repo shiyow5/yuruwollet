@@ -137,9 +137,12 @@ step "B. Cloudflare Pages — フロントをビルドしてデプロイ"
 VITE_SUPABASE_URL="$SUPABASE_URL" \
   VITE_SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
   npm run build --workspace @yuruwollet/frontend
-# functions/ を拾わせるため frontend から実行する（ルートから叩くと /api/session が消える）
-(cd frontend && npx --yes wrangler pages deploy dist --project-name "$PAGES_PROJECT" --commit-dirty=true)
-ok "デプロイ完了"
+# functions/ を拾わせるため frontend から実行する（ルートから叩くと /api/session が消える）。
+# --branch main は必須: wrangler は **git のブランチ名**でデプロイ先を決めるため、
+# 作業ブランチのまま実行すると preview にだけ出て、本番は "Nothing is here yet" のままになる。
+(cd frontend && npx --yes wrangler pages deploy dist \
+  --project-name "$PAGES_PROJECT" --branch main --commit-dirty=true)
+ok "デプロイ完了（production）"
 
 # ---------------------------------------------------------------- D. Cron Worker
 step "D. Go Cron Worker — secret を登録してデプロイ"

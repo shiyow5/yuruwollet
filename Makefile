@@ -88,7 +88,7 @@ setup-prod: ## .env を読んで本番を構築する（Supabase / Access / Page
 deploy: deploy-frontend deploy-backend ## 本番デプロイ
 
 deploy-frontend: build-frontend ## Cloudflare Pages へデプロイ
-	cd frontend && npx wrangler pages deploy dist
+	cd frontend && npx wrangler pages deploy dist --branch main
 
 deploy-backend: check-worker-secrets build-backend ## Go Cron Worker をデプロイ
 	cd backend && npx wrangler deploy

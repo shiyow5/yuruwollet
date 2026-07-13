@@ -47,7 +47,11 @@ describe('サイトアイコン', () => {
     expect(html).toContain('rel="icon" type="image/svg+xml" href="/favicon.svg"');
     expect(html).toContain('href="/favicon.ico"');
     expect(html).toContain('rel="apple-touch-icon" href="/apple-touch-icon.png"');
-    expect(html).toContain('rel="manifest" href="/site.webmanifest"');
+    // Cloudflare Access が全パスをゲートしているので、クッキーの無いリクエストは
+    // ログイン画面へ 302 される。**manifest の取得は既定でクッキーを送らない**
+    // （HTML 仕様の CORS settings attribute: crossorigin を省略すると credentials は omit）。
+    // use-credentials が無いと、ログイン済みでも manifest だけ取得に失敗する。
+    expect(html).toContain('rel="manifest" href="/site.webmanifest" crossorigin="use-credentials"');
     // ブラウザの UI 色（Android の Chrome ではアドレスバーが染まる）
     expect(html).toContain('name="theme-color" content="#769cbf"');
   });

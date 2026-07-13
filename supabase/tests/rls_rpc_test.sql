@@ -1,6 +1,6 @@
 -- pgTAP: RLS の cross-household 分離 + per-member 書込強制 + confirm_balance_checkpoint RPC
 begin;
-select plan(65);
+select plan(78);
 
 -- ============================================================
 -- Block A: ゆるり @ main として認証
@@ -494,6 +494,156 @@ select throws_ok(
   $$ insert into public.fx_rates (rate_date, rate) values (current_date, 150) $$,
   null, null,
   'fx_rates への書込は拒否 (service_role のみ)'
+);
+
+-- ============================================================
+-- Block F: roll_subscription_cycle（支払い記録と更新日前進の原子化）
+-- ============================================================
+-- 「記録」と「前進」が別々の往復だと、その隙間で編集/解約されたときに
+-- 古い金額の支払いだけが台帳に残る。1 トランザクションに閉じて塞ぐ。
+reset role;
+set local role service_role;
+
+-- 収入カテゴリにも「サブスク」を作る。
+-- categories は (household_id, kind, name) で一意なので **これは作れてしまう**。
+-- 名前だけでカテゴリを引いていると、支出が収入カテゴリで記録される。
+insert into public.categories (household_id, kind, name, sort_order)
+values ('main', 'income', 'サブスク', 90);
+
+insert into public.subscriptions
+  (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+values ('main', 'yururi', 'RpcSub', 'JPY', 1200, 1200, 'monthly', date '2026-05-10', 'active');
+
+-- cron が 3 ヶ月止まっていた場合。止まっていた間も課金は起きているので、全期ぶん記録する。
+select is(
+  public.roll_subscription_cycle(
+    (select id from public.subscriptions where name = 'RpcSub'),
+    date '2026-05-10', 'JPY', 1200, 'monthly', 10,
+    '[{"occurred_on":"2026-05-10","amount":1200},
+      {"occurred_on":"2026-06-10","amount":1200},
+      {"occurred_on":"2026-07-10","amount":1200}]'::jsonb,
+    date '2026-08-10'
+  ),
+  true,
+  'roll_subscription_cycle: 到来した支払いを記録して更新日を進める'
+);
+
+select is(
+  (select count(*)::int from public.transactions
+     where subscription_id = (select id from public.subscriptions where name = 'RpcSub')),
+  3,
+  'roll_subscription_cycle: 止まっていた 3 期ぶんすべてを記録する'
+);
+
+select is(
+  (select next_renewal_date from public.subscriptions where name = 'RpcSub'),
+  date '2026-08-10',
+  'roll_subscription_cycle: 更新日が次の周期へ進む'
+);
+
+-- 同名の収入カテゴリがあっても、支出は必ず **支出カテゴリ** で記録される
+select is(
+  (select distinct c.kind::text
+     from public.transactions t join public.categories c on c.id = t.category_id
+    where t.subscription_id = (select id from public.subscriptions where name = 'RpcSub')),
+  'expense',
+  'roll_subscription_cycle: 同名の収入カテゴリを引かない（kind まで絞る）'
+);
+
+-- cron は再実行されうる。同じ更新日ぶんが二重計上されてはいけない。
+select is(
+  public.roll_subscription_cycle(
+    (select id from public.subscriptions where name = 'RpcSub'),
+    date '2026-08-10', 'JPY', 1200, 'monthly', 10,
+    '[{"occurred_on":"2026-07-10","amount":1200}]'::jsonb,
+    date '2026-09-10'
+  ),
+  true,
+  'roll_subscription_cycle: 再実行できる'
+);
+select is(
+  (select count(*)::int from public.transactions
+     where subscription_id = (select id from public.subscriptions where name = 'RpcSub')),
+  3,
+  'roll_subscription_cycle: 同じ更新日ぶんは増えない（冪等）'
+);
+
+-- 一覧取得から呼び出しまでの間にユーザーが編集した場合。
+-- **支払いだけが古い金額で残る** ことが無いよう、何もせず false を返す。
+select is(
+  public.roll_subscription_cycle(
+    (select id from public.subscriptions where name = 'RpcSub'),
+    date '2026-05-10',  -- 古いスナップショット（実際は 2026-09-10）
+    'JPY', 1200, 'monthly', 10,
+    '[{"occurred_on":"2026-10-10","amount":9999}]'::jsonb,
+    date '2026-06-10'
+  ),
+  false,
+  'roll_subscription_cycle: スナップショットが古ければ何もせず false'
+);
+select is(
+  (select next_renewal_date from public.subscriptions where name = 'RpcSub'),
+  date '2026-09-10',
+  'CAS 不一致では更新日を進めない'
+);
+select is(
+  (select count(*)::int from public.transactions
+     where subscription_id = (select id from public.subscriptions where name = 'RpcSub')),
+  3,
+  'CAS 不一致では支払いも記録しない（記録だけ残る穴が無い）'
+);
+
+-- 解約検討中は課金されない前提。進めない。
+update public.subscriptions set status = 'considering_cancel' where name = 'RpcSub';
+select is(
+  public.roll_subscription_cycle(
+    (select id from public.subscriptions where name = 'RpcSub'),
+    date '2026-09-10', 'JPY', 1200, 'monthly', 10,
+    '[{"occurred_on":"2026-09-10","amount":1200}]'::jsonb,
+    date '2026-10-10'
+  ),
+  false,
+  'roll_subscription_cycle: 解約検討中のサブスクは進めない'
+);
+
+reset role;
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","household_id":"main","member_id":"yururi"}',
+  true
+);
+
+-- cron が作った支払いをユーザーが消せると、更新日は既に進んでいるため **二度と復活しない**。
+-- 残高とカテゴリ別集計からサブスク代が恒久的に欠落する。
+delete from public.transactions
+  where subscription_id = (select id from public.subscriptions where name = 'RpcSub');
+select is(
+  (select count(*)::int from public.transactions
+     where subscription_id = (select id from public.subscriptions where name = 'RpcSub')),
+  3,
+  'ユーザーは cron が作った支払いを削除できない'
+);
+
+-- ただし、ふつうの取引は今までどおり削除できる（削除ポリシーを締めすぎていない）
+insert into public.transactions (household_id, owner_member_id, type, amount, occurred_on)
+values ('main', 'yururi', 'expense', 300, current_date);
+delete from public.transactions
+  where owner_member_id = 'yururi' and amount = 300 and subscription_id is null;
+select is(
+  (select count(*)::int from public.transactions
+     where owner_member_id = 'yururi' and amount = 300 and subscription_id is null),
+  0,
+  'サブスク由来でない取引はこれまでどおり削除できる'
+);
+
+-- RPC は cron 専用。クライアントからは実行できない。
+select throws_ok(
+  $$ select public.roll_subscription_cycle(
+       '00000000-0000-0000-0000-000000000000'::uuid, current_date, 'JPY', 1, 'monthly', 1,
+       '[]'::jsonb, current_date) $$,
+  '42501', null,
+  'authenticated は roll_subscription_cycle を実行できない'
 );
 
 select * from finish();

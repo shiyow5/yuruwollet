@@ -682,6 +682,22 @@ export type Database = {
         }
       }
       jst_today: { Args: never; Returns: string }
+      roll_subscription_cycle: {
+        Args: {
+          p_amount_jpy?: number
+          p_expected_anchor_day: number
+          p_expected_currency: Database["public"]["Enums"]["sub_currency"]
+          p_expected_cycle: Database["public"]["Enums"]["sub_cycle"]
+          p_expected_next_renewal_date: string
+          p_expected_original_amount: number
+          p_fx_rate?: number
+          p_fx_rate_date?: string
+          p_next_renewal_date: string
+          p_payments: Json
+          p_subscription_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
       category_kind: "expense" | "income" | "system"

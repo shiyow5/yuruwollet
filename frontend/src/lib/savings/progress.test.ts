@@ -16,6 +16,14 @@ describe('progressPct', () => {
     expect(progressPct(25000, 10000)).toBe(100);
   });
 
+  // 四捨五入すると 29,900/30,000 が 100% になり、リングは満了なのにカードは
+  // 「あと ¥100」「未達成」と言う矛盾が起きる。100% は達成したときだけ。
+  it('未達成なら 100% にしない（切り捨てて最大 99%）', () => {
+    expect(progressPct(29900, 30000)).toBe(99);
+    expect(progressPct(9999, 10000)).toBe(99);
+    expect(progressPct(10000, 10000)).toBe(100);
+  });
+
   it('目標 0 は 0 除算にせず 100%（達成済み扱い）', () => {
     expect(progressPct(0, 0)).toBe(100);
     expect(progressPct(-1, 0)).toBe(0);

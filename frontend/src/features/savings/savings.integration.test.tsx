@@ -183,6 +183,19 @@ describe('MyPage 統合（目標貯金 + プロフィール）', () => {
     expect(screen.queryByRole('button', { name: '目標をやめる' })).toBeNull();
   });
 
+  // 書込先は常に自分の member_id。相手タブで編集フォームが残ると、
+  // 相手の画面を見ながら自分の目標を書き換えてしまう。
+  it('編集中に相手タブへ切り替えたら編集フォームを持ち越さない', async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: '目標を決める' }));
+    fireEvent.change(screen.getByLabelText('目標額'), { target: { value: '30000' } });
+
+    fireEvent.click(screen.getByRole('tab', { name: 'しよを' }));
+
+    await waitFor(() => expect(screen.queryByLabelText('目標額')).toBeNull());
+    expect(screen.queryByRole('button', { name: '保存' })).toBeNull();
+  });
+
   it('保存に失敗したらエラーを表示する', async () => {
     state.saveFails = true;
     renderPage();

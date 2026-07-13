@@ -79,7 +79,12 @@ export function GoalCard({ memberId, month, canWrite }: Props) {
         </p>
       )}
 
-      {editing ? (
+      {/*
+        canWrite を必ず条件に入れる。書込先は常に **自分の** member_id なので、
+        相手タブで編集フォームが出たまま保存されると、相手の画面を見ながら
+        自分の目標を書き換えてしまう。
+      */}
+      {editing && canWrite ? (
         <div className="flex flex-col gap-4">
           <div>
             <Input

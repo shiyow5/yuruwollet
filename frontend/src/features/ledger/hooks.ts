@@ -40,6 +40,11 @@ function invalidateLedger(qc: QueryClient, memberId?: string): void {
   void qc.invalidateQueries({
     queryKey: memberId ? ['categoryBreakdown', memberId] : ['categoryBreakdown'],
   });
+  // 目標貯金の進捗（v_savings_progress.saved）は取引から算出される。
+  // ここで落とさないと、取引を足した直後にマイページへ戻っても古い貯金額・達成状態が出る。
+  void qc.invalidateQueries({
+    queryKey: memberId ? ['savingsProgress', memberId] : ['savingsProgress'],
+  });
 }
 
 // ---- Queries ----

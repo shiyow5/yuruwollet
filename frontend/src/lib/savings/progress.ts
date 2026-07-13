@@ -8,8 +8,11 @@ import { formatYen } from '../format';
  */
 export function progressPct(saved: number, target: number): number {
   if (target <= 0) return saved >= 0 ? 100 : 0;
-  const pct = (saved / target) * 100;
-  return Math.max(0, Math.min(100, Math.round(pct)));
+  // 100% は **達成したときだけ**。四捨五入すると 29,900/30,000 が 100% になり、
+  // リングは満了しているのにカードは「あと ¥100」「未達成」と言う矛盾が起きる。
+  if (isAchieved(saved, target)) return 100;
+  const pct = Math.floor((saved / target) * 100);
+  return Math.max(0, Math.min(99, pct));
 }
 
 /** 目標までの残り（達成済みなら 0）。貯金額がマイナスなら目標額より多く必要になる。 */

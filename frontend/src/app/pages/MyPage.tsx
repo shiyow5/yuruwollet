@@ -28,8 +28,9 @@ export function MyPage() {
         <MemberTabs options={options} value={activeMember} onChange={setViewMemberId} />
       </header>
 
+      {/* key で作り直す: 相手タブに切り替えたときに編集中のフォーム/入力値を持ち越さない */}
       {activeMember !== '' && (
-        <GoalCard memberId={activeMember} month={month} canWrite={canWrite} />
+        <GoalCard key={activeMember} memberId={activeMember} month={month} canWrite={canWrite} />
       )}
 
       {selfId && <ProfileCard selfId={selfId} />}

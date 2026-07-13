@@ -134,6 +134,11 @@ function renderWall(now: Date = ON_24, serverToday: string | null = jstToday(now
       void qc.invalidateQueries({ queryKey: ['serverToday'] });
       utils.rerender(ui(n));
     },
+    /** サーバ日付の**再取得**だけを失敗させる（キャッシュ済みの古い日付は残る）。 */
+    failServerClockRefetch: () => {
+      state.serverToday = null;
+      void qc.invalidateQueries({ queryKey: ['serverToday'] });
+    },
   };
 }
 
@@ -166,6 +171,19 @@ describe('BalanceWall 統合', () => {
 
   it('サーバ日付を取得できないときは端末時計にフォールバックする（壁が永久に出ないより良い）', async () => {
     renderWall(ON_24, null);
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+  });
+
+  // 再取得が失敗しても data には前回成功時の日付が残る。それを使い続けると、
+  // 日付境界の再取得が落ちたタブが古い日付のまま壁を出さなくなる。
+  it('サーバ日付の再取得が失敗したら、古い日付を使わず端末時計に落とす', async () => {
+    // サーバは 23日（＝壁は出ない）。端末時計は 24日。
+    const { failServerClockRefetch } = renderWall(ON_24, '2026-07-23');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    failServerClockRefetch();
+
+    // 古い「23日」に留まらず、端末時計の 24日で壁が開く
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
   });
 

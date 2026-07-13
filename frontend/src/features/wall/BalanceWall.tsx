@@ -64,7 +64,11 @@ export function BalanceWall({ now: injectedNow }: Props) {
   // その月の残高確認を丸ごと素通りできてしまうため（サーバの 24日ガードは早すぎる確定しか止められない）。
   // 取得できないときだけ端末時計にフォールバックする（壁が永久に出ないより良い）。
   const serverToday = useServerToday(override == null);
-  const today = serverToday.data ?? jstToday(now);
+  // 再取得が失敗しても serverToday.data には前回成功時の日付が残る。
+  // それを使い続けると、日付境界の再取得が落ちたタブが古い日付のまま壁を出さなくなるため、
+  // isError のときは必ず端末時計に落とす（意図したフォールバックを効かせる）。
+  const today =
+    serverToday.isError || !serverToday.data ? jstToday(now) : (serverToday.data as string);
   const month = monthStartOf(today);
 
   const {

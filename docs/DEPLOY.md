@@ -272,6 +272,23 @@ VITE_SUPABASE_ANON_KEY=<anon key>
 
 > Zero Trust への IdP 登録は `make setup-prod` が API 経由で自動実行する（手動不要）。
 
+#### プロフィール画像（アバター）について
+
+`setup_access.py` は Google IdP に `claims: ["picture"]` を設定する。
+これで Google のプロフィール画像が **Access JWT の `custom.picture`** に載り、
+`/api/session` がそれを `member.avatarUrl` として返し、TopAppBar のアバターに出る。
+
+**2 つ、知っておくこと:**
+
+1. **届かないことがある。** Cloudflare は custom クレームの配送を公式に
+   [*"on a best-effort basis"*](https://developers.cloudflare.com/cloudflare-one/identity/authorization-cookie/application-token/)
+   と明記している。**画像が出ないのは異常ではない**。その場合はメンバーの
+   頭文字（ゆ / し）とメンバー色で表示される。アプリの動作には一切影響しない。
+
+2. **既存のログインセッションには反映されない。** Access のセッションは 30 日で、
+   JWT はログイン時に発行される。設定を入れても、**ログアウト → 再ログイン**するまで
+   `custom` は載らない。アプリの `設定` ページからログアウトできる。
+
 ### C-3. アプリケーションを作る
 
 1. Zero Trust → **Access → Applications → Add an application → Self-hosted**

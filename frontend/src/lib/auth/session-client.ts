@@ -1,7 +1,8 @@
 export interface SessionInfo {
   supabaseJwt: string;
   expiresAt: number;
-  member: { id: string; displayName: string };
+  /** avatarUrl は任意。Access の picture クレームは best-effort で届かないことがある */
+  member: { id: string; displayName: string; avatarUrl?: string };
   householdId: string;
 }
 
@@ -10,8 +11,14 @@ const REFRESH_MARGIN_SECONDS = 60;
 
 const cache: { info: SessionInfo | null } = { info: null };
 
-/** テスト用: キャッシュをリセット */
-export function _resetSessionCache(): void {
+/**
+ * キャッシュを捨てる。
+ *
+ * ログアウト（lib/auth/logout.ts）からも呼ぶので、テスト専用ではない。
+ * これを残したままだと、遷移がブロックされたときに古い JWT が生き続け、
+ * realtime の 10 分タイマーがそれを使い回してしまう。
+ */
+export function resetSessionCache(): void {
   cache.info = null;
 }
 
@@ -24,7 +31,7 @@ export async function fetchSession(fetchImpl: typeof fetch = fetch): Promise<Ses
   const data = (await res.json()) as {
     supabase_jwt: string;
     expires_at: number;
-    member: { id: string; displayName: string };
+    member: { id: string; displayName: string; avatarUrl?: string };
     household_id: string;
   };
   cache.info = {

@@ -3,7 +3,8 @@ import { describe, expect, it, beforeAll } from 'vitest';
 import { SignJWT, jwtVerify, generateKeyPair, exportJWK } from 'jose';
 import {
   extractAccessToken,
-  verifyAccessEmail,
+  verifyAccessIdentity,
+  extractAvatarUrl,
   mapEmailToMember,
   mintSupabaseJwt,
   resolveSigningKey,
@@ -46,9 +47,14 @@ beforeAll(async () => {
 
 async function signAccessToken(
   email: string,
-  overrides: { aud?: string; iss?: string; exp?: string | number } = {},
+  overrides: {
+    aud?: string;
+    iss?: string;
+    exp?: string | number;
+    custom?: Record<string, unknown>;
+  } = {},
 ): Promise<string> {
-  return new SignJWT({ email })
+  return new SignJWT(overrides.custom ? { email, custom: overrides.custom } : { email })
     .setProtectedHeader({ alg: 'RS256' })
     .setAudience(overrides.aud ?? cfg.accessAud)
     .setIssuer(overrides.iss ?? cfg.accessIssuer)
@@ -75,24 +81,26 @@ describe('extractAccessToken', () => {
   });
 });
 
-describe('verifyAccessEmail', () => {
+describe('verifyAccessIdentity', () => {
   it('正しい token から email を小文字で取得', async () => {
     const token = await signAccessToken('YuRuRi@Example.com');
-    await expect(verifyAccessEmail(token, keyResolver, cfg)).resolves.toBe('yururi@example.com');
+    await expect(verifyAccessIdentity(token, keyResolver, cfg)).resolves.toEqual({
+      email: 'yururi@example.com',
+    });
   });
   it('aud 不一致は拒否', async () => {
     const token = await signAccessToken('yururi@example.com', { aud: 'wrong-aud' });
-    await expect(verifyAccessEmail(token, keyResolver, cfg)).rejects.toThrow();
+    await expect(verifyAccessIdentity(token, keyResolver, cfg)).rejects.toThrow();
   });
   it('iss 不一致は拒否', async () => {
     const token = await signAccessToken('yururi@example.com', { iss: 'https://evil.example' });
-    await expect(verifyAccessEmail(token, keyResolver, cfg)).rejects.toThrow();
+    await expect(verifyAccessIdentity(token, keyResolver, cfg)).rejects.toThrow();
   });
   it('期限切れは拒否', async () => {
     const token = await signAccessToken('yururi@example.com', {
       exp: Math.floor(Date.now() / 1000) - 60,
     });
-    await expect(verifyAccessEmail(token, keyResolver, cfg)).rejects.toThrow();
+    await expect(verifyAccessIdentity(token, keyResolver, cfg)).rejects.toThrow();
   });
   it('email クレームが無い場合は SessionError', async () => {
     const token = await new SignJWT({})
@@ -102,7 +110,51 @@ describe('verifyAccessEmail', () => {
       .setIssuedAt()
       .setExpirationTime('5m')
       .sign(accessPriv);
-    await expect(verifyAccessEmail(token, keyResolver, cfg)).rejects.toThrow(SessionError);
+    await expect(verifyAccessIdentity(token, keyResolver, cfg)).rejects.toThrow(SessionError);
+  });
+});
+
+// Google のプロフィール画像は Access の custom.picture クレームで届く。
+// **公式に "on a best-effort basis"（届かないこともある）** と明記されている。
+// 「無い」経路が通常経路なので、そこを最初に固定する。
+describe('extractAvatarUrl（Access の picture は best-effort）', () => {
+  it('custom が無ければ undefined（これが通常経路）', () => {
+    expect(extractAvatarUrl({ email: 'a@b.c' })).toBeUndefined();
+  });
+
+  it('custom はあるが picture が無ければ undefined', () => {
+    expect(extractAvatarUrl({ email: 'a@b.c', custom: { groups: [] } })).toBeUndefined();
+  });
+
+  it('custom.picture を取り出す', () => {
+    expect(
+      extractAvatarUrl({
+        email: 'a@b.c',
+        custom: { picture: 'https://lh3.googleusercontent.com/a/x' },
+      }),
+    ).toBe('https://lh3.googleusercontent.com/a/x');
+  });
+
+  // <img src> に流すので、https 以外は捨てる（CSP がまだ無い）
+  it('https でない picture は捨てる', () => {
+    for (const bad of [
+      'http://x/a.png',
+      'data:image/png;base64,AA',
+      'javascript:alert(1)',
+      '',
+      42,
+      null,
+    ]) {
+      expect(
+        extractAvatarUrl({ email: 'a@b.c', custom: { picture: bad } }),
+        String(bad),
+      ).toBeUndefined();
+    }
+  });
+
+  it('custom が object でなくても落ちない', () => {
+    expect(extractAvatarUrl({ email: 'a@b.c', custom: 'oops' })).toBeUndefined();
+    expect(extractAvatarUrl({ email: 'a@b.c', custom: null })).toBeUndefined();
   });
 });
 
@@ -174,11 +226,27 @@ describe('createSession', () => {
     });
     expect(session.member).toEqual({ id: 'yururi', displayName: 'ゆるり' });
     expect(session.householdId).toBe('main');
+    // picture が無ければ avatarUrl も付かない（best-effort なのでこれが通常）
+    expect(session.member.avatarUrl).toBeUndefined();
     const { payload } = await jwtVerify(
       session.supabaseJwt,
       new TextEncoder().encode(HS256_SECRET),
     );
     expect(payload.member_id).toBe('yururi');
+  });
+
+  it('Access JWT に picture があれば member.avatarUrl に載る', async () => {
+    const token = await signAccessToken('yururi@example.com', {
+      custom: { picture: 'https://lh3.googleusercontent.com/a/x' },
+    });
+    const session = await createSession(requestWith({ 'Cf-Access-Jwt-Assertion': token }), cfg, {
+      getAccessKey,
+    });
+    expect(session.member).toEqual({
+      id: 'yururi',
+      displayName: 'ゆるり',
+      avatarUrl: 'https://lh3.googleusercontent.com/a/x',
+    });
   });
 
   // ローカル/CI は ACCESS_AUD / ACCESS_TEAM_DOMAIN が未設定 → '' になる
@@ -194,6 +262,8 @@ describe('createSession', () => {
       devBypassEmail: 'shiyowo@example.com',
     });
     expect(called).toBe(false);
+    // dev バイパスには JWT が無い → 画像も無い（ローカルは常に頭文字表示になる）
+    expect(session.member.avatarUrl).toBeUndefined();
     expect(session.member.id).toBe('shiyowo');
   });
 

@@ -47,3 +47,41 @@ test('ボトムナビが 360px 幅に収まる', async ({ page }) => {
     expect(box!.x + box!.width).toBeLessThanOrEqual(360);
   }
 });
+
+/**
+ * 設定はボトムナビに載せていない（7 項目にすると 360px で 1 項目 51px になり、
+ * 「6 つだから px-1 まで切り詰められる」という BottomNav の設計前提が崩れる）。
+ * 代わりに TopAppBar のアバターから入る。**その導線が消えると到達できない画面になる。**
+ *
+ * ここ（vite preview）では Pages Functions が動かないので /api/session は無く、
+ * セッションは必ず取得失敗する。**未認証でも導線が残ること**が要件。
+ */
+test('設定へ TopAppBar から到達できる（未認証でも）', async ({ page }) => {
+  await page.goto('/');
+
+  await page.locator('header a[href="/settings"]').click();
+
+  await expect(page).toHaveURL(/\/settings$/);
+  await expect(page.getByRole('heading', { name: '設定' })).toBeVisible();
+  // ログアウトはセッションが無くても押せる必要がある（おかしくなったときの復旧手段）。
+  // ただし **クリックはしない**: /cdn-cgi/access/logout は Cloudflare のエッジが
+  // 処理するパスで、vite preview には存在しない。
+  await expect(page.getByRole('button', { name: 'ログアウト' })).toBeEnabled();
+});
+
+/**
+ * SegmentedControl の既定を自然幅 (w-fit) にしたので、選択肢が多いと
+ * 狭い画面で親からはみ出しうる。ウィッシュリストの 3 択が最悪ケース。
+ */
+test('タブが 360px 幅に収まる', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 740 });
+  await page.goto('/wishlist');
+
+  const tabs = page.getByRole('tablist').first();
+  await expect(tabs).toBeVisible();
+
+  const box = await tabs.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(360);
+});

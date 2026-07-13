@@ -48,4 +48,16 @@ describe('SubscriptionForm', () => {
     expect(onSubmit).not.toHaveBeenCalled();
     expect(screen.getByText('サービス名を入力してください')).toBeInTheDocument();
   });
+
+  // モーダル内のフォームのタブは幅いっぱいのままにする（タップしやすさ優先）。
+  // SegmentedControl の既定を自然幅にしたので、fullWidth を渡し忘れると静かに縮む。
+  it('フォーム内のタブは幅いっぱい（fullWidth の付け忘れを落とす）', () => {
+    render(<SubscriptionForm fxRate={fx} onSubmit={vi.fn()} />);
+    const lists = screen.getAllByRole('tablist');
+    expect(lists.length).toBeGreaterThanOrEqual(2); // 通貨 / 周期
+    for (const list of lists) {
+      expect(list).toHaveClass('w-full');
+      expect(list).not.toHaveClass('w-fit');
+    }
+  });
 });

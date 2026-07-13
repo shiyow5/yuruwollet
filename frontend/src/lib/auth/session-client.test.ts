@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { fetchSession, getFreshSupabaseToken, _resetSessionCache } from './session-client';
+import { fetchSession, getFreshSupabaseToken, resetSessionCache } from './session-client';
 
 function mockResponse(body: unknown, ok = true, status = 200): Response {
   return {
@@ -17,7 +17,7 @@ const sample = (expiresAt: number) => ({
 });
 
 beforeEach(() => {
-  _resetSessionCache();
+  resetSessionCache();
 });
 
 describe('fetchSession', () => {

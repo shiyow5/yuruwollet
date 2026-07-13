@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import {
+  Avatar,
   Icon,
   Button,
   Card,
@@ -86,6 +87,30 @@ describe('SegmentedControl', () => {
       <SegmentedControl options={[...options]} value="want" onChange={vi.fn()} ariaLabel="通貨" />,
     );
     expect(screen.getByRole('tablist', { name: '通貨' })).toBeInTheDocument();
+  });
+
+  // inline-flex は `flex flex-col` の親に置かれると align-items:stretch で横いっぱいに
+  // 引き伸ばされる。タブが画面幅まで伸びきってアンバランスになっていた。
+  // 既定では伸ばさず、フォーム内だけ fullWidth で明示的に伸ばす。
+  it('既定では親に引き伸ばされない', () => {
+    render(<SegmentedControl options={[...options]} value="want" onChange={vi.fn()} />);
+    const list = screen.getByRole('tablist');
+    expect(list).toHaveClass('w-fit');
+    expect(list).not.toHaveClass('w-full');
+  });
+
+  it('fullWidth で幅いっぱいになる（モーダル内のフォーム用）', () => {
+    render(<SegmentedControl options={[...options]} value="want" onChange={vi.fn()} fullWidth />);
+    const list = screen.getByRole('tablist');
+    expect(list).toHaveClass('w-full');
+    expect(list).not.toHaveClass('w-fit');
+  });
+
+  // w-fit は max-content なので、選択肢が多いと狭い画面で親からはみ出す
+  // （ウィッシュリストの 3 択が 360px で溢れる）。上限は必ず親幅にする。
+  it('親より広くならない', () => {
+    render(<SegmentedControl options={[...options]} value="want" onChange={vi.fn()} />);
+    expect(screen.getByRole('tablist')).toHaveClass('max-w-full');
   });
 });
 
@@ -251,5 +276,47 @@ describe('Modal', () => {
     );
     // effect が再実行されて先頭へフォーカスを戻していない
     expect(last).toHaveFocus();
+  });
+});
+
+describe('Avatar', () => {
+  // Access の picture クレームは公式に best-effort。**画像が出ないのが通常経路**。
+  it('画像 URL が無ければ頭文字を出す', () => {
+    render(<Avatar name="ゆるり" memberId="yururi" />);
+    expect(screen.getByText('ゆ')).toBeInTheDocument();
+  });
+
+  it('メンバー色を当てる', () => {
+    const { container } = render(<Avatar name="ゆるり" memberId="yururi" />);
+    expect(container.firstElementChild).toHaveClass('bg-member-yururi');
+  });
+
+  it('https の画像 URL があれば img を出す', () => {
+    const { container } = render(
+      <Avatar name="ゆるり" memberId="yururi" src="https://lh3.googleusercontent.com/a/x" />,
+    );
+    const img = container.querySelector('img');
+    expect(img).not.toBeNull();
+    expect(img).toHaveAttribute('src', 'https://lh3.googleusercontent.com/a/x');
+    expect(screen.queryByText('ゆ')).toBeNull();
+  });
+
+  // <img src> に javascript: を流さない（CSP がまだ無いので、ここが唯一の関門）
+  it('https でない URL は使わず頭文字にフォールバックする', () => {
+    const { container } = render(
+      <Avatar name="ゆるり" memberId="yururi" src="javascript:alert(1)" />,
+    );
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByText('ゆ')).toBeInTheDocument();
+  });
+
+  it('画像の読み込みに失敗したら頭文字にフォールバックする', () => {
+    const { container } = render(
+      <Avatar name="しよを" memberId="shiyowo" src="https://lh3.googleusercontent.com/a/x" />,
+    );
+    const img = container.querySelector('img')!;
+    fireEvent.error(img);
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.getByText('し')).toBeInTheDocument();
   });
 });

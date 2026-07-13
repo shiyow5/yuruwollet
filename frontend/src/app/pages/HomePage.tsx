@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useSessionContext } from '../../lib/auth/session-context';
 import { jstMonthStart } from '../../lib/format';
-import { MemberTabs } from '../../features/ledger/MemberTabs';
-import { useMemberOptions } from '../../features/ledger/hooks';
+import { MemberTabs } from '../../features/shared/MemberTabs';
+import { useMemberOptions } from '../../features/shared/members';
 import { BalanceHero } from '../../features/dashboard/BalanceHero';
 import { MonthlyStats } from '../../features/dashboard/MonthlyStats';
 import { CategoryBreakdownCard } from '../../features/dashboard/CategoryBreakdownCard';

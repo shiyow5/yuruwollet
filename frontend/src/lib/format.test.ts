@@ -10,6 +10,7 @@ import {
   monthStartOf,
   addMonths,
   formatMonthLabel,
+  formatMonthDay,
 } from './format';
 
 describe('formatYen', () => {
@@ -41,6 +42,10 @@ describe('parseAmount', () => {
   it('¥ と カンマ を除去して数値化', () => {
     expect(parseAmount('¥1,234')).toBe(1234);
     expect(parseAmount('￥ 12,000')).toBe(12000);
+  });
+  it('$ を除去して数値化（USD 入力）', () => {
+    expect(parseAmount('$9.99')).toBe(9.99);
+    expect(parseAmount('＄1,200')).toBe(1200);
   });
   it('小数も扱える', () => {
     expect(parseAmount('12.50')).toBe(12.5);
@@ -135,5 +140,12 @@ describe('formatMonthLabel', () => {
   it('YYYY年M月 に整形（ゼロ埋めなし）', () => {
     expect(formatMonthLabel('2026-07-01')).toBe('2026年7月');
     expect(formatMonthLabel('2026-12-01')).toBe('2026年12月');
+  });
+});
+
+describe('formatMonthDay', () => {
+  it('M月D日 に整形（ゼロ埋めなし）', () => {
+    expect(formatMonthDay('2026-11-15')).toBe('11月15日');
+    expect(formatMonthDay('2026-08-01')).toBe('8月1日');
   });
 });

@@ -1,12 +1,13 @@
 import type { HTMLAttributes } from 'react';
 import { cn } from '../../lib/cn';
 
-export type ChipTone = 'neutral' | 'accent' | 'success' | 'warning';
+export type ChipTone = 'neutral' | 'accent' | 'success' | 'caution' | 'warning';
 
 const tones: Record<ChipTone, string> = {
   neutral: 'bg-black/5 text-custom-text/60',
   accent: 'bg-custom-accent/20 text-custom-accent',
   success: 'bg-emerald-500/15 text-emerald-700',
+  caution: 'bg-amber-500/15 text-amber-700',
   warning: 'bg-error/10 text-error',
 };
 

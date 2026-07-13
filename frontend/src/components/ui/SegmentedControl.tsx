@@ -10,6 +10,10 @@ interface Props<T extends string> {
   value: T;
   onChange: (value: T) => void;
   className?: string;
+  /** グループのアクセシブルネーム（可視ラベルの id を指す） */
+  ariaLabelledby?: string;
+  /** グループのアクセシブルネーム（テキスト直接指定） */
+  ariaLabel?: string;
 }
 
 /** ほしい物/行きたい場所・支出/収入・自分/相手 などの 2〜3 択トグル */
@@ -18,11 +22,15 @@ export function SegmentedControl<T extends string>({
   value,
   onChange,
   className,
+  ariaLabelledby,
+  ariaLabel,
 }: Props<T>) {
   return (
     <div
       className={cn('inline-flex rounded-full bg-surface-container-high p-1', className)}
       role="tablist"
+      aria-labelledby={ariaLabelledby}
+      aria-label={ariaLabel}
     >
       {options.map((o) => {
         const active = o.value === value;

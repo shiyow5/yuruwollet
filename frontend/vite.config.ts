@@ -18,6 +18,7 @@ export default defineConfig({
       exclude: [
         '**/*.types.ts',
         'src/lib/ledger/types.ts',
+        'src/lib/subscriptions/types.ts',
         'src/lib/supabase.ts',
         'src/lib/queryClient.ts',
         'src/lib/auth/useSession.ts',

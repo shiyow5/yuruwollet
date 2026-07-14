@@ -122,7 +122,20 @@ if app:
             "domain": HOSTNAME,
             "session_duration": "720h",
             "allowed_idps": [google["id"]],
-            "auto_redirect_to_identity": True,
+            # **Access のログイン画面を挟む（instant auth を切る）。**
+            #
+            # true にすると Access は自分のログイン画面を出さず、いきなり Google へ飛ばす。
+            # すると、アプリからログアウトして CF_Authorization を消しても、
+            # **Google 側のセッションが生きているため無言で再認証されて入れてしまう**
+            # （「ログアウトが効いていない」ように見える）。
+            #
+            # false にすると「Google でログイン」ボタンのある画面が挟まり、
+            # ログアウトしたことが目に見える。代償はログインのたびに 1 クリック増えること。
+            #
+            # 根治ではない（Google のセッションは消えないので、押せば入れる）。
+            # Cloudflare の Google IdP には prompt パラメータが無く、
+            # Access 側から再認証を強制する手段は存在しない（API スキーマ上、prompt は Entra ID 専用）。
+            "auto_redirect_to_identity": False,
             "policies": [policy],
         },
     )
@@ -137,7 +150,20 @@ else:
             "domain": HOSTNAME,
             "session_duration": "720h",
             "allowed_idps": [google["id"]],
-            "auto_redirect_to_identity": True,
+            # **Access のログイン画面を挟む（instant auth を切る）。**
+            #
+            # true にすると Access は自分のログイン画面を出さず、いきなり Google へ飛ばす。
+            # すると、アプリからログアウトして CF_Authorization を消しても、
+            # **Google 側のセッションが生きているため無言で再認証されて入れてしまう**
+            # （「ログアウトが効いていない」ように見える）。
+            #
+            # false にすると「Google でログイン」ボタンのある画面が挟まり、
+            # ログアウトしたことが目に見える。代償はログインのたびに 1 クリック増えること。
+            #
+            # 根治ではない（Google のセッションは消えないので、押せば入れる）。
+            # Cloudflare の Google IdP には prompt パラメータが無く、
+            # Access 側から再認証を強制する手段は存在しない（API スキーマ上、prompt は Entra ID 専用）。
+            "auto_redirect_to_identity": False,
             "policies": [policy],
         },
     )

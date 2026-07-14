@@ -9,6 +9,7 @@ import {
   createSubscription,
   updateSubscription,
   deleteSubscription,
+  getSubscriptionPayments,
   settleMySubscriptions,
 } from '../../lib/data/subscriptions';
 import { invalidateLedger } from '../ledger/hooks';
@@ -109,11 +110,34 @@ export function useUpdateSubscription() {
   });
 }
 
+/** そのサブスクが台帳に作った支払いの件数と合計（削除ダイアログで見せる）。 */
+export function useSubscriptionPayments(subscriptionId: string | null) {
+  return useQuery({
+    queryKey: ['subscriptionPayments', subscriptionId],
+    queryFn: () => getSubscriptionPayments(supabase, subscriptionId as string),
+    enabled: subscriptionId !== null,
+  });
+}
+
 export function useDeleteSubscription() {
   const qc = useQueryClient();
   const ctx = useWriteContext();
   return useMutation({
-    mutationFn: (id: string) => deleteSubscription(supabase, id),
-    onSettled: () => invalidateSubs(qc, ctx?.memberId),
+    mutationFn: ({ id, deletePayments }: { id: string; deletePayments: boolean }) =>
+      deleteSubscription(supabase, id, deletePayments),
+    onSettled: () => {
+      invalidateSubs(qc, ctx?.memberId);
+      // **削除は台帳を書き換える。ここを落とさないとホームも家計簿も古いまま。**
+      //
+      // - 「支払いも消す」なら transactions から行が消える
+      // - 消さなくても、FK の on delete set null で subscription_id が外れ、
+      //   その行は「サブスクの支払い」→「ただの支出」に変わる
+      //   （バッジが変わり、編集・削除できるようになる）
+      //
+      // 作成・更新は settleThenRefresh 経由で落としていたのに、**削除だけ抜けていた**。
+      // 本番で「サブスクを消したのにホームと家計簿に反映されない」と報告された（#71）。
+      invalidateLedger(qc, ctx?.memberId);
+      void qc.invalidateQueries({ queryKey: ['subscriptionPayments'] });
+    },
   });
 }

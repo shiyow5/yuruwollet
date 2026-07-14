@@ -6,6 +6,7 @@ import {
   createSubscription,
   updateSubscription,
   deleteSubscription,
+  getSubscriptionPayments,
 } from './subscriptions';
 import { makeSupabaseMock, argsOf } from '../../test/supabaseMock';
 import type { Subscription, SubscriptionDraft } from '../subscriptions/types';
@@ -176,17 +177,63 @@ describe('updateSubscription', () => {
   });
 });
 
+// 削除は RPC 経由（#71）。クライアントから 2 回に分けて消すことはできない
+// （削除ポリシーが subscription_id is null を要求するため。migration のコメント参照）。
 describe('deleteSubscription', () => {
-  it('id で削除', async () => {
-    const { client, queries } = makeSupabaseMock({ subscriptions: { data: null, error: null } });
-    await deleteSubscription(client, 's1');
-    expect(argsOf(queries.subscriptions, 'eq')).toEqual(['id', 's1']);
-    expect(queries.subscriptions.calls.some((c) => c.method === 'delete')).toBe(true);
+  it('既定では支払いを残す（p_delete_payments = false）', async () => {
+    const { client, rpcs } = makeSupabaseMock(
+      {},
+      { delete_subscription: { data: 0, error: null } },
+    );
+    const deleted = await deleteSubscription(client, 's1');
+    expect(deleted).toBe(0);
+    expect(rpcs.delete_subscription.calls[0].args).toEqual([
+      'delete_subscription',
+      { p_subscription_id: 's1', p_delete_payments: false },
+    ]);
   });
+
+  it('支払いも消す指定を渡し、消した件数を返す', async () => {
+    const { client, rpcs } = makeSupabaseMock(
+      {},
+      { delete_subscription: { data: 3, error: null } },
+    );
+    const deleted = await deleteSubscription(client, 's1', true);
+    expect(deleted).toBe(3);
+    expect(rpcs.delete_subscription.calls[0].args).toEqual([
+      'delete_subscription',
+      { p_subscription_id: 's1', p_delete_payments: true },
+    ]);
+  });
+
   it('error は投げる', async () => {
-    const { client } = makeSupabaseMock({
-      subscriptions: { data: null, error: { message: 'fail' } },
-    });
+    const { client } = makeSupabaseMock(
+      {},
+      { delete_subscription: { data: null, error: { message: 'fail' } } },
+    );
     await expect(deleteSubscription(client, 's1')).rejects.toThrow(/fail/);
+  });
+});
+
+describe('getSubscriptionPayments', () => {
+  it('そのサブスクの支払いの件数と合計を返す', async () => {
+    const { client, queries } = makeSupabaseMock({
+      transactions: { data: [{ amount: 1000 }, { amount: 234 }], error: null },
+    });
+    const got = await getSubscriptionPayments(client, 's1');
+    expect(got).toEqual({ count: 2, total: 1234 });
+    expect(argsOf(queries.transactions, 'eq')).toEqual(['subscription_id', 's1']);
+  });
+
+  it('支払いが無ければ 0 件・0 円', async () => {
+    const { client } = makeSupabaseMock({ transactions: { data: [], error: null } });
+    expect(await getSubscriptionPayments(client, 's1')).toEqual({ count: 0, total: 0 });
+  });
+
+  it('error は投げる（0 件と区別する）', async () => {
+    const { client } = makeSupabaseMock({
+      transactions: { data: null, error: { message: 'nope' } },
+    });
+    await expect(getSubscriptionPayments(client, 's1')).rejects.toThrow(/nope/);
   });
 });

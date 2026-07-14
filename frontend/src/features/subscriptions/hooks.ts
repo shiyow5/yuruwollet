@@ -58,6 +58,9 @@ async function settleThenRefresh(qc: QueryClient, memberId?: string): Promise<vo
     const recorded = await settleMySubscriptions(supabase);
     if (recorded > 0) {
       invalidateLedger(qc, memberId);
+      // 精算は支払い記録を **増やす**。削除ダイアログが見せる件数の出所なので、ここも落とす。
+      // 落とさないと「編集で精算 → すぐ削除ダイアログを開く」で古い（少ない）件数が出る。
+      void qc.invalidateQueries({ queryKey: ['subscriptionPayments'] });
     }
   } catch {
     // 次の cron が拾う。登録自体は成功しているので、ここでは何も見せない。
@@ -110,12 +113,24 @@ export function useUpdateSubscription() {
   });
 }
 
-/** そのサブスクが台帳に作った支払いの件数と合計（削除ダイアログで見せる）。 */
+/**
+ * そのサブスクが台帳に作った支払いの件数と合計（削除ダイアログで見せる）。
+ *
+ * **staleTime: 0。ダイアログを開くたびに必ず取り直す。**
+ * ここに出す数字を見て「支払いも消す」を選ぶかどうかを決めるのに、
+ * その数字が古いのは許されない（取り消せない操作の直前で嘘をつくことになる）。
+ *
+ * 無効化（invalidate）だけに頼ると、**将来また別の書き込み経路を足したときに落とし忘れる**。
+ * 実際 settleThenRefresh でこれを落とし忘れていた（レビューで指摘された）。
+ * このクエリはダイアログを開いた瞬間しか使わないので、常に取り直しても負荷にならない。
+ */
 export function useSubscriptionPayments(subscriptionId: string | null) {
   return useQuery({
     queryKey: ['subscriptionPayments', subscriptionId],
     queryFn: () => getSubscriptionPayments(supabase, subscriptionId as string),
     enabled: subscriptionId !== null,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 }
 

@@ -353,6 +353,30 @@ describe('SubscriptionsPage 統合', () => {
     );
   });
 
+  // **取り消せない操作の直前に、古い数字を見せてはいけない。**
+  // 精算（登録・編集）は支払いを増やす。ダイアログを開き直したら必ず取り直す。
+  it('ダイアログを開くたびに支払い件数を取り直す（古い件数を見せない）', async () => {
+    state.subs = [subRow({ id: 'seed-1', name: '解約する' })];
+    state.payments = { count: 1, total: 1000 };
+    renderPage();
+
+    // 1 回目
+    fireEvent.click(await screen.findByRole('button', { name: '削除' }));
+    let dialog = await screen.findByRole('dialog', { name: 'サブスクを削除' });
+    expect(await within(dialog).findByText(/1 件/)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'キャンセル' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    // その間に精算が走って支払いが増えた体
+    state.payments = { count: 2, total: 2234 };
+
+    // 2 回目: 古い「1 件」ではなく、新しい「2 件」が出る
+    fireEvent.click(screen.getByRole('button', { name: '削除' }));
+    dialog = await screen.findByRole('dialog', { name: 'サブスクを削除' });
+    expect(await within(dialog).findByText(/2 件/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/¥2,234/)).toBeInTheDocument();
+  });
+
   // 支払いが 0 件ならチェックボックスを出す意味がない（消すものが無い）
   it('支払いが無ければチェックボックスを出さない', async () => {
     state.subs = [subRow({ id: 'seed-1', name: '未課金' })];

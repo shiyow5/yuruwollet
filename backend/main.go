@@ -21,6 +21,19 @@ import (
 func main() {
 	cron.ScheduleTaskNonBlock(runDaily)
 
+	// **/health は本番からは到達できない。それでも残す。**
+	//
+	// wrangler.jsonc で workers_dev: false にしてあるので、この Worker は公開 HTTP ルートを
+	// 持たない（service_role キーを握る Worker にインターネットから叩ける口を開ける理由がない）。
+	// つまり本番でこのハンドラが呼ばれることはない。
+	//
+	// 消さない理由は 2 つ:
+	//  1. `workers.Serve` は syumai/workers の作法として必要で、外すと cron の登録ごと壊れる。
+	//     cron は 2026-07-13 に本番で毎回落ちていた（#52）ばかりで、ここは触らない。
+	//  2. **ローカルの疎通確認で使う。** scripts/cron_smoke.py が wrangler dev の起動待ちに
+	//     叩いている。200 が返ることは「workerd が listen している」だけでなく
+	//     「**Go の WASM が起動してコードが動いている**」ことの証明になる。
+	//     WASM の初期化に失敗する類のバグ（まさに #52）を、ここが最初に捕まえる。
 	http.HandleFunc("/health", healthHandler)
 	workers.Serve(nil)
 }

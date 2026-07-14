@@ -48,7 +48,7 @@ const authed: SessionState = {
 
 function renderSettings(session: SessionState = authed) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  render(
     <QueryClientProvider client={qc}>
       <SessionContext.Provider value={session}>
         <MemoryRouter initialEntries={['/settings']}>
@@ -57,6 +57,7 @@ function renderSettings(session: SessionState = authed) {
       </SessionContext.Provider>
     </QueryClientProvider>,
   );
+  return qc;
 }
 
 describe('SettingsPage', () => {
@@ -95,6 +96,26 @@ describe('SettingsPage', () => {
     const dialog = await screen.findByRole('dialog', { name: 'ログアウト' });
     fireEvent.click(within(dialog).getByRole('button', { name: 'ログアウトする' }));
     expect(logout).toHaveBeenCalledTimes(1);
+  });
+
+  // logout の順序契約（捨ててから遷移／捨てるのが失敗しても必ず遷移）は logout.test.ts が見ている。
+  // ここで見るのは **配線**: logout に渡している clearCaches が、本当にこの画面の
+  // QueryClient を空にするか。ここをモックのまま素通りさせると、
+  // 「渡し忘れ」「別の QueryClient を掴んでいる」に気づけず、
+  // 前の人のデータを抱えたまま次の人がログインしうる。
+  it('ログアウト時に、この画面の QueryClient を捨てる関数を渡す', async () => {
+    const qc = renderSettings();
+    qc.setQueryData(['前の人のデータ'], { balance: 12345 });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'ログアウト' }));
+    const dialog = await screen.findByRole('dialog', { name: 'ログアウト' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'ログアウトする' }));
+
+    const options = vi.mocked(logout).mock.calls[0]?.[0];
+    expect(options?.clearCaches).toBeTypeOf('function');
+
+    options!.clearCaches!();
+    expect(qc.getQueryData(['前の人のデータ'])).toBeUndefined();
   });
 
   it('キャンセルするとログアウトしない', async () => {

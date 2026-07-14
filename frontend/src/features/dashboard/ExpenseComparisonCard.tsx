@@ -26,8 +26,15 @@ export function ExpenseComparisonCard({ memberId, month, className }: Props) {
   const failed = current.isError || previous.isError;
 
   return (
-    <Card role="region" aria-label="支出の比較" className={className}>
-      <h3 className="mb-6 font-headline-md text-headline-md text-custom-text">支出の比較</h3>
+    // 名前は見出しから取る（aria-label に同じ文字列を書くと二重に読み上げられ、
+    // 片方だけ文言を変えたときに不一致になる）
+    <Card role="region" aria-labelledby="expense-comparison-heading" className={className}>
+      <h3
+        id="expense-comparison-heading"
+        className="mb-6 font-headline-md text-headline-md text-custom-text"
+      >
+        支出の比較
+      </h3>
       {pending ? (
         <div className="flex flex-col gap-6">
           <Skeleton className="h-10 w-full" />

@@ -192,6 +192,13 @@ else
   delete_secret SUPABASE_SIGNING_KEY
 fi
 
+# **本番に認証バイパスを残さない。**
+# DEV_BYPASS_EMAIL が入っていると、Access ヘッダの無いリクエストをその人として通しうる。
+# コード側でも二重に無効化しているが（session.ts の accessMode()。ACCESS_* が揃っていると
+# バイパスは効かず、片方だけなら fail closed）、**secret 自体を消しておく**。
+# 誰かが手で入れてしまっても、setup-prod を流せば必ず消える。
+delete_secret DEV_BYPASS_EMAIL
+
 step "B. Cloudflare Pages — フロントをビルドしてデプロイ"
 # VITE_ は **ビルド時**にバンドルへ焼き込まれる。Pages の環境変数では届かない。
 VITE_SUPABASE_URL="$SUPABASE_URL" \

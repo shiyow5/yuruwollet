@@ -102,24 +102,13 @@ jobs:
             exit 1
           fi
 
-      # CSP の connect-src はビルド時に VITE_SUPABASE_URL から組み立てられる（#41）。
-      # ここがローカルを指したまま本番に出ると、**CSP が本番 Supabase への通信を全部塞ぐ**。
-      # 画面は出るのにデータが一切読めない、という一番厄介な壊れ方をするので実物で確認する。
+      # CSP の connect-src はビルド時に組み立てられる（#41）。ここがローカルを指したまま
+      # 本番に出ると、**CSP が本番 Supabase への通信を全部塞ぐ**。画面は出るのにデータが
+      # 一切読めない、という一番厄介な壊れ方をする。
+      # 「バンドルが指す先」と「CSP が許可する先」を突き合わせるので、
+      # デプロイ経路が増えても成立する（make deploy-frontend も同じスクリプトを呼ぶ）。
       - name: verify CSP allows production Supabase
-        env:
-          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-        run: |
-          headers=frontend/dist/_headers
-          test -f "$headers" || { echo "_headers が生成されていません"; exit 1; }
-          grep -q 'Content-Security-Policy:' "$headers" || { echo 'CSP がありません'; exit 1; }
-          host="${VITE_SUPABASE_URL#https://}"; host="${host%%/*}"
-          for origin in "https://$host" "wss://$host"; do
-            grep -qF "$origin" "$headers" || {
-              echo "CSP の connect-src に $origin がありません"; cat "$headers"; exit 1; }
-          done
-          if grep -qE '127\.0\.0\.1:54321|localhost:54321' "$headers"; then
-            echo 'CSP にローカルの Supabase が残っています'; cat "$headers"; exit 1
-          fi
+        run: python3 scripts/verify_csp.py frontend/dist
 
       # frontend から実行すること。wrangler は **カレントディレクトリの functions/** を
       # Pages Functions としてバンドルする。リポジトリルートから叩くと

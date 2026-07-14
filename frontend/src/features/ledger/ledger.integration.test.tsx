@@ -414,30 +414,19 @@ describe('LedgerPage 統合', () => {
     );
   });
 
-  it('?add=income で作成フォームが収入タイプで自動オープンする', async () => {
-    renderLedger(authedSession, '/ledger?member=yururi&add=income');
-    const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByRole('tab', { name: '収入' })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    );
+  // 追加はホームでも家計簿でもモーダルで完結するようになり、`?add=` は廃止した。
+  // 読み取り側を消し忘れると、ホームの導線を消しても古いリンクや履歴から開かれる。
+  it('?add=expense で開いても作成モーダルは自動で開かない（add は廃止）', async () => {
+    renderLedger(authedSession, '/ledger?member=yururi&add=expense');
+    // FAB は出る（自分ビュー）が、モーダルは勝手に開かない
+    expect(await screen.findByRole('button', { name: '収支を追加' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('member 空文字パラメータは自分にフォールバックする', async () => {
     renderLedger(authedSession, '/ledger?member=');
     // 自分ビューなので FAB（書込導線）が出る
     expect(await screen.findByRole('button', { name: '収支を追加' })).toBeInTheDocument();
-  });
-
-  it('相手 member + add では書込不可なので作成フォームを開かない', async () => {
-    renderLedger(authedSession, '/ledger?member=shiyowo&add=expense');
-    // 相手ビュー（しよを）として表示され、書込導線・作成モーダルは出ない
-    expect(await screen.findByRole('tab', { name: 'しよを' })).toHaveAttribute(
-      'aria-selected',
-      'true',
-    );
-    expect(screen.queryByRole('dialog')).toBeNull();
-    expect(screen.queryByRole('button', { name: '収支を追加' })).toBeNull();
   });
 
   it('追加が失敗するとフォームにエラーを表示（モーダルは開いたまま）', async () => {
@@ -466,12 +455,17 @@ describe('LedgerPage 統合', () => {
     expect(await screen.findByText(/削除に失敗しました/)).toBeInTheDocument();
   });
 
-  it('相手→自分へタブ切替すると残った add モーダル意図がクリアされる', async () => {
-    renderLedger(authedSession, '/ledger?member=shiyowo&add=expense');
-    // 相手ビューではモーダルは開かない
-    expect(await screen.findByRole('tab', { name: 'しよを' })).toBeInTheDocument();
-    expect(screen.queryByRole('dialog')).toBeNull();
-    // 自分タブへ切替 → 勝手に作成モーダルが開かない
+  // 作成モーダルを開いたまま相手タブへ切り替えると canWrite=false で見た目上は閉じるが、
+  // state を落とさないと 'create' のまま残り、自分タブに戻った瞬間に勝手に開き直す。
+  it('作成モーダルを開いたままメンバーを切り替えるとモーダルが閉じる', async () => {
+    renderLedger();
+    fireEvent.click(await screen.findByRole('button', { name: '収支を追加' }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'しよを' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    // 自分タブへ戻しても勝手に開き直さない
     fireEvent.click(screen.getByRole('tab', { name: 'ゆるり' }));
     await waitFor(() =>
       expect(screen.getByRole('button', { name: '収支を追加' })).toBeInTheDocument(),

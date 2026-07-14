@@ -125,6 +125,21 @@ describe('ProgressBar', () => {
     rerender(<ProgressBar value={5} max={0} />);
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
   });
+
+  // 1 枚のカードに progressbar が 2 本並ぶと、名前が無いと読み上げが
+  // 「progressbar 87%」「progressbar 100%」となり、どちらが今月か判らない。
+  it('label を渡すとアクセシブルネームが付く', () => {
+    render(<ProgressBar value={0.87} label="今月の支出" />);
+    expect(screen.getByRole('progressbar', { name: '今月の支出' })).toHaveAttribute(
+      'aria-valuenow',
+      '87',
+    );
+  });
+
+  it('label 未指定なら aria-label は付かない', () => {
+    render(<ProgressBar value={0.5} />);
+    expect(screen.getByRole('progressbar')).not.toHaveAttribute('aria-label');
+  });
 });
 
 describe('StatTile / Card / Icon / IconTile / EmptyState / Skeleton', () => {

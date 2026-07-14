@@ -1,6 +1,6 @@
 -- pgTAP: RLS の cross-household 分離 + per-member 書込強制 + confirm_balance_checkpoint RPC
 begin;
-select plan(107);
+select plan(118);
 
 -- ============================================================
 -- Block A: ゆるり @ main として認証
@@ -919,6 +919,142 @@ select isnt(
   (select next_renewal_date from public.subscriptions where name = 'FreeTrial'),
   public.jst_today(),
   '0 円でも更新日は進む'
+);
+
+-- ============================================================
+-- Block L: サブスク削除 RPC（delete_subscription）
+-- ============================================================
+-- #71: サブスクを消しても、その支払い記録は FK の on delete set null で
+-- 「ただの支出」として台帳に残る（意図的）。それを **一緒に消す選択肢** を RPC で出す。
+--
+-- クライアントの 2 段階では書けない: 削除ポリシーが subscription_id is null を
+-- 要求するので、消す前は支払いを消せず、消した後は紐付けが失われている。
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","household_id":"main","member_id":"yururi"}',
+  true
+);
+
+-- 支払い記録を 2 件持つサブスクを作る（精算経路を通して作る）
+insert into public.subscriptions
+  (household_id, owner_member_id, name, currency, original_amount, amount_jpy,
+   cycle, next_renewal_date, status)
+values
+  ('main', 'yururi', 'DelMe', 'JPY', 2000, 2000, 'monthly',
+   public.jst_today() - interval '1 month', 'active');
+
+select public.settle_my_subscriptions();
+
+select cmp_ok(
+  (select count(*)::int from public.transactions
+    where subscription_id = (select id from public.subscriptions where name = 'DelMe')),
+  '>=', 1,
+  'DelMe の支払いが台帳に記録された（削除テストの前提）'
+);
+
+-- ---- 支払いを残して削除する（既定）----
+select is(
+  public.delete_subscription(
+    (select id from public.subscriptions where name = 'DelMe'), false),
+  0,
+  '支払いを消さない指定なら 0 件返す'
+);
+
+select is(
+  (select count(*)::int from public.subscriptions where name = 'DelMe'),
+  0,
+  'サブスクは消えている'
+);
+
+-- 支払いは「ただの支出」として残る（subscription_id が外れている）
+select cmp_ok(
+  (select count(*)::int from public.transactions where memo = 'DelMe' and subscription_id is null),
+  '>=', 1,
+  '支払いは subscription_id が外れて台帳に残る'
+);
+
+-- 残った支払いは **ユーザーが自分で消せる**（RLS の削除ポリシーが通るようになる）
+select lives_ok(
+  $$ delete from public.transactions where memo = 'DelMe' $$,
+  '残った支払いは、ただの支出として自分で削除できる'
+);
+
+-- ---- 支払いも一緒に消す ----
+insert into public.subscriptions
+  (household_id, owner_member_id, name, currency, original_amount, amount_jpy,
+   cycle, next_renewal_date, status)
+values
+  ('main', 'yururi', 'DelMe2', 'JPY', 3000, 3000, 'monthly',
+   public.jst_today() - interval '1 month', 'active');
+
+select public.settle_my_subscriptions();
+
+select cmp_ok(
+  public.delete_subscription(
+    (select id from public.subscriptions where name = 'DelMe2'), true),
+  '>=', 1,
+  '支払いも消す指定なら、消した件数を返す'
+);
+
+select is(
+  (select count(*)::int from public.transactions where memo = 'DelMe2'),
+  0,
+  '支払い記録も台帳から消えている'
+);
+
+select is(
+  (select count(*)::int from public.subscriptions where name = 'DelMe2'),
+  0,
+  'サブスクも消えている'
+);
+
+-- ---- 既に消えていてもエラーにしない（二重送信・再試行）----
+select is(
+  public.delete_subscription('00000000-0000-0000-0000-000000000000'::uuid, true),
+  0,
+  '存在しない id でもエラーにしない（冪等）'
+);
+
+-- ---- **相手のサブスクは消せない** ----
+-- definer なので RLS が効かない。関数の中で所有者を検証していないと、
+-- 相手のサブスクと支払い記録を丸ごと消せる RPC になる。
+--
+-- **しよを本人として作る。** ゆるりの JWT のままでは owner_member_id='shiyowo' の
+-- 行を挿入できない（RLS の insert ポリシーが owner = JWT の member_id を要求する）。
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","household_id":"main","member_id":"shiyowo"}',
+  true
+);
+
+insert into public.subscriptions
+  (household_id, owner_member_id, name, currency, original_amount, amount_jpy,
+   cycle, next_renewal_date, status)
+values
+  ('main', 'shiyowo', 'ShiyowoSub', 'JPY', 500, 500, 'monthly',
+   public.jst_today() + interval '10 days', 'active');
+
+-- ゆるりに戻って、しよをのサブスクを消そうとする
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","household_id":"main","member_id":"yururi"}',
+  true
+);
+
+select throws_ok(
+  $$ select public.delete_subscription(
+       (select id from public.subscriptions where name = 'ShiyowoSub'), true) $$,
+  'PT403',
+  '自分のサブスクしか削除できません',
+  '相手のサブスクは RPC 経由でも削除できない'
+);
+
+select is(
+  (select count(*)::int from public.subscriptions where name = 'ShiyowoSub'),
+  1,
+  '相手のサブスクは残っている'
 );
 
 select * from finish();

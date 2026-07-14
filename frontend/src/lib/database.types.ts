@@ -681,6 +681,10 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      delete_subscription: {
+        Args: { p_delete_payments?: boolean; p_subscription_id: string }
+        Returns: number
+      }
       jst_today: { Args: never; Returns: string }
       next_renewal_after: {
         Args: {

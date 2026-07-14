@@ -111,13 +111,51 @@ export async function updateSubscription(
   return data;
 }
 
-/** サブスクを削除する。 */
+/**
+ * サブスクを削除する。**RPC 経由**（#71）。
+ *
+ * `deletePayments` を立てると、そのサブスクが台帳に作った支払い記録も
+ * **同じトランザクションで**消す。
+ *
+ * **クライアントから 2 回に分けて消すことはできない。** 削除ポリシーが
+ * `subscription_id is null` を要求するので、サブスクを消す前は支払いを消せず、
+ * 消した後は（FK の on delete set null で）どれがそのサブスクの支払いだったかが
+ * 分からなくなる。だから DB 側の 1 トランザクションに閉じてある。
+ *
+ * 消した支払いの件数を返す（消さない指定なら 0）。
+ */
 export async function deleteSubscription(
   client: SupabaseClient<Database>,
   id: string,
-): Promise<void> {
-  const { error } = await client.from('subscriptions').delete().eq('id', id);
+  deletePayments = false,
+): Promise<number> {
+  const { data, error } = await client.rpc('delete_subscription', {
+    p_subscription_id: id,
+    p_delete_payments: deletePayments,
+  });
   if (error) throw new Error(`サブスクの削除に失敗しました: ${error.message}`);
+  return data ?? 0;
+}
+
+/**
+ * そのサブスクが台帳に作った支払いの件数と合計。削除ダイアログで見せる。
+ *
+ * 「消したのに支出が残っている」と驚かせないために、**消す前に**何が残るのかを伝える。
+ */
+export async function getSubscriptionPayments(
+  client: SupabaseClient<Database>,
+  subscriptionId: string,
+): Promise<{ count: number; total: number }> {
+  const { data, error } = await client
+    .from('transactions')
+    .select('amount')
+    .eq('subscription_id', subscriptionId);
+  if (error) throw new Error(`支払い記録の取得に失敗しました: ${error.message}`);
+  const rows = data ?? [];
+  return {
+    count: rows.length,
+    total: rows.reduce((sum, r) => sum + r.amount, 0),
+  };
 }
 
 /**

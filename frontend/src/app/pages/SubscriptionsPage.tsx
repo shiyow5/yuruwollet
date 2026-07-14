@@ -8,6 +8,7 @@ import {
   type SubscriptionFormValues,
 } from '../../features/subscriptions/SubscriptionForm';
 import { SubscriptionList } from '../../features/subscriptions/SubscriptionList';
+import { DeleteSubscriptionDialog } from '../../features/subscriptions/DeleteSubscriptionDialog';
 import {
   useSubscriptions,
   useSubscriptionMonthlyTotal,
@@ -60,10 +61,13 @@ export function SubscriptionsPage() {
     updateSub.mutate({ id, draft }, { onSuccess: closeModal });
   }
 
-  function handleDelete(sub: Subscription) {
-    if (window.confirm(`「${sub.name}」を削除しますか？`)) {
-      deleteSub.mutate(sub.id);
-    }
+  // 削除は window.confirm では足りない（#71）。
+  // 「支払い記録が家計簿に残る」ことを伝え、消すかどうかを選ばせる必要がある。
+  const [deleting, setDeleting] = useState<Subscription | null>(null);
+
+  function handleConfirmDelete(deletePayments: boolean) {
+    if (!deleting) return;
+    deleteSub.mutate({ id: deleting.id, deletePayments }, { onSuccess: () => setDeleting(null) });
   }
 
   return (
@@ -99,7 +103,7 @@ export function SubscriptionsPage() {
               : 'この人のサブスクはありません'
           }
           onEdit={canWrite ? (sub) => setModal({ kind: 'edit', sub }) : undefined}
-          onDelete={canWrite ? handleDelete : undefined}
+          onDelete={canWrite ? setDeleting : undefined}
         />
       </Card>
 
@@ -151,6 +155,12 @@ export function SubscriptionsPage() {
           </>
         )}
       </Modal>
+      <DeleteSubscriptionDialog
+        subscription={deleting}
+        deleting={deleteSub.isPending}
+        onCancel={() => setDeleting(null)}
+        onConfirm={handleConfirmDelete}
+      />
     </section>
   );
 }

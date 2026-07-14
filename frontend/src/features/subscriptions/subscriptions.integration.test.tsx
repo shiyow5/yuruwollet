@@ -14,6 +14,7 @@ const state = vi.hoisted(() => ({
   counter: 0,
   /** 精算 RPC が記録したと返す件数 */
   settledCount: 0,
+  payments: { count: 0, total: 0 },
 }));
 
 vi.mock('../../lib/data/subscriptions', () => ({
@@ -88,9 +89,11 @@ vi.mock('../../lib/data/subscriptions', () => ({
       return state.subs.find((s) => s.id === id)!;
     },
   ),
-  deleteSubscription: vi.fn(async (_c: unknown, id: string) => {
+  deleteSubscription: vi.fn(async (_c: unknown, id: string, deletePayments = false) => {
     state.subs = state.subs.filter((s) => s.id !== id);
+    return deletePayments ? state.payments.count : 0;
   }),
+  getSubscriptionPayments: vi.fn(async () => state.payments),
 }));
 
 vi.mock('../../lib/data/aggregates', () => ({
@@ -178,6 +181,7 @@ describe('SubscriptionsPage 統合', () => {
     state.subs = [];
     state.counter = 0;
     state.settledCount = 0;
+    state.payments = { count: 0, total: 0 };
     vi.clearAllMocks();
   });
 
@@ -234,12 +238,16 @@ describe('SubscriptionsPage 統合', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
-  it('削除: confirm=false では削除しない', async () => {
+  it('削除: キャンセルでは削除しない', async () => {
     state.subs = [subRow({ id: 'seed-1', name: '残す' })];
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
     renderPage();
     expect(await screen.findByText('残す')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '削除' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'サブスクを削除' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'キャンセル' }));
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(deleteSubscription).not.toHaveBeenCalled();
     expect(screen.getByText('残す')).toBeInTheDocument();
   });
@@ -264,10 +272,11 @@ describe('SubscriptionsPage 統合', () => {
     (deleteSubscription as unknown as OnceMock).mockImplementationOnce(async () => {
       throw new Error('network');
     });
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     renderPage();
     expect(await screen.findByText('消せない')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '削除' }));
+    const dialog = await screen.findByRole('dialog', { name: 'サブスクを削除' });
+    fireEvent.click(within(dialog).getByRole('button', { name: '削除する' }));
     expect(await screen.findByText(/削除に失敗しました/)).toBeInTheDocument();
   });
 
@@ -307,11 +316,77 @@ describe('SubscriptionsPage 統合', () => {
 
   it('削除は確認後に実行され一覧から消える', async () => {
     state.subs = [subRow({ id: 'seed-1', name: '解約する' })];
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     renderPage();
     expect(await screen.findByText('解約する')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '削除' }));
+    const dialog = await screen.findByRole('dialog', { name: 'サブスクを削除' });
+    fireEvent.click(within(dialog).getByRole('button', { name: '削除する' }));
     await waitFor(() => expect(screen.queryByText('解約する')).toBeNull());
+    // 既定は「支払いは残す」
+    expect(deleteSubscription).toHaveBeenCalledWith(expect.anything(), 'seed-1', false);
+  });
+
+  // #71: 「消したのに家計簿に支出が残っている」と驚かせない。**消す前に**伝える。
+  it('支払い記録がある場合、その件数と合計を削除前に伝える', async () => {
+    state.subs = [subRow({ id: 'seed-1', name: '解約する' })];
+    state.payments = { count: 3, total: 3702 };
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: '削除' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'サブスクを削除' });
+    expect(await within(dialog).findByText(/3 件/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/¥3,702/)).toBeInTheDocument();
+  });
+
+  it('「支払い記録も一緒に消す」を選ぶと、その指定で削除する', async () => {
+    state.subs = [subRow({ id: 'seed-1', name: '解約する' })];
+    state.payments = { count: 3, total: 3702 };
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: '削除' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'サブスクを削除' });
+    fireEvent.click(await within(dialog).findByRole('checkbox'));
+    fireEvent.click(within(dialog).getByRole('button', { name: '削除する' }));
+
+    await waitFor(() =>
+      expect(deleteSubscription).toHaveBeenCalledWith(expect.anything(), 'seed-1', true),
+    );
+  });
+
+  // **取り消せない操作の直前に、古い数字を見せてはいけない。**
+  // 精算（登録・編集）は支払いを増やす。ダイアログを開き直したら必ず取り直す。
+  it('ダイアログを開くたびに支払い件数を取り直す（古い件数を見せない）', async () => {
+    state.subs = [subRow({ id: 'seed-1', name: '解約する' })];
+    state.payments = { count: 1, total: 1000 };
+    renderPage();
+
+    // 1 回目
+    fireEvent.click(await screen.findByRole('button', { name: '削除' }));
+    let dialog = await screen.findByRole('dialog', { name: 'サブスクを削除' });
+    expect(await within(dialog).findByText(/1 件/)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'キャンセル' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    // その間に精算が走って支払いが増えた体
+    state.payments = { count: 2, total: 2234 };
+
+    // 2 回目: 古い「1 件」ではなく、新しい「2 件」が出る
+    fireEvent.click(screen.getByRole('button', { name: '削除' }));
+    dialog = await screen.findByRole('dialog', { name: 'サブスクを削除' });
+    expect(await within(dialog).findByText(/2 件/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/¥2,234/)).toBeInTheDocument();
+  });
+
+  // 支払いが 0 件ならチェックボックスを出す意味がない（消すものが無い）
+  it('支払いが無ければチェックボックスを出さない', async () => {
+    state.subs = [subRow({ id: 'seed-1', name: '未課金' })];
+    state.payments = { count: 0, total: 0 };
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: '削除' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'サブスクを削除' });
+    expect(await within(dialog).findByText(/まだ支払いは記録されていません/)).toBeInTheDocument();
+    expect(within(dialog).queryByRole('checkbox')).toBeNull();
   });
 
   // 支払いの記録は cron（JST 00:00）だけが行っていたので、更新日が今日/過去の

@@ -1,16 +1,17 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { Button, Card, Fab, Icon, Modal } from '../../components/ui';
-import { addMonths, formatMonthLabel, jstMonthStart, jstToday } from '../../lib/format';
-import type { Transaction, TransactionDraft, TxnType } from '../../lib/ledger/types';
+import { addMonths, formatMonthLabel, jstMonthStart } from '../../lib/format';
+import { defaultOccurredOn } from '../../lib/ledger/defaults';
+import type { Transaction, TransactionDraft } from '../../lib/ledger/types';
 import { MemberTabs } from '../../features/shared/MemberTabs';
 import { useMemberOptions } from '../../features/shared/members';
 import { TransactionForm, type TransactionFormValues } from '../../features/ledger/TransactionForm';
 import { TransactionList } from '../../features/ledger/TransactionList';
 import { CategoryManager } from '../../features/ledger/CategoryManager';
+import { AddTransactionModal } from '../../features/ledger/AddTransactionModal';
 import {
   useCategories,
-  useCreateTransaction,
   useDeleteTransaction,
   useMonthTransactions,
   useUpdateTransaction,
@@ -25,27 +26,20 @@ type ModalState =
 export function LedgerPage() {
   const { options, selfId } = useMemberOptions();
   const [searchParams] = useSearchParams();
-  // ダッシュボードの導線から来た場合の初期化（member / add=income|expense）
-  // 空文字 member は null 扱いして selfId フォールバックを効かせる
-  const addParam = searchParams.get('add');
-  const initialType: TxnType = addParam === 'income' ? 'income' : 'expense';
+  // ダッシュボードの「すべて見る」から来た場合の初期化（member のみ）。
+  // 空文字 member は null 扱いして selfId フォールバックを効かせる。
+  // ※ `?add=` は廃止（追加はホーム/家計簿ともモーダルで完結する）
   const [viewMemberId, setViewMemberId] = useState<string | null>(
     () => searchParams.get('member') || null,
   );
   const [month, setMonth] = useState(() => jstMonthStart());
-  const [modal, setModal] = useState<ModalState>(() =>
-    addParam === 'income' || addParam === 'expense' ? { kind: 'create' } : { kind: 'none' },
-  );
+  const [modal, setModal] = useState<ModalState>({ kind: 'none' });
 
   const activeMember = viewMemberId ?? selfId ?? '';
   const canWrite = activeMember !== '' && activeMember === selfId;
-  // 追加フォームの既定日付: 選択中の月が当月なら今日、それ以外はその月の初日
-  // （過去/未来の月を見ているときに当月へ書き込んで「消える」のを防ぐ）
-  const createDefaultDate = month === jstMonthStart() ? jstToday() : month;
 
   const { data: categories = [] } = useCategories();
   const { data: transactions = [], isLoading, isError } = useMonthTransactions(activeMember, month);
-  const createTransaction = useCreateTransaction();
   const updateTransaction = useUpdateTransaction();
   const deleteTransaction = useDeleteTransaction();
 
@@ -53,14 +47,12 @@ export function LedgerPage() {
     setModal({ kind: 'none' });
   }
 
-  // 相手/自分の切替時は、URL 由来などで残った作成/編集モーダルの意図をクリアする
+  // 相手/自分の切替時に作成/編集モーダルの意図をクリアする。
+  // 落とさないと canWrite=false で見た目上は閉じるだけで state は残り、
+  // 自分タブに戻った瞬間に勝手に開き直す。
   function handleMemberChange(id: string) {
     setViewMemberId(id);
     setModal({ kind: 'none' });
-  }
-
-  function handleCreate(draft: TransactionDraft) {
-    createTransaction.mutate(draft, { onSuccess: closeModal });
   }
 
   function handleUpdate(id: string, draft: TransactionDraft) {
@@ -117,22 +109,11 @@ export function LedgerPage() {
 
       {canWrite && <Fab label="収支を追加" onClick={() => setModal({ kind: 'create' })} />}
 
-      <Modal open={modal.kind === 'create' && canWrite} onClose={closeModal} label="収支を追加">
-        <h3 className="mb-6 font-headline-md text-headline-md text-custom-text">収支を追加</h3>
-        <TransactionForm
-          categories={categories}
-          initial={{ occurredOn: createDefaultDate, type: initialType }}
-          submitLabel="追加"
-          submitting={createTransaction.isPending}
-          submitError={
-            createTransaction.isError
-              ? '保存に失敗しました。通信環境を確認して再度お試しください。'
-              : null
-          }
-          onSubmit={handleCreate}
-          onCancel={closeModal}
-        />
-      </Modal>
+      <AddTransactionModal
+        open={modal.kind === 'create' && canWrite}
+        onClose={closeModal}
+        defaultDate={defaultOccurredOn(month)}
+      />
 
       <Modal open={modal.kind === 'edit' && canWrite} onClose={closeModal} label="収支を編集">
         {modal.kind === 'edit' && (

@@ -9,13 +9,19 @@ import type { Subscription } from '../../lib/subscriptions/types';
 
 vi.mock('../../lib/supabase', () => ({ supabase: {} }));
 
-const state = vi.hoisted(() => ({ subs: [] as Subscription[], counter: 0 }));
+const state = vi.hoisted(() => ({
+  subs: [] as Subscription[],
+  counter: 0,
+  /** 精算 RPC が記録したと返す件数 */
+  settledCount: 0,
+}));
 
 vi.mock('../../lib/data/subscriptions', () => ({
   listSubscriptions: vi.fn(async (_c: unknown, memberId: string) =>
     state.subs.filter((s) => s.owner_member_id === memberId),
   ),
   getLatestFxRate: vi.fn(async () => ({ rate: 150, rateDate: '2026-07-13' })),
+  settleMySubscriptions: vi.fn(async () => state.settledCount),
   getSubscriptionMonthlyTotal: vi.fn(async (_c: unknown, memberId: string) =>
     state.subs
       .filter((s) => s.owner_member_id === memberId && s.status !== 'considering_cancel')
@@ -115,6 +121,7 @@ vi.mock('../../lib/data/aggregates', () => ({
 
 import {
   createSubscription,
+  settleMySubscriptions,
   updateSubscription,
   deleteSubscription,
   listSubscriptions,
@@ -170,6 +177,7 @@ describe('SubscriptionsPage 統合', () => {
   beforeEach(() => {
     state.subs = [];
     state.counter = 0;
+    state.settledCount = 0;
     vi.clearAllMocks();
   });
 
@@ -304,5 +312,46 @@ describe('SubscriptionsPage 統合', () => {
     expect(await screen.findByText('解約する')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '削除' }));
     await waitFor(() => expect(screen.queryByText('解約する')).toBeNull());
+  });
+
+  // 支払いの記録は cron（JST 00:00）だけが行っていたので、更新日が今日/過去の
+  // サブスクを登録しても **翌日まで台帳に出なかった**。登録した本人には
+  // 「効いていない」ように見える。登録の直後に精算 RPC を呼んで即座に反映する。
+  it('登録すると、到来済みの支払いをその場で精算する', async () => {
+    state.settledCount = 1;
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'サブスクを追加' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByPlaceholderText('Netflix など'), {
+      target: { value: 'Netflix' },
+    });
+    fireEvent.change(within(dialog).getByPlaceholderText('1490'), { target: { value: '1490' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '追加' }));
+
+    await waitFor(() => expect(createSubscription).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(settleMySubscriptions).toHaveBeenCalledTimes(1));
+  });
+
+  // 精算が失敗しても、サブスクの登録自体は成功している。
+  // ここで「登録できませんでした」と見せるのは嘘（次の cron が拾う）。
+  it('精算に失敗しても登録はエラーにしない', async () => {
+    (
+      settleMySubscriptions as unknown as { mockRejectedValueOnce: (e: Error) => void }
+    ).mockRejectedValueOnce(new Error('settle failed'));
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'サブスクを追加' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByPlaceholderText('Netflix など'), {
+      target: { value: 'Spotify' },
+    });
+    fireEvent.change(within(dialog).getByPlaceholderText('1490'), { target: { value: '980' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '追加' }));
+
+    await waitFor(() => expect(createSubscription).toHaveBeenCalledTimes(1));
+    // フォームは閉じ、一覧に出る（登録は成功しているので）
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(await screen.findByText('Spotify')).toBeInTheDocument();
   });
 });

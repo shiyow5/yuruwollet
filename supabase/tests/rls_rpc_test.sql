@@ -1,6 +1,6 @@
 -- pgTAP: RLS の cross-household 分離 + per-member 書込強制 + confirm_balance_checkpoint RPC
 begin;
-select plan(85);
+select plan(107);
 
 -- ============================================================
 -- Block A: ゆるり @ main として認証
@@ -497,10 +497,11 @@ select throws_ok(
 );
 
 -- ============================================================
--- Block F: roll_subscription_cycle（支払い記録と更新日前進の原子化）
+-- Block F: cron が作った支払いをユーザーが壊せない
 -- ============================================================
--- 「記録」と「前進」が別々の往復だと、その隙間で編集/解約されたときに
--- 古い金額の支払いだけが台帳に残る。1 トランザクションに閉じて塞ぐ。
+-- cron の行は is_system_generated=false（実支出なので集計に含める）なので、
+-- 何も手当てしないと通常の取引として編集・削除できてしまう。
+-- 更新日は既に進んでいるため、消されると **二度と復活しない**。
 reset role;
 set local role service_role;
 
@@ -510,100 +511,25 @@ set local role service_role;
 insert into public.categories (household_id, kind, name, sort_order)
 values ('main', 'income', 'サブスク', 90);
 
+-- 2 ヶ月遅れのサブスク（精算すると 3 回ぶん記録される）
 insert into public.subscriptions
   (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
-values ('main', 'yururi', 'RpcSub', 'JPY', 1200, 1200, 'monthly', date '2026-05-10', 'active');
+values ('main', 'yururi', 'GuardSub', 'JPY', 1200, 1200, 'monthly',
+        (public.jst_today() - interval '2 months')::date, 'active');
 
--- cron が 3 ヶ月止まっていた場合。止まっていた間も課金は起きているので、全期ぶん記録する。
-select is(
-  public.roll_subscription_cycle(
-    (select id from public.subscriptions where name = 'RpcSub'),
-    date '2026-05-10', 'JPY', 1200, 'monthly', 10,
-    '[{"occurred_on":"2026-05-10","amount":1200},
-      {"occurred_on":"2026-06-10","amount":1200},
-      {"occurred_on":"2026-07-10","amount":1200}]'::jsonb,
-    date '2026-08-10'
-  ),
-  true,
-  'roll_subscription_cycle: 到来した支払いを記録して更新日を進める'
-);
-
-select is(
-  (select count(*)::int from public.transactions
-     where subscription_id = (select id from public.subscriptions where name = 'RpcSub')),
-  3,
-  'roll_subscription_cycle: 止まっていた 3 期ぶんすべてを記録する'
-);
-
-select is(
-  (select next_renewal_date from public.subscriptions where name = 'RpcSub'),
-  date '2026-08-10',
-  'roll_subscription_cycle: 更新日が次の周期へ進む'
+select ok(
+  (select recorded from public.settle_subscription(
+     (select id from public.subscriptions where name = 'GuardSub'))) = 3,
+  '2 ヶ月遅れなら 3 回ぶん記録する'
 );
 
 -- 同名の収入カテゴリがあっても、支出は必ず **支出カテゴリ** で記録される
 select is(
   (select distinct c.kind::text
      from public.transactions t join public.categories c on c.id = t.category_id
-    where t.subscription_id = (select id from public.subscriptions where name = 'RpcSub')),
+    where t.subscription_id = (select id from public.subscriptions where name = 'GuardSub')),
   'expense',
-  'roll_subscription_cycle: 同名の収入カテゴリを引かない（kind まで絞る）'
-);
-
--- cron は再実行されうる。同じ更新日ぶんが二重計上されてはいけない。
-select is(
-  public.roll_subscription_cycle(
-    (select id from public.subscriptions where name = 'RpcSub'),
-    date '2026-08-10', 'JPY', 1200, 'monthly', 10,
-    '[{"occurred_on":"2026-07-10","amount":1200}]'::jsonb,
-    date '2026-09-10'
-  ),
-  true,
-  'roll_subscription_cycle: 再実行できる'
-);
-select is(
-  (select count(*)::int from public.transactions
-     where subscription_id = (select id from public.subscriptions where name = 'RpcSub')),
-  3,
-  'roll_subscription_cycle: 同じ更新日ぶんは増えない（冪等）'
-);
-
--- 一覧取得から呼び出しまでの間にユーザーが編集した場合。
--- **支払いだけが古い金額で残る** ことが無いよう、何もせず false を返す。
-select is(
-  public.roll_subscription_cycle(
-    (select id from public.subscriptions where name = 'RpcSub'),
-    date '2026-05-10',  -- 古いスナップショット（実際は 2026-09-10）
-    'JPY', 1200, 'monthly', 10,
-    '[{"occurred_on":"2026-10-10","amount":9999}]'::jsonb,
-    date '2026-06-10'
-  ),
-  false,
-  'roll_subscription_cycle: スナップショットが古ければ何もせず false'
-);
-select is(
-  (select next_renewal_date from public.subscriptions where name = 'RpcSub'),
-  date '2026-09-10',
-  'CAS 不一致では更新日を進めない'
-);
-select is(
-  (select count(*)::int from public.transactions
-     where subscription_id = (select id from public.subscriptions where name = 'RpcSub')),
-  3,
-  'CAS 不一致では支払いも記録しない（記録だけ残る穴が無い）'
-);
-
--- 解約検討中は課金されない前提。進めない。
-update public.subscriptions set status = 'considering_cancel' where name = 'RpcSub';
-select is(
-  public.roll_subscription_cycle(
-    (select id from public.subscriptions where name = 'RpcSub'),
-    date '2026-09-10', 'JPY', 1200, 'monthly', 10,
-    '[{"occurred_on":"2026-09-10","amount":1200}]'::jsonb,
-    date '2026-10-10'
-  ),
-  false,
-  'roll_subscription_cycle: 解約検討中のサブスクは進めない'
+  '同名の収入カテゴリを引かない（kind まで絞る）'
 );
 
 reset role;
@@ -614,18 +540,46 @@ select set_config(
   true
 );
 
--- cron が作った支払いをユーザーが消せると、更新日は既に進んでいるため **二度と復活しない**。
--- 残高とカテゴリ別集計からサブスク代が恒久的に欠落する。
+-- cron が作った支払いをユーザーが消せると、更新日は既に進んでいるため二度と復活しない
 delete from public.transactions
-  where subscription_id = (select id from public.subscriptions where name = 'RpcSub');
+  where subscription_id = (select id from public.subscriptions where name = 'GuardSub');
 select is(
   (select count(*)::int from public.transactions
-     where subscription_id = (select id from public.subscriptions where name = 'RpcSub')),
+     where subscription_id = (select id from public.subscriptions where name = 'GuardSub')),
   3,
   'ユーザーは cron が作った支払いを削除できない'
 );
 
--- ただし、ふつうの取引は今までどおり削除できる（削除ポリシーを締めすぎていない）
+-- **subscription_id を外して「ただの取引」に化けさせる経路も塞ぐ。**
+-- 旧トリガは new.subscription_id しか見ていなかったので、null を書き込む UPDATE は
+-- 素通りし、その後は削除ポリシー (subscription_id is null) もすり抜けて消せた。
+select throws_ok(
+  $$ update public.transactions set subscription_id = null
+      where subscription_id = (select id from public.subscriptions where name = 'GuardSub') $$,
+  'PT403', null,
+  'ユーザーは cron の支払いから subscription_id を外せない'
+);
+select throws_ok(
+  $$ update public.transactions set amount = 1
+      where subscription_id = (select id from public.subscriptions where name = 'GuardSub') $$,
+  'PT403', null,
+  'ユーザーは cron の支払いの金額を書き換えられない'
+);
+
+-- ただしサブスク本体を削除したら、支払いは「ただの支出」として残り、通常どおり扱える。
+-- （実際に使ったお金なので履歴からは消さない。FK の on delete set null）
+select lives_ok(
+  $$ delete from public.subscriptions where name = 'GuardSub' $$,
+  'サブスク本体は削除できる（支払い履歴の FK set null がトリガに弾かれない）'
+);
+select is(
+  (select count(*)::int from public.transactions
+     where owner_member_id = 'yururi' and memo = 'GuardSub' and subscription_id is null),
+  3,
+  'サブスクを消しても支払い履歴は「ただの支出」として残る'
+);
+
+-- ふつうの取引は今までどおり削除できる（削除ポリシーを締めすぎていない）
 insert into public.transactions (household_id, owner_member_id, type, amount, occurred_on)
 values ('main', 'yururi', 'expense', 300, current_date);
 delete from public.transactions
@@ -635,45 +589,6 @@ select is(
      where owner_member_id = 'yururi' and amount = 300 and subscription_id is null),
   0,
   'サブスク由来でない取引はこれまでどおり削除できる'
-);
-
--- **subscription_id を外して「ただの取引」に化けさせる経路も塞ぐ。**
--- 旧トリガは new.subscription_id しか見ていなかったので、null を書き込む UPDATE は
--- 素通りし、その後は削除ポリシー (subscription_id is null) もすり抜けて消せた。
--- UI がボタンを隠しても、API を直接叩けば同じことができる。
-select throws_ok(
-  $$ update public.transactions set subscription_id = null
-      where subscription_id = (select id from public.subscriptions where name = 'RpcSub') $$,
-  'PT403', null,
-  'ユーザーは cron の支払いから subscription_id を外せない'
-);
-select throws_ok(
-  $$ update public.transactions set amount = 1
-      where subscription_id = (select id from public.subscriptions where name = 'RpcSub') $$,
-  'PT403', null,
-  'ユーザーは cron の支払いの金額を書き換えられない'
-);
-
--- ただしサブスク本体を削除したら、支払いは「ただの支出」として残り、通常どおり扱える。
--- （実際に使ったお金なので履歴からは消さない。FK の on delete set null）
-select lives_ok(
-  $$ delete from public.subscriptions where name = 'RpcSub' $$,
-  'サブスク本体は削除できる（支払い履歴の FK set null がトリガに弾かれない）'
-);
-select is(
-  (select count(*)::int from public.transactions
-     where owner_member_id = 'yururi' and memo = 'RpcSub' and subscription_id is null),
-  3,
-  'サブスクを消しても支払い履歴は「ただの支出」として残る'
-);
-
--- RPC は cron 専用。クライアントからは実行できない。
-select throws_ok(
-  $$ select public.roll_subscription_cycle(
-       '00000000-0000-0000-0000-000000000000'::uuid, current_date, 'JPY', 1, 'monthly', 1,
-       '[]'::jsonb, current_date) $$,
-  '42501', null,
-  'authenticated は roll_subscription_cycle を実行できない'
 );
 
 -- ============================================================
@@ -704,22 +619,306 @@ select is(
   'anchor が null の行を用意した'
 );
 
--- Go は null を 0 として送ってくる
-select is(
-  public.roll_subscription_cycle(
-    (select id from public.subscriptions where name = 'NullAnchor'),
-    date '2026-06-05', 'JPY', 800, 'monthly', 0,
-    '[{"occurred_on":"2026-06-05","amount":800}]'::jsonb,
-    date '2026-07-05'
-  ),
-  true,
-  'anchor が null でも CAS が通る（null と 0 を同じ扱いにする）'
+-- anchor が null でも精算できる（next_renewal_after が current の日にフォールバックする）
+select ok(
+  (select recorded from public.settle_subscription(
+     (select id from public.subscriptions where name = 'NullAnchor'))) > 0,
+  'anchor が null のサブスクでも精算できる'
 );
+select ok(
+  (select count(*) from public.transactions
+     where subscription_id = (select id from public.subscriptions where name = 'NullAnchor')) > 0,
+  'anchor が null のサブスクでも支払いが記録される'
+);
+
+-- ============================================================
+-- Block H: next_renewal_after（Go の renewal.Next と同じ規則であること）
+-- ============================================================
+-- ロールフォワードの計算は **ここ（SQL）にしか無い**。cron もクライアントも同じ関数を通る。
+-- 2 箇所に同じ規則があるとズレ、next_renewal_date の食い違いが二重計上や欠落に直結するため、
+-- Go 側の実装（旧 internal/renewal）は削除した。ケース表はそこから移してきたもの。
+reset role;
+
+select is(public.next_renewal_after(date '2026-07-10', 'monthly', 10), date '2026-08-10',
+          'monthly 通常');
+select is(public.next_renewal_after(date '2026-12-15', 'monthly', 15), date '2027-01-15',
+          'monthly 年またぎ');
+select is(public.next_renewal_after(date '2026-07-10', 'yearly', 10), date '2027-07-10',
+          'yearly 通常');
+
+-- 単純な「1ヶ月足す」だと 1/31 が 3/3 に繰り上がり、1 回のロールで 2 ヶ月進んでしまう
+select is(public.next_renewal_after(date '2026-01-31', 'monthly', 31), date '2026-02-28',
+          '月末: 1/31 → 2/28');
+select is(public.next_renewal_after(date '2028-01-31', 'monthly', 31), date '2028-02-29',
+          '月末: うるう年は 2/29');
+select is(public.next_renewal_after(date '2026-03-31', 'monthly', 31), date '2026-04-30',
+          '月末: 3/31 → 4/30');
+
+-- anchor を持つ理由。丸めた 2/28 を次の基準にすると 3/28 に化けるが、
+-- 本来の課金日 (31) を保持していれば 3/31 に戻る
+select is(public.next_renewal_after(date '2026-02-28', 'monthly', 31), date '2026-03-31',
+          '丸めた翌月は本来の課金日に戻る: 2/28(anchor31) → 3/31');
+select is(public.next_renewal_after(date '2026-02-28', 'monthly', 30), date '2026-03-30',
+          'anchor 30: 2/28 → 3/30');
+
+select is(public.next_renewal_after(date '2028-02-29', 'yearly', 29), date '2029-02-28',
+          'yearly 2/29 → 翌年 2/28');
+select is(public.next_renewal_after(date '2027-02-28', 'yearly', 29), date '2028-02-29',
+          'yearly 2/28(anchor29) → うるう年は 2/29 に戻る');
+
+-- anchor 未設定（既存行）は current の日をそのまま使う
+select is(public.next_renewal_after(date '2026-07-10', 'monthly', 0), date '2026-08-10',
+          'anchor 0 は current の日を使う');
+
+-- ============================================================
+-- Block I: settle_subscription（更新日が到来済みなら即座に台帳へ）
+-- ============================================================
+-- これまで支払いの記録は cron だけだったので、更新日が今日/過去のサブスクを登録しても
+-- 次の cron（JST 00:00）まで台帳に出なかった。登録した本人には「効いていない」ように見える。
+reset role;
+set local role service_role;
+
+-- 為替レートを用意（USD の精算に要る）
+insert into public.fx_rates (rate_date, base, quote, rate)
+values (public.jst_today() - 1, 'USD', 'JPY', 150)
+on conflict do nothing;
+
+-- 更新日が「今日」の JPY サブスク
+insert into public.subscriptions
+  (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+values ('main', 'yururi', 'SettleToday', 'JPY', 1000, 1000, 'monthly', public.jst_today(), 'active');
+
+-- 更新日が「未来」の JPY サブスク（まだ課金されていないので出てはいけない）
+insert into public.subscriptions
+  (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+values ('main', 'yururi', 'SettleFuture', 'JPY', 2000, 2000, 'monthly', public.jst_today() + 10, 'active');
+
+-- 相手（shiyowo）のサブスク。ゆるりからは精算できてはいけない
+insert into public.subscriptions
+  (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+values ('main', 'shiyowo', 'SettleOther', 'JPY', 3000, 3000, 'monthly', public.jst_today(), 'active');
+
+reset role;
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","household_id":"main","member_id":"yururi"}',
+  true
+);
+
+-- 自分の到来済みサブスクだけが精算される
+-- （先行ブロックが更新日=今日のサブスクを複数作っているので、総数ではなく個別に見る）
+select ok(public.settle_my_subscriptions() > 0, '到来済みのサブスクを精算する');
+
+select is(
+  (select amount from public.transactions
+     where subscription_id = (select id from public.subscriptions where name = 'SettleToday')),
+  1000,
+  '更新日が今日のサブスクは **その場で** 台帳に入る'
+);
+
+select is(
+  (select next_renewal_date from public.subscriptions where name = 'SettleToday'),
+  (public.jst_today() + interval '1 month')::date,
+  '精算したら更新日が次の周期へ進む'
+);
+
 select is(
   (select count(*)::int from public.transactions
-     where subscription_id = (select id from public.subscriptions where name = 'NullAnchor')),
+     where subscription_id = (select id from public.subscriptions where name = 'SettleFuture')),
+  0,
+  '更新日が未来のサブスクは記録しない（まだ課金されていない）'
+);
+
+select is(
+  (select count(*)::int from public.transactions
+     where subscription_id = (select id from public.subscriptions where name = 'SettleOther')),
+  0,
+  '相手のサブスクは精算しない'
+);
+
+-- 再実行しても増えない（cron と同時に走っても二重計上しない）
+select is(public.settle_my_subscriptions(), 0, '再実行しても新たに記録しない（冪等）');
+select is(
+  (select count(*)::int from public.transactions where subscription_id is not null
+     and memo = 'SettleToday'),
   1,
-  'anchor が null のサブスクでも支払いが記録される'
+  '二重計上しない'
+);
+
+-- 単体の精算はクライアントから呼べない（id を知っていれば他人のを試せてしまう）
+select throws_ok(
+  $$ select public.settle_subscription(
+       (select id from public.subscriptions where name = 'SettleOther')) $$,
+  '42501', null,
+  'authenticated は settle_subscription を直接呼べない'
+);
+
+-- 数ヶ月遅れていたら、その回数ぶんすべて記録する
+reset role;
+set local role service_role;
+insert into public.subscriptions
+  (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+values ('main', 'yururi', 'SettleLate', 'JPY', 500, 500, 'monthly',
+        (public.jst_today() - interval '2 months')::date, 'active');
+
+reset role;
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","household_id":"main","member_id":"yururi"}',
+  true
+);
+select is(public.settle_my_subscriptions(), 3, '2 ヶ月遅れていたら 3 回ぶん記録する');
+
+-- 解約検討中は精算しない
+reset role;
+set local role service_role;
+insert into public.subscriptions
+  (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+values ('main', 'yururi', 'SettleCancel', 'JPY', 700, 700, 'monthly', public.jst_today(), 'considering_cancel');
+
+reset role;
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","household_id":"main","member_id":"yururi"}',
+  true
+);
+select is(public.settle_my_subscriptions(), 0, '解約検討中は精算しない');
+
+-- ユーザーは相変わらず subscription_id 付きの取引を作れない（精算経路以外は塞がったまま）
+select throws_ok(
+  $$ insert into public.transactions (household_id, owner_member_id, type, amount, occurred_on, subscription_id)
+     values ('main', 'yururi', 'expense', 1, current_date,
+             (select id from public.subscriptions where name = 'SettleToday')) $$,
+  'PT403', null,
+  '精算経路の外からは subscription_id 付きの取引を作れない'
+);
+
+-- ============================================================
+-- Block J: 精算のロールフォワードが「本来の課金日」を壊さない
+-- ============================================================
+-- Block E は service_role による **直接の UPDATE** しか見ておらず、
+-- settle_subscription を通っていなかった。settle_subscription は security definer なので
+-- トリガから見た current_user が所有者(postgres)になり、「人が課金日を編集した」と
+-- 誤判定されて anchor が丸めた日で上書きされる（1/31 → 2/28 で anchor が 28 に化ける）。
+-- 一度壊れると自動復旧しないので、**精算を実際に通して**確かめる。
+-- 「今日」を 2026-02-15 に固定する。**着地が短い月になる日でないと、このバグは隠れる**
+-- （例えば 7 月に流すと着地が 7/31 になり、丸めた日 31 が元の anchor 31 と偶然一致する）。
+-- DDL なので **postgres (セッションユーザー) のまま**撃つ。service_role には
+-- public スキーマの CREATE 権限が無く、permission denied で止まる。
+reset role;
+create or replace function public.jst_today() returns date language sql stable
+as $$ select date '2026-02-15' $$;
+
+set local role service_role;
+
+insert into public.subscriptions
+  (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+values ('main', 'yururi', 'MonthEndSettle', 'JPY', 1000, 1000, 'monthly', '2026-01-31', 'active');
+
+select is(
+  (select renewal_anchor_day from public.subscriptions where name = 'MonthEndSettle'),
+  31::smallint,
+  '登録時の anchor は 31'
+);
+
+select public.settle_subscription((select id from public.subscriptions where name = 'MonthEndSettle'));
+
+select is(
+  (select next_renewal_date from public.subscriptions where name = 'MonthEndSettle'),
+  date '2026-02-28',
+  '1/31 を精算すると次の更新日は 2/28（2 月に 31 日は無い）'
+);
+
+select is(
+  (select renewal_anchor_day from public.subscriptions where name = 'MonthEndSettle'),
+  31::smallint,
+  '精算のロールフォワードでは anchor を 31 のまま保つ（28 に丸めない）'
+);
+
+-- anchor が壊れていれば、次の周期が 3/28 になる
+select is(
+  public.next_renewal_after(
+    (select next_renewal_date from public.subscriptions where name = 'MonthEndSettle'),
+    'monthly',
+    (select renewal_anchor_day from public.subscriptions where name = 'MonthEndSettle')
+  ),
+  date '2026-03-31',
+  '次の周期は 3/31 に戻る（月末課金が 28 日に固定化しない）'
+);
+
+-- 一方、**ユーザーが課金日を編集した**ときは anchor を付け直す（そちらは正しい挙動）
+reset role;
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","household_id":"main","member_id":"yururi"}',
+  true
+);
+
+update public.subscriptions set next_renewal_date = '2026-03-15' where name = 'MonthEndSettle';
+
+select is(
+  (select renewal_anchor_day from public.subscriptions where name = 'MonthEndSettle'),
+  15::smallint,
+  'ユーザーが課金日を変えたときは anchor を付け直す'
+);
+
+-- 「今日」を元に戻す（この先で使う人がいても壊れないように）。DDL なので postgres で撃つ。
+reset role;
+create or replace function public.jst_today() returns date language sql stable
+as $$ select (now() at time zone 'Asia/Tokyo')::date $$;
+
+-- ============================================================
+-- Block K: 0 円のサブスクが、他のサブスクの精算を巻き添えにしない
+-- ============================================================
+-- subscriptions は amount_jpy >= 0 を許す（無料トライアルは 0 円で登録できる）が、
+-- transactions は check (amount > 0)。0 円をそのまま挿入すると例外になり、
+-- settle_my_subscriptions は 1 トランザクションなので **その人の到来済みサブスク全部**が
+-- 巻き戻る。しかもフロントは失敗を握り潰すので、画面には何も出ない。
+reset role;
+set local role service_role;
+
+insert into public.subscriptions
+  (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+values
+  ('main', 'shiyowo', 'FreeTrial', 'JPY', 0, 0, 'monthly', public.jst_today(), 'trial'),
+  ('main', 'shiyowo', 'PaidAlongside', 'JPY', 500, 500, 'monthly', public.jst_today(), 'active');
+
+reset role;
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","household_id":"main","member_id":"shiyowo"}',
+  true
+);
+
+select lives_ok(
+  $$ select public.settle_my_subscriptions() $$,
+  '0 円のサブスクがあっても精算が例外にならない'
+);
+
+select is(
+  (select count(*)::integer from public.transactions
+    where subscription_id = (select id from public.subscriptions where name = 'PaidAlongside')),
+  1,
+  '同じ人の有料サブスクは巻き添えにならず記録される'
+);
+
+select is(
+  (select count(*)::integer from public.transactions
+    where subscription_id = (select id from public.subscriptions where name = 'FreeTrial')),
+  0,
+  '0 円の支払いは台帳に載せない'
+);
+
+-- 0 円でも更新日は進む（次の cron で毎回やり直さないように）
+select isnt(
+  (select next_renewal_date from public.subscriptions where name = 'FreeTrial'),
+  public.jst_today(),
+  '0 円でも更新日は進む'
 );
 
 select * from finish();

@@ -9,7 +9,9 @@ import {
   createSubscription,
   updateSubscription,
   deleteSubscription,
+  settleMySubscriptions,
 } from '../../lib/data/subscriptions';
+import { invalidateLedger } from '../ledger/hooks';
 import type { SubscriptionDraft } from '../../lib/subscriptions/types';
 
 // ---- Queries ----
@@ -35,6 +37,31 @@ export function useLatestFxRate() {
 }
 
 // ---- Mutations ----
+
+/**
+ * 到来済みの支払いを台帳に記録する（DB 側の精算 RPC）。
+ *
+ * サブスクを **更新日が今日/過去** の状態で登録・編集したとき、これを呼ばないと
+ * 次の cron（JST 00:00）まで台帳・残高・グラフに出ない。「登録したのに効いていない」
+ * ように見えるので、その場で反映する。
+ *
+ * 更新日が未来なら何も起きない（まだ課金されていないので、それが正しい）。
+ * 何度呼んでも増えない（DB の unique 制約が二重計上を弾く）。
+ *
+ * **精算が失敗しても、サブスクの登録自体は成功している。** ここで例外を投げて
+ * 「登録できませんでした」と見せるのは嘘になるので、失敗しても握りつぶす
+ * （その場合は次の cron が拾う）。
+ */
+async function settleThenRefresh(qc: QueryClient, memberId?: string): Promise<void> {
+  try {
+    const recorded = await settleMySubscriptions(supabase);
+    if (recorded > 0) {
+      invalidateLedger(qc, memberId);
+    }
+  } catch {
+    // 次の cron が拾う。登録自体は成功しているので、ここでは何も見せない。
+  }
+}
 
 /** 自分のサブスク系（一覧・月換算合計）を無効化する。 */
 function invalidateSubs(qc: QueryClient, memberId?: string): void {
@@ -64,6 +91,7 @@ export function useCreateSubscription() {
         ownerMemberId: ctx.memberId,
       });
     },
+    onSuccess: () => settleThenRefresh(qc, ctx?.memberId),
     onSettled: () => invalidateSubs(qc, ctx?.memberId),
   });
 }
@@ -75,6 +103,8 @@ export function useUpdateSubscription() {
   return useMutation({
     mutationFn: ({ id, draft }: { id: string; draft: SubscriptionDraft }) =>
       updateSubscription(supabase, id, draft, fx),
+    // 更新日を過去/今日に変えた場合も、その場で台帳に反映する
+    onSuccess: () => settleThenRefresh(qc, ctx?.memberId),
     onSettled: () => invalidateSubs(qc, ctx?.memberId),
   });
 }

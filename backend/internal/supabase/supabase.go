@@ -98,7 +98,9 @@ func (c *Client) UpsertFXRate(ctx context.Context, date string, rate float64) er
 // 解約検討中(considering_cancel)は課金されない前提なので進めない。
 func (c *Client) ListDueSubscriptions(ctx context.Context, today string) ([]Subscription, error) {
 	q := url.Values{}
-	q.Set("select", "id,household_id,owner_member_id,name,currency,original_amount,cycle,next_renewal_date,renewal_anchor_day,amount_jpy,fx_rate")
+	// 精算の計算は DB 側（settle_subscription）が行うので、cron は id さえあればよい。
+	// name はログ／エラーメッセージ用。
+	q.Set("select", "id,name")
 	q.Set("next_renewal_date", "lte."+today)
 	q.Set("status", "in.(active,trial)")
 
@@ -114,100 +116,42 @@ func (c *Client) ListDueSubscriptions(ctx context.Context, today string) ([]Subs
 	return subs, nil
 }
 
-// RenewalUpdate はロールフォワードで書き戻す値。
-type RenewalUpdate struct {
-	NextRenewalDate string
-	AmountJPY       *int
-	FxRate          *float64
-	FxRateDate      *string
-}
-
-// Payment はサブスクの支払い 1 回ぶん（= 支出取引 1 件）。
-type Payment struct {
-	OccurredOn string `json:"occurred_on"`
-	Amount     int    `json:"amount"`
-}
-
-// FXRateOn は date 以前で最も新しい USD/JPY をキャッシュ (fx_rates) から返す。
-// 休日はその日の行が無いので、その日以前の直近を使う。
-func (c *Client) FXRateOn(ctx context.Context, date string) (rate float64, rateDate string, found bool, err error) {
-	q := url.Values{}
-	q.Set("select", "rate,rate_date")
-	q.Set("base", "eq.USD")
-	q.Set("quote", "eq.JPY")
-	q.Set("rate_date", "lte."+date)
-	q.Set("order", "rate_date.desc")
-	q.Set("limit", "1")
-
-	payload, err := c.do(ctx, http.MethodGet, "/rest/v1/fx_rates?"+q.Encode(), nil, "")
+// SettleSubscription は到来済みの支払いを台帳に記録し、更新日を進める（DB 側の RPC）。
+//
+// **ロールフォワードの計算は SQL にしか無い。** Go 側にも書くと同じ規則が 2 箇所に生まれ、
+// next_renewal_date の食い違いが二重計上や欠落に直結する。
+// クライアント（アプリ）も同じ SQL を通って精算するので、計算は 1 箇所だけになる。
+//
+// USD でその支払日のレートが fx_rates に無ければ、RPC はそこで止めて needsFXOn に
+// その日付を返す（SQL は為替 API を叩けない）。呼び出し側がレートを取得して保存し、
+// 呼び直す。
+//
+// 二重計上は unique(subscription_id, occurred_on) が弾くので、
+// アプリと cron が同時に走っても、再実行しても増えない。
+func (c *Client) SettleSubscription(
+	ctx context.Context, subscriptionID string,
+) (recorded int, needsFXOn string, err error) {
+	payload, err := c.do(ctx, http.MethodPost, "/rest/v1/rpc/settle_subscription",
+		map[string]any{"p_subscription_id": subscriptionID}, "")
 	if err != nil {
-		return 0, "", false, err
+		return 0, "", err
 	}
 
+	// returns table(...) なので 1 行の配列で返る
 	var rows []struct {
-		Rate     float64 `json:"rate"`
-		RateDate string  `json:"rate_date"`
+		Recorded  int     `json:"recorded"`
+		NeedsFXOn *string `json:"needs_fx_on"`
 	}
 	if err := json.Unmarshal(payload, &rows); err != nil {
-		return 0, "", false, fmt.Errorf("supabase: 為替レートを解釈できませんでした: %w", err)
+		return 0, "", fmt.Errorf("supabase: 精算結果を解釈できませんでした: %w", err)
 	}
 	if len(rows) == 0 {
-		return 0, "", false, nil
+		return 0, "", nil
 	}
-	return rows[0].Rate, rows[0].RateDate, true, nil
-}
-
-// RollSubscriptionCycle は「支払いの記録」と「更新日の前進」を
-// **1 つの RPC = 1 つの DB トランザクション** で行う。
-//
-// 2 回の往復に分けると、その隙間でユーザーがサブスクを編集/解約したときに、
-// 古いスナップショットの金額で **支払いだけが台帳に残る**（更新は CAS で弾かれるが、
-// 既に入った取引は取り消せない）。RPC 側はサブスク行を FOR UPDATE で固定してから
-// スナップショットと突き合わせるので、その隙間が構造的に存在しない。
-//
-// snapshot は一覧取得時に読んだ行。**次の更新日と支払額の計算に使った値をすべて**
-// 渡し、RPC 側で突き合わせる (currency / original_amount / cycle / renewal_anchor_day)。
-// 一致しなければ「その間に人が触った」だけなので、エラーではなく applied=false。
-// 次回の cron が新しい値で拾い直す。
-//
-// renewal_anchor_day は **突合せには使うが、更新値としては送らない**:
-// DB トリガが anchor を保持する（丸めた日で上書きすると月末課金が 28 日に固定化する）。
-//
-// 二重計上は RPC 内の on conflict do nothing が弾くので、cron を再実行しても増えない。
-func (c *Client) RollSubscriptionCycle(
-	ctx context.Context, snapshot Subscription, payments []Payment, update RenewalUpdate,
-) (applied bool, err error) {
-	args := map[string]any{
-		"p_subscription_id":            snapshot.ID,
-		"p_expected_next_renewal_date": snapshot.NextRenewalDate,
-		"p_expected_currency":          snapshot.Currency,
-		"p_expected_original_amount":   snapshot.OriginalAmount,
-		"p_expected_cycle":             snapshot.Cycle,
-		"p_expected_anchor_day":        snapshot.RenewalAnchorDay,
-		"p_payments":                   payments,
-		"p_next_renewal_date":          update.NextRenewalDate,
+	if rows[0].NeedsFXOn != nil {
+		needsFXOn = *rows[0].NeedsFXOn
 	}
-	// JPY に fx 系を混ぜると DB 制約に弾かれる。USD のときだけ送る。
-	if update.AmountJPY != nil {
-		args["p_amount_jpy"] = *update.AmountJPY
-	}
-	if update.FxRate != nil {
-		args["p_fx_rate"] = *update.FxRate
-	}
-	if update.FxRateDate != nil {
-		args["p_fx_rate_date"] = *update.FxRateDate
-	}
-
-	payload, err := c.do(ctx, http.MethodPost,
-		"/rest/v1/rpc/roll_subscription_cycle", args, "")
-	if err != nil {
-		return false, err
-	}
-
-	if err := json.Unmarshal(payload, &applied); err != nil {
-		return false, fmt.Errorf("supabase: 更新結果を解釈できませんでした: %w", err)
-	}
-	return applied, nil
+	return rows[0].Recorded, needsFXOn, nil
 }
 
 // Ping は Supabase Free の自動一時停止 (約7日アイドル) を避けるための軽い読み取り。

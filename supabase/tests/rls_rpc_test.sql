@@ -1,6 +1,6 @@
 -- pgTAP: RLS の cross-household 分離 + per-member 書込強制 + confirm_balance_checkpoint RPC
 begin;
-select plan(98);
+select plan(107);
 
 -- ============================================================
 -- Block A: ゆるり @ main として認証
@@ -794,6 +794,131 @@ select throws_ok(
              (select id from public.subscriptions where name = 'SettleToday')) $$,
   'PT403', null,
   '精算経路の外からは subscription_id 付きの取引を作れない'
+);
+
+-- ============================================================
+-- Block J: 精算のロールフォワードが「本来の課金日」を壊さない
+-- ============================================================
+-- Block E は service_role による **直接の UPDATE** しか見ておらず、
+-- settle_subscription を通っていなかった。settle_subscription は security definer なので
+-- トリガから見た current_user が所有者(postgres)になり、「人が課金日を編集した」と
+-- 誤判定されて anchor が丸めた日で上書きされる（1/31 → 2/28 で anchor が 28 に化ける）。
+-- 一度壊れると自動復旧しないので、**精算を実際に通して**確かめる。
+-- 「今日」を 2026-02-15 に固定する。**着地が短い月になる日でないと、このバグは隠れる**
+-- （例えば 7 月に流すと着地が 7/31 になり、丸めた日 31 が元の anchor 31 と偶然一致する）。
+-- DDL なので **postgres (セッションユーザー) のまま**撃つ。service_role には
+-- public スキーマの CREATE 権限が無く、permission denied で止まる。
+reset role;
+create or replace function public.jst_today() returns date language sql stable
+as $$ select date '2026-02-15' $$;
+
+set local role service_role;
+
+insert into public.subscriptions
+  (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+values ('main', 'yururi', 'MonthEndSettle', 'JPY', 1000, 1000, 'monthly', '2026-01-31', 'active');
+
+select is(
+  (select renewal_anchor_day from public.subscriptions where name = 'MonthEndSettle'),
+  31::smallint,
+  '登録時の anchor は 31'
+);
+
+select public.settle_subscription((select id from public.subscriptions where name = 'MonthEndSettle'));
+
+select is(
+  (select next_renewal_date from public.subscriptions where name = 'MonthEndSettle'),
+  date '2026-02-28',
+  '1/31 を精算すると次の更新日は 2/28（2 月に 31 日は無い）'
+);
+
+select is(
+  (select renewal_anchor_day from public.subscriptions where name = 'MonthEndSettle'),
+  31::smallint,
+  '精算のロールフォワードでは anchor を 31 のまま保つ（28 に丸めない）'
+);
+
+-- anchor が壊れていれば、次の周期が 3/28 になる
+select is(
+  public.next_renewal_after(
+    (select next_renewal_date from public.subscriptions where name = 'MonthEndSettle'),
+    'monthly',
+    (select renewal_anchor_day from public.subscriptions where name = 'MonthEndSettle')
+  ),
+  date '2026-03-31',
+  '次の周期は 3/31 に戻る（月末課金が 28 日に固定化しない）'
+);
+
+-- 一方、**ユーザーが課金日を編集した**ときは anchor を付け直す（そちらは正しい挙動）
+reset role;
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","household_id":"main","member_id":"yururi"}',
+  true
+);
+
+update public.subscriptions set next_renewal_date = '2026-03-15' where name = 'MonthEndSettle';
+
+select is(
+  (select renewal_anchor_day from public.subscriptions where name = 'MonthEndSettle'),
+  15::smallint,
+  'ユーザーが課金日を変えたときは anchor を付け直す'
+);
+
+-- 「今日」を元に戻す（この先で使う人がいても壊れないように）。DDL なので postgres で撃つ。
+reset role;
+create or replace function public.jst_today() returns date language sql stable
+as $$ select (now() at time zone 'Asia/Tokyo')::date $$;
+
+-- ============================================================
+-- Block K: 0 円のサブスクが、他のサブスクの精算を巻き添えにしない
+-- ============================================================
+-- subscriptions は amount_jpy >= 0 を許す（無料トライアルは 0 円で登録できる）が、
+-- transactions は check (amount > 0)。0 円をそのまま挿入すると例外になり、
+-- settle_my_subscriptions は 1 トランザクションなので **その人の到来済みサブスク全部**が
+-- 巻き戻る。しかもフロントは失敗を握り潰すので、画面には何も出ない。
+reset role;
+set local role service_role;
+
+insert into public.subscriptions
+  (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+values
+  ('main', 'shiyowo', 'FreeTrial', 'JPY', 0, 0, 'monthly', public.jst_today(), 'trial'),
+  ('main', 'shiyowo', 'PaidAlongside', 'JPY', 500, 500, 'monthly', public.jst_today(), 'active');
+
+reset role;
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","household_id":"main","member_id":"shiyowo"}',
+  true
+);
+
+select lives_ok(
+  $$ select public.settle_my_subscriptions() $$,
+  '0 円のサブスクがあっても精算が例外にならない'
+);
+
+select is(
+  (select count(*)::integer from public.transactions
+    where subscription_id = (select id from public.subscriptions where name = 'PaidAlongside')),
+  1,
+  '同じ人の有料サブスクは巻き添えにならず記録される'
+);
+
+select is(
+  (select count(*)::integer from public.transactions
+    where subscription_id = (select id from public.subscriptions where name = 'FreeTrial')),
+  0,
+  '0 円の支払いは台帳に載せない'
+);
+
+-- 0 円でも更新日は進む（次の cron で毎回やり直さないように）
+select isnt(
+  (select next_renewal_date from public.subscriptions where name = 'FreeTrial'),
+  public.jst_today(),
+  '0 円でも更新日は進む'
 );
 
 select * from finish();

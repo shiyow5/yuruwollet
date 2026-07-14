@@ -77,10 +77,12 @@ func (s *fakeStore) ListDueSubscriptions(_ context.Context, today string) ([]sup
 // SettleSubscription は DB 側の精算 RPC の振る舞いを模す。
 // needsFX に指定した日のレートが fx_rates に無ければ、その日付を返して止まる。
 func (s *fakeStore) SettleSubscription(_ context.Context, id string) (int, string, error) {
+	// **呼ばれた事実は、失敗しても記録する。** エラーの後ろで数えると
+	// 「1 件目が落ちても 2 件目を試したか」を検証できない（呼ばれたのに 0 件に見える）。
+	s.settleCalls[id]++
 	if s.settleErr != nil {
 		return 0, "", s.settleErr
 	}
-	s.settleCalls[id]++
 
 	if want, ok := s.needsFX[id]; ok && !s.cached[want] {
 		return 0, want, nil // レート待ち
@@ -268,7 +270,9 @@ func TestRun_PartialFailures_ContinueAndReportAll(t *testing.T) {
 		}
 	}
 	// 1 件目が落ちても 2 件目を試す
-	if store.settleCalls["s2"] == 0 && store.settleErr == nil {
+	// （`&& store.settleErr == nil` を付けていたが、settleErr は上で non-nil にしているので
+	//   条件が常に false になり、このアサートは一度も発火していなかった）
+	if store.settleCalls["s2"] == 0 {
 		t.Error("1 件の失敗で残りを諦めている")
 	}
 	if store.pinged != 1 {

@@ -165,26 +165,37 @@ begin
       v_amount := v_sub.amount_jpy;
     end if;
 
-    -- 二重計上は unique(subscription_id, occurred_on) が弾く。
-    -- cron と同時に走っても、再実行しても増えない。
-    insert into public.transactions (
-      household_id, owner_member_id, type, amount, category_id, memo, occurred_on, subscription_id
-    ) values (
-      v_sub.household_id, v_sub.owner_member_id, 'expense',
-      v_amount, v_category, v_sub.name, v_due, v_sub.id
-    )
-    on conflict (subscription_id, occurred_on) where subscription_id is not null
-    do nothing;
+    -- **0 円の課金は台帳に載せない。**
+    -- subscriptions は amount_jpy >= 0 を許すが（無料トライアルは 0 円で登録できる）、
+    -- transactions は check (amount > 0)。そのまま挿入すると例外になり、
+    -- settle_my_subscriptions は 1 トランザクションなので **その人の到来済みサブスク全部**が
+    -- 巻き添えで巻き戻る。しかもフロントは失敗を握り潰すので、画面には何も出ない。
+    -- 0 円は収支に影響しないので、記録せずに更新日だけ進める。
+    if v_amount > 0 then
+      -- 二重計上は unique(subscription_id, occurred_on) が弾く。
+      -- cron と同時に走っても、再実行しても増えない。
+      insert into public.transactions (
+        household_id, owner_member_id, type, amount, category_id, memo, occurred_on, subscription_id
+      ) values (
+        v_sub.household_id, v_sub.owner_member_id, 'expense',
+        v_amount, v_category, v_sub.name, v_due, v_sub.id
+      )
+      on conflict (subscription_id, occurred_on) where subscription_id is not null
+      do nothing;
 
-    v_count := v_count + 1;
+      v_count := v_count + 1;
+    end if;
+
     v_due := public.next_renewal_after(v_due, v_sub.cycle, v_sub.renewal_anchor_day);
   end loop;
 
-  -- 印を下ろす。ここから先は通常のガードが効く。
-  perform set_config('app.settling_subscription', 'off', true);
-
   -- 記録できたぶんだけ更新日を進める。
   -- レートが無くて途中で止まったら、そこが次の更新日になる（残りは cron が拾う）。
+  --
+  -- **印を下ろすのはこの UPDATE の「後」**。この UPDATE は set_renewal_anchor トリガを撃ち、
+  -- そのトリガは「これは精算のロールフォワードか、人が課金日を編集したのか」を印で判別する。
+  -- 先に下ろすと「人が編集した」と誤判定され、anchor が丸めた日で上書きされる
+  -- （1/31 課金 → 2/28 に精算 → anchor が 28 に化けて、以後ずっと 28 日課金になる）。
   if v_due <> v_sub.next_renewal_date then
     update public.subscriptions set
       next_renewal_date = v_due,
@@ -193,6 +204,9 @@ begin
       fx_rate_date = coalesce(v_last_rate_date, fx_rate_date)
     where id = v_sub.id;
   end if;
+
+  -- 印を下ろす。ここから先は通常のガードが効く。
+  perform set_config('app.settling_subscription', 'off', true);
 
   recorded := v_count;
   return next;
@@ -256,8 +270,10 @@ begin
     return new;
   end if;
 
-  -- cron が直接書く経路（roll_subscription_cycle）も引き続き許す
-  if current_user = 'service_role' then
+  -- cron（service_role）が台帳に直接書く経路。
+  -- **current_user ではなく role の GUC を見る。** security definer の中では
+  -- current_user も session_user も関数の所有者(postgres)になり、cron を判別できない。
+  if coalesce(current_setting('role', true), '') = 'service_role' then
     return new;
   end if;
 
@@ -280,6 +296,52 @@ begin
   return new;
 end;
 $$;
+
+-- ---- 4b) トリガ: 精算のロールフォワードでは anchor を付け直さない ----
+--
+-- set_renewal_anchor は「本来の課金日」(1/31 課金なら 31) を保持するためのトリガで、
+-- **cron のロールフォワードでは付け直さない**ように書かれていた。その判定が
+-- `current_user <> 'service_role'` だった。
+--
+-- ところが settle_subscription は security definer なので、その中の UPDATE から見た
+-- current_user は **関数の所有者 (postgres)** になる。つまり cron でもクライアントでも
+-- 「人が課金日を手で編集した」と誤判定され、anchor が **丸めたあとの日** で上書きされる。
+--
+--   1/31 課金 (anchor=31) を 2/15 に精算 → next=2/28、anchor が 28 に化ける
+--   → 次は next_renewal_after(2/28,'monthly',28) = 3/28（正しくは 3/31）
+--   → 以後ずっと 28 日課金。**一度壊れると自動復旧しない。**
+--
+-- guard_subscription_txn と同じく「精算中である」という印を見る形に揃える。
+create or replace function public.set_renewal_anchor()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  if tg_op = 'INSERT' then
+    new.renewal_anchor_day := extract(day from new.next_renewal_date)::smallint;
+    return new;
+  end if;
+
+  -- 精算のロールフォワード、または課金日以外の編集 → anchor は保持する。
+  -- （service_role の直接の書き換えも「人の編集ではない」ものとして保持する。
+  --   security definer 越しでも判別できるよう current_user ではなく role の GUC を見る）
+  if coalesce(current_setting('app.settling_subscription', true), '') = 'on'
+     or coalesce(current_setting('role', true), '') = 'service_role'
+     or new.next_renewal_date is not distinct from old.next_renewal_date
+  then
+    new.renewal_anchor_day := old.renewal_anchor_day;
+  else
+    -- ユーザーが課金日を変えた → 本来の課金日も変わった
+    new.renewal_anchor_day := extract(day from new.next_renewal_date)::smallint;
+  end if;
+  return new;
+end;
+$$;
+
+comment on function public.set_renewal_anchor() is
+  '本来の課金日を保持する。精算のロールフォワード(app.settling_subscription=on)と '
+  'service_role の書き換えでは付け直さない（丸めた日で固定化するため）。';
 
 -- ---- 5) 権限 ----
 -- 精算は authenticated から呼べる（自分のぶんだけ。関数内で household/member を検査する）。

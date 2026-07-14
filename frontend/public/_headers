@@ -1,7 +1,0 @@
-# Cloudflare Pages のレスポンスヘッダ。
-# 厳格な CSP は Phase 11 で自己ホスト資産/Supabase オリジンを固定してから追加する。
-/*
-  X-Frame-Options: DENY
-  X-Content-Type-Options: nosniff
-  Referrer-Policy: strict-origin-when-cross-origin
-  Permissions-Policy: geolocation=(), microphone=(), camera=()

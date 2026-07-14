@@ -94,6 +94,15 @@ jobs:
         run: npx supabase db reset
       - name: pgTAP tests (RLS / RPC)
         run: npx supabase test db
+
+      # スキーマの静的検査（#43）。
+      #
+      # **`--fail-on warning` を必ず付けること。** 付けないと `db lint` は指摘を
+      # 表示するだけで **exit 0 を返す**ので、CI は緑のまま警告が積み上がる
+      # （実際に確認した: 未使用変数のある関数を入れても exit code は 0 だった）。
+      - name: db lint (schema static analysis)
+        run: npx supabase db lint --level warning --fail-on warning
+
       - name: verify generated types are up to date
         run: |
           npx supabase gen types typescript --local > /tmp/database.types.ts

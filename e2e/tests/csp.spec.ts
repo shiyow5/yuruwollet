@@ -51,20 +51,30 @@ test('CSP と HSTS が付いていて、script-src が緩んでいない', async
   expect(res?.headers()['strict-transport-security']).toContain('max-age=31536000');
 });
 
+/**
+ * routes.tsx の全ルート。**パスで回すこと。**
+ *
+ * ナビの表示名でクリックする形にしていたら、`/wishlist` のラベルを「ほしい物」と
+ * 書き間違えていた（実際は「ウィッシュ」。「ほしい物」は画面内のタブの名前）。
+ * `if (await link.count())` で握り潰していたので、**その画面を一度も踏まないまま緑**になっていた。
+ * よりによって wishlist は **Realtime(WebSocket) を張る唯一の画面**で、
+ * connect-src の wss: を検証できる場所がここしか無い。
+ */
+const ROUTES = ['/', '/ledger', '/subscriptions', '/wishlist', '/charts', '/mypage', '/settings'];
+
 test('全画面を回っても CSP 違反が起きない', async ({ page }) => {
   const violations = await collectViolations(page);
 
-  await page.goto('/');
-  await page.waitForLoadState('networkidle');
-
-  // ナビゲーションから到達できる画面を一通り踏む（遅延読み込みのチャンクも取りに行く）
-  for (const name of ['家計簿', 'サブスク', 'ほしい物', 'グラフ', '設定']) {
-    const link = page.getByRole('link', { name }).first();
-    if (await link.count()) {
-      await link.click();
-      await page.waitForLoadState('networkidle');
-    }
+  for (const path of ROUTES) {
+    await page.goto(path);
+    await page.waitForLoadState('networkidle');
+    // 画面が本当に描画されたか（CSP でスクリプトが落ちれば #root は空になる）
+    await expect(page.locator('#root')).not.toBeEmpty();
   }
+
+  // グラフは lazy import。チャンクの読み込み（script-src）が済むまで待つ
+  await page.goto('/charts');
+  await page.waitForLoadState('networkidle');
 
   expect(violations, `console: ${violations.join(' / ')}`).toHaveLength(0);
   const events = await reported(page);

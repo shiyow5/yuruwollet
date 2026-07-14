@@ -38,7 +38,13 @@ def find_bundle_supabase_origin(assets: Path) -> str | None:
 
 
 def main() -> None:
-    dist = Path(sys.argv[1] if len(sys.argv) > 1 else 'frontend/dist')
+    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    # **本番へ出す直前は --production を付けること。**
+    # 付けないと「バンドルがローカルを指している」ビルドを *正常* として通してしまい、
+    # frontend/.env を書き忘れたまま make deploy-frontend したときに素通りする。
+    production = '--production' in sys.argv
+
+    dist = Path(args[0] if args else 'frontend/dist')
     headers_file = dist / '_headers'
 
     if not headers_file.is_file():
@@ -50,8 +56,12 @@ def main() -> None:
 
     origin = find_bundle_supabase_origin(dist / 'assets')
     if origin is None:
-        # ローカル既定（127.0.0.1）でビルドした場合。本番デプロイでは deploy.yml 側の
-        # 「本番 Supabase URL が焼き込まれているか」の検算が別で落とすので、ここは通してよい。
+        if production:
+            sys.exit(
+                'バンドルに本番の Supabase URL が焼き込まれていません。\n'
+                '  VITE_SUPABASE_URL の渡し忘れです（frontend/.env か、シェルの環境変数）。\n'
+                '  このまま出すとローカル（127.0.0.1）を指したアプリが本番に出ます。'
+            )
         print('バンドルに本番 Supabase URL が無い（ローカルビルド）。CSP の検算はスキップ。')
         return
 

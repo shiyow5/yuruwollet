@@ -90,7 +90,7 @@ deploy: deploy-frontend deploy-backend ## 本番デプロイ
 deploy-frontend: build-frontend ## Cloudflare Pages へデプロイ
 	# バンドルと CSP が同じ Supabase を指しているか検算する（#41）。
 	# ずれたまま出すと「画面は出るのにデータが読めない」になる。CI と同じスクリプト。
-	python3 scripts/verify_csp.py frontend/dist
+	python3 scripts/verify_csp.py frontend/dist --production
 	cd frontend && npx wrangler pages deploy dist --branch main
 
 deploy-backend: check-worker-secrets build-backend ## Go Cron Worker をデプロイ

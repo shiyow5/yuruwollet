@@ -108,7 +108,7 @@ jobs:
       # 「バンドルが指す先」と「CSP が許可する先」を突き合わせるので、
       # デプロイ経路が増えても成立する（make deploy-frontend も同じスクリプトを呼ぶ）。
       - name: verify CSP allows production Supabase
-        run: python3 scripts/verify_csp.py frontend/dist
+        run: python3 scripts/verify_csp.py frontend/dist --production
 
       # frontend から実行すること。wrangler は **カレントディレクトリの functions/** を
       # Pages Functions としてバンドルする。リポジトリルートから叩くと

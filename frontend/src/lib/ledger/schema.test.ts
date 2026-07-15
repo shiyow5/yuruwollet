@@ -105,4 +105,16 @@ describe('validateCategoryForm', () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.errors.kind).toBeDefined();
   });
+
+  it('パレット内のアイコンは許可', () => {
+    const r = validateCategoryForm({ kind: 'expense', name: '交通費', icon: 'directions_bus' });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value.icon).toBe('directions_bus');
+  });
+
+  it('パレット外のアイコンを弾く（#9: フォントに無い名前は文字化けする）', () => {
+    const r = validateCategoryForm({ kind: 'expense', name: '謎', icon: 'not_a_real_icon' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.icon).toBeDefined();
+  });
 });

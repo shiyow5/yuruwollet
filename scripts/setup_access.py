@@ -195,7 +195,9 @@ ICON_PATHS = [
 icon_app_body = {
     "name": ICON_APP_NAME,
     "type": "self_hosted",
-    # destinations があれば domain は無視されるが、API が required にしているので代表を入れる
+    # domain は required。destinations と併記でき、両方が secured 対象になる。
+    # （廃止予定なのは self_hosted_domains であって domain ではない。
+    #   ここは destinations[0] と同じ値なので重複するが無害。）
     "domain": f"{HOSTNAME}/{ICON_PATHS[0]}",
     "destinations": [{"type": "public", "uri": f"{HOSTNAME}/{p}"} for p in ICON_PATHS],
     "app_launcher_visible": False,

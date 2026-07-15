@@ -5,6 +5,8 @@ export interface QueryResult {
   data: unknown;
   /** code は PostgREST が返す SQLSTATE（RPC の拒否理由の判別に使う）。 */
   error: { message: string; code?: string } | null;
+  /** head:true + count:'exact' の集計クエリ用（getCategoryUsage 等）。 */
+  count?: number | null;
 }
 
 export interface RecordedCall {

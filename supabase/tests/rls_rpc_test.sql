@@ -1,6 +1,6 @@
 -- pgTAP: RLS の cross-household 分離 + per-member 書込強制 + confirm_balance_checkpoint RPC
 begin;
-select plan(118);
+select plan(125);
 
 -- ============================================================
 -- Block A: ゆるり @ main として認証
@@ -1055,6 +1055,86 @@ select is(
   (select count(*)::int from public.subscriptions where name = 'ShiyowoSub'),
   1,
   '相手のサブスクは残っている'
+);
+
+-- ============================================================
+-- Block M: カテゴリの削除（#75）
+-- ============================================================
+-- 削除できるのは「システムでもデフォルトでもない」ユーザー追加カテゴリだけ。
+-- デフォルト（seed）と残高調整（system）はアーカイブのみ。
+-- 取引で使われているものは FK restrict で別途止まる。
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","household_id":"main","member_id":"yururi"}',
+  true
+);
+
+-- デフォルトカテゴリ（食費）は削除できない（ポリシーで弾かれ 0 行・エラーにはならない）
+delete from public.categories where kind = 'expense' and name = '食費';
+select is(
+  (select count(*)::int from public.categories where kind = 'expense' and name = '食費'),
+  1,
+  'デフォルトカテゴリ（食費）は削除できない'
+);
+
+-- **「サブスク」は消させない**（settle_subscription が name で依存する）
+delete from public.categories where kind = 'expense' and name = 'サブスク';
+select is(
+  (select count(*)::int from public.categories where kind = 'expense' and name = 'サブスク'),
+  1,
+  '「サブスク」カテゴリは削除できない（精算が依存する）'
+);
+
+-- 残高調整（system）も削除できない
+delete from public.categories where name = '残高調整';
+select is(
+  (select count(*)::int from public.categories where name = '残高調整'),
+  1,
+  '残高調整（system）は削除できない'
+);
+
+-- ユーザー追加カテゴリ（未使用）は削除できる
+insert into public.categories (household_id, kind, name, icon)
+  values ('main', 'expense', 'カラオケ', 'mic');
+delete from public.categories where name = 'カラオケ';
+select is(
+  (select count(*)::int from public.categories where name = 'カラオケ'),
+  0,
+  'ユーザー追加カテゴリ（未使用）は削除できる'
+);
+
+-- **update→delete の 2 段階迂回でもデフォルトは消せない**（トリガで is_default が不変）。
+-- これが無いと、update で is_default を false にしてから delete でき、
+-- 削除ポリシーの is_default=false 条件をすり抜けて「サブスク」を消せてしまう（精算が PT404 で壊れる）。
+update public.categories set is_default = false where kind = 'expense' and name = 'サブスク';
+select is(
+  (select is_default from public.categories where kind = 'expense' and name = 'サブスク'),
+  true,
+  'is_default はユーザーが書き換えられない（トリガで不変）'
+);
+delete from public.categories where kind = 'expense' and name = 'サブスク';
+-- **kind='expense' で数える。** Block D が income の「サブスク」も作っているので、
+-- kind を指定しないと 2 件になり、削除が防げているのに誤検知する。
+select is(
+  (select count(*)::int from public.categories where kind = 'expense' and name = 'サブスク'),
+  1,
+  'update→delete の迂回でもサブスクは消せない'
+);
+
+-- 取引で使われているユーザー追加カテゴリは FK restrict で削除できない
+insert into public.categories (household_id, kind, name, icon)
+  values ('main', 'expense', '使用中', 'label');
+insert into public.transactions
+  (household_id, owner_member_id, type, amount, category_id, occurred_on)
+  values ('main', 'yururi', 'expense', 500,
+    (select id from public.categories where name = '使用中'), public.jst_today());
+select throws_ok(
+  $$ delete from public.categories where name = '使用中' $$,
+  '23503',
+  null,
+  '取引で使われているカテゴリは FK restrict で削除できない'
 );
 
 select * from finish();

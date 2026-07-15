@@ -1,32 +1,37 @@
 import { useState } from 'react';
 import { Button, Icon, Input, SegmentedControl } from '../../components/ui';
 import { validateCategoryForm } from '../../lib/ledger/schema';
-import { userCategories } from '../../lib/ledger/categories';
+import { isDeletable, userCategories } from '../../lib/ledger/categories';
 import type { Category, TxnType } from '../../lib/ledger/types';
 import {
   useCategories,
   useCreateCategory,
   useArchiveCategory,
   useUnarchiveCategory,
+  useDeleteCategory,
 } from './hooks';
+import { DeleteCategoryDialog } from './DeleteCategoryDialog';
 
 const KIND_OPTIONS = [
   { value: 'expense' as const, label: '支出' },
   { value: 'income' as const, label: '収入' },
 ];
 
-/** カテゴリの追加とソフトアーカイブを行う管理パネル。 */
+/** カテゴリの追加・アーカイブ・削除を行う管理パネル。 */
 export function CategoryManager() {
   const { data: categories = [] } = useCategories();
   const createCategory = useCreateCategory();
   const archiveCategory = useArchiveCategory();
   const unarchiveCategory = useUnarchiveCategory();
+  const deleteCategory = useDeleteCategory();
 
   const [kind, setKind] = useState<TxnType>('expense');
   const [name, setName] = useState('');
   const [icon, setIcon] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // 削除確認ダイアログの対象（ユーザー追加カテゴリのみ）
+  const [deleting, setDeleting] = useState<Category | null>(null);
 
   const userCats = userCategories(categories);
   const active = userCats.filter((c) => !c.is_archived);
@@ -45,6 +50,25 @@ export function CategoryManager() {
     setActionError(null);
     unarchiveCategory.mutate(id, {
       onError: () => setActionError('復元に失敗しました。再度お試しください。'),
+    });
+  }
+
+  function confirmDelete() {
+    if (!deleting) return;
+    setActionError(null);
+    deleteCategory.mutate(deleting.id, {
+      onSuccess: () => setDeleting(null),
+      onError: () => setActionError('削除に失敗しました。再度お試しください。'),
+    });
+  }
+
+  // 削除ダイアログで「使われているのでアーカイブ」を選んだとき
+  function archiveFromDialog() {
+    if (!deleting) return;
+    setActionError(null);
+    archiveCategory.mutate(deleting.id, {
+      onSuccess: () => setDeleting(null),
+      onError: () => setActionError('アーカイブに失敗しました。再度お試しください。'),
     });
   }
 
@@ -101,21 +125,17 @@ export function CategoryManager() {
         </p>
       )}
 
-      <CategoryGroup
+      <ActiveCategoryGroup
         title="支出カテゴリ"
         categories={expense}
-        actionIcon="archive"
-        actionVerb="アーカイブ"
-        actionHover="hover:bg-error/10 hover:text-error"
-        onAction={archive}
+        onArchive={archive}
+        onDelete={setDeleting}
       />
-      <CategoryGroup
+      <ActiveCategoryGroup
         title="収入カテゴリ"
         categories={income}
-        actionIcon="archive"
-        actionVerb="アーカイブ"
-        actionHover="hover:bg-error/10 hover:text-error"
-        onAction={archive}
+        onArchive={archive}
+        onDelete={setDeleting}
       />
       {archived.length > 0 && (
         <CategoryGroup
@@ -127,7 +147,76 @@ export function CategoryManager() {
           onAction={restore}
         />
       )}
+
+      <DeleteCategoryDialog
+        category={deleting}
+        deleting={deleteCategory.isPending}
+        archiving={archiveCategory.isPending}
+        onCancel={() => setDeleting(null)}
+        onDelete={confirmDelete}
+        onArchive={archiveFromDialog}
+      />
     </div>
+  );
+}
+
+/**
+ * アクティブなカテゴリのグループ。
+ * ユーザー追加（isDeletable）は削除ボタン、デフォルト/システムはアーカイブボタンを出す。
+ */
+function ActiveCategoryGroup({
+  title,
+  categories,
+  onArchive,
+  onDelete,
+}: {
+  title: string;
+  categories: Category[];
+  onArchive: (id: string) => void;
+  onDelete: (category: Category) => void;
+}) {
+  return (
+    <section className="flex flex-col gap-3">
+      <h4 className="font-label-sm text-label-sm uppercase tracking-[0.2em] text-custom-text/60">
+        {title}
+      </h4>
+      {categories.length === 0 ? (
+        <p className="font-label-sm text-label-sm text-custom-text/40">まだありません</p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {categories.map((c) => (
+            <li
+              key={c.id}
+              className="flex items-center justify-between rounded-2xl bg-surface-container-high px-4 py-3"
+            >
+              <span className="flex items-center gap-3">
+                <Icon name={c.icon ?? 'label'} size={20} className="text-custom-accent" />
+                <span className="font-body-md text-body-md text-custom-text">{c.name}</span>
+              </span>
+              {isDeletable(c) ? (
+                <button
+                  type="button"
+                  aria-label={`${c.name} を削除`}
+                  onClick={() => onDelete(c)}
+                  className="flex h-9 w-9 items-center justify-center rounded-full text-custom-text/40 transition hover:bg-error/10 hover:text-error"
+                >
+                  <Icon name="delete" size={20} />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  aria-label={`${c.name} をアーカイブ`}
+                  onClick={() => onArchive(c.id)}
+                  className="flex h-9 w-9 items-center justify-center rounded-full text-custom-text/40 transition hover:bg-error/10 hover:text-error"
+                >
+                  <Icon name="archive" size={20} />
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

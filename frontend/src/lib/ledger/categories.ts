@@ -22,3 +22,15 @@ export function selectableCategories(categories: Category[], kind: TxnType): Cat
 export function userCategories(categories: Category[]): Category[] {
   return categories.filter((c) => !c.is_system);
 }
+
+/**
+ * そのカテゴリに「削除」を出してよいか（#75）。
+ *
+ * システム（残高調整）とデフォルト（seed）は削除させない＝アーカイブのみ。
+ * ユーザーが後から足したものだけ削除できる。
+ * これは DB の削除ポリシー（is_system = false and is_default = false）と一致させる。
+ * 実際に消せるかは取引で使われているか（FK restrict）にもよるが、それは削除実行時の関門。
+ */
+export function isDeletable(category: Category): boolean {
+  return !category.is_system && !category.is_default;
+}

@@ -102,6 +102,7 @@ export type Database = {
           icon: string | null
           id: string
           is_archived: boolean
+          is_default: boolean
           is_system: boolean
           kind: Database["public"]["Enums"]["category_kind"]
           name: string
@@ -114,6 +115,7 @@ export type Database = {
           icon?: string | null
           id?: string
           is_archived?: boolean
+          is_default?: boolean
           is_system?: boolean
           kind: Database["public"]["Enums"]["category_kind"]
           name: string
@@ -126,6 +128,7 @@ export type Database = {
           icon?: string | null
           id?: string
           is_archived?: boolean
+          is_default?: boolean
           is_system?: boolean
           kind?: Database["public"]["Enums"]["category_kind"]
           name?: string

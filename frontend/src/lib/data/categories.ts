@@ -65,3 +65,39 @@ export async function unarchiveCategory(
     .eq('is_system', false);
   if (error) throw new Error(`カテゴリの復元に失敗しました: ${error.message}`);
 }
+
+/**
+ * カテゴリを削除する（#75）。
+ *
+ * システム・デフォルトは削除させない（RLS でも `is_system=false and is_default=false` を要求）。
+ * ここでも同じ条件を明示して、UI の判定と DB の関門を揃える。
+ * 取引で使われているカテゴリは FK（on delete restrict）で DB が弾く＝エラーになる。
+ * 呼び出し側は事前に getCategoryUsage で使用数を見て、使用中なら削除させない。
+ */
+export async function deleteCategory(client: SupabaseClient<Database>, id: string): Promise<void> {
+  const { error } = await client
+    .from('categories')
+    .delete()
+    .eq('id', id)
+    .eq('is_system', false)
+    .eq('is_default', false);
+  if (error) throw new Error(`カテゴリの削除に失敗しました: ${error.message}`);
+}
+
+/**
+ * そのカテゴリが取引で何件使われているか（#75）。
+ *
+ * 削除ダイアログで見せて、使用中（>0）なら削除ではなくアーカイブに誘導する。
+ * 「消したら家計簿の履歴が未分類になる」驚きを、消す前に防ぐ。
+ */
+export async function getCategoryUsage(
+  client: SupabaseClient<Database>,
+  id: string,
+): Promise<number> {
+  const { count, error } = await client
+    .from('transactions')
+    .select('id', { count: 'exact', head: true })
+    .eq('category_id', id);
+  if (error) throw new Error(`カテゴリの使用状況の取得に失敗しました: ${error.message}`);
+  return count ?? 0;
+}

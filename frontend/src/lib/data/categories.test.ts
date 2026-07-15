@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { listCategories, createCategory, archiveCategory, unarchiveCategory } from './categories';
+import {
+  listCategories,
+  createCategory,
+  archiveCategory,
+  unarchiveCategory,
+  deleteCategory,
+  getCategoryUsage,
+} from './categories';
 import { makeSupabaseMock, argsOf } from '../../test/supabaseMock';
 import type { Category, CategoryDraft } from '../ledger/types';
 
@@ -12,6 +19,7 @@ function cat(over: Partial<Category> = {}): Category {
     icon: 'restaurant',
     sort_order: 0,
     is_system: false,
+    is_default: false,
     is_archived: false,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
@@ -96,5 +104,45 @@ describe('unarchiveCategory', () => {
   it('error は投げる', async () => {
     const { client } = makeSupabaseMock({ categories: { data: null, error: { message: 'no' } } });
     await expect(unarchiveCategory(client, 'c1')).rejects.toThrow(/no/);
+  });
+});
+
+describe('deleteCategory', () => {
+  it('id・非system・非default を条件に削除する', async () => {
+    const { client, queries } = makeSupabaseMock({ categories: { data: null, error: null } });
+    await deleteCategory(client, 'c1');
+    expect(queries.categories.calls.some((c) => c.method === 'delete')).toBe(true);
+    // UI の判定（isDeletable）と DB の関門を揃える: system/default は消せない
+    const eqCalls = queries.categories.calls.filter((c) => c.method === 'eq').map((c) => c.args);
+    expect(eqCalls).toEqual([
+      ['id', 'c1'],
+      ['is_system', false],
+      ['is_default', false],
+    ]);
+  });
+
+  it('error は投げる（FK restrict 等）', async () => {
+    const { client } = makeSupabaseMock({ categories: { data: null, error: { message: 'fk' } } });
+    await expect(deleteCategory(client, 'c1')).rejects.toThrow(/fk/);
+  });
+});
+
+describe('getCategoryUsage', () => {
+  it('そのカテゴリを使う取引の件数を返す', async () => {
+    const { client, queries } = makeSupabaseMock({
+      transactions: { data: null, count: 3, error: null },
+    });
+    expect(await getCategoryUsage(client, 'c1')).toBe(3);
+    expect(argsOf(queries.transactions, 'eq')).toEqual(['category_id', 'c1']);
+  });
+
+  it('count が null なら 0', async () => {
+    const { client } = makeSupabaseMock({ transactions: { data: null, count: null, error: null } });
+    expect(await getCategoryUsage(client, 'c1')).toBe(0);
+  });
+
+  it('error は投げる', async () => {
+    const { client } = makeSupabaseMock({ transactions: { data: null, error: { message: 'x' } } });
+    await expect(getCategoryUsage(client, 'c1')).rejects.toThrow(/x/);
   });
 });

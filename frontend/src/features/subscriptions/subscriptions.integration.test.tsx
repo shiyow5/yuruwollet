@@ -188,7 +188,7 @@ describe('SubscriptionsPage 統合', () => {
   it('自分/相手タブと FAB、合計・件数を表示', async () => {
     state.subs = [subRow()];
     renderPage();
-    expect(await screen.findByRole('tab', { name: 'ゆるり' })).toBeInTheDocument();
+    expect(await screen.findByRole('radio', { name: 'ゆるり' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'サブスクを追加' })).toBeInTheDocument();
     expect(await screen.findByText('1件')).toBeInTheDocument();
     // 合計 StatTile 内に ¥1,490（一覧の項目にも同額が出るためスコープする）
@@ -307,7 +307,7 @@ describe('SubscriptionsPage 統合', () => {
 
   it('相手ビューでは FAB を出さず相手のデータを取得', async () => {
     renderPage();
-    fireEvent.click(await screen.findByRole('tab', { name: 'しよを' }));
+    fireEvent.click(await screen.findByRole('radio', { name: 'しよを' }));
     await waitFor(() =>
       expect(screen.queryByRole('button', { name: 'サブスクを追加' })).toBeNull(),
     );

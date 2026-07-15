@@ -230,7 +230,7 @@ describe('HomePage ダッシュボード統合', () => {
   it('相手タブに切り替えると相手の残高になる', async () => {
     renderHome();
     expect(await screen.findByText('¥342,500')).toBeInTheDocument();
-    fireEvent.click(await screen.findByRole('tab', { name: 'しよを' }));
+    fireEvent.click(await screen.findByRole('radio', { name: 'しよを' }));
     expect(await screen.findByText('¥120,000')).toBeInTheDocument();
     // 相手の今月支出は 0（サマリなし）
     await waitFor(() => expect(screen.getByText('おかえり、ゆるり さん')).toBeInTheDocument());
@@ -242,8 +242,8 @@ describe('HomePage ダッシュボード統合', () => {
     renderHome();
     fireEvent.click(await screen.findByRole('button', { name: '支出' }));
     const dialog = await screen.findByRole('dialog', { name: '収支を追加' });
-    expect(within(dialog).getByRole('tab', { name: '支出' })).toHaveAttribute(
-      'aria-selected',
+    expect(within(dialog).getByRole('radio', { name: '支出' })).toHaveAttribute(
+      'aria-checked',
       'true',
     );
     expect(screen.getByTestId('pathname')).toHaveTextContent('/');
@@ -253,8 +253,8 @@ describe('HomePage ダッシュボード統合', () => {
     renderHome();
     fireEvent.click(await screen.findByRole('button', { name: '収入' }));
     const dialog = await screen.findByRole('dialog', { name: '収支を追加' });
-    expect(within(dialog).getByRole('tab', { name: '収入' })).toHaveAttribute(
-      'aria-selected',
+    expect(within(dialog).getByRole('radio', { name: '収入' })).toHaveAttribute(
+      'aria-checked',
       'true',
     );
   });
@@ -299,7 +299,7 @@ describe('HomePage ダッシュボード統合', () => {
     renderHome();
     expect(await screen.findByRole('button', { name: '支出' })).toBeInTheDocument();
     // タブはプロフィール取得後に出る（残高ボタンは session から同期で出るため待ちが要る）
-    fireEvent.click(await screen.findByRole('tab', { name: 'しよを' }));
+    fireEvent.click(await screen.findByRole('radio', { name: 'しよを' }));
     await waitFor(() => expect(screen.queryByRole('button', { name: '支出' })).toBeNull());
     expect(screen.queryByRole('button', { name: '収入' })).toBeNull();
   });
@@ -351,7 +351,7 @@ describe('HomePage ダッシュボード統合', () => {
   it('相手タブに切り替えると相手の比較になる', async () => {
     renderHome();
     await screen.findByRole('region', { name: '支出の比較' });
-    fireEvent.click(await screen.findByRole('tab', { name: 'しよを' }));
+    fireEvent.click(await screen.findByRole('radio', { name: 'しよを' }));
     // 相手（しよを）は今月も先月もサマリ無し → 比較できません
     await waitFor(() =>
       expect(

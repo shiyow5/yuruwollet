@@ -139,7 +139,7 @@ describe('WishlistBoard 統合', () => {
     renderBoard();
     await screen.findByText('コーヒーメーカー');
 
-    fireEvent.click(screen.getByRole('tab', { name: '行きたい場所' }));
+    fireEvent.click(screen.getByRole('radio', { name: '行きたい場所' }));
 
     expect(await screen.findByText('海辺のカフェ')).toBeInTheDocument();
     expect(screen.queryByText('コーヒーメーカー')).toBeNull();
@@ -156,7 +156,7 @@ describe('WishlistBoard 統合', () => {
     renderBoard();
     expect(await screen.findByText('未購入')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('tab', { name: '行きたい場所' }));
+    fireEvent.click(screen.getByRole('radio', { name: '行きたい場所' }));
     expect(await screen.findByText('未訪問')).toBeInTheDocument();
   });
 
@@ -211,7 +211,7 @@ describe('WishlistBoard 統合', () => {
     await waitFor(() => expect(screen.queryByText('コーヒーメーカー')).toBeNull());
 
     // 思い出タブには残っている（購入済み）
-    fireEvent.click(screen.getByRole('tab', { name: '思い出' }));
+    fireEvent.click(screen.getByRole('radio', { name: '思い出' }));
     const card = (await screen.findByText('コーヒーメーカー')).closest('li')!;
     expect(within(card).getByText('購入済み')).toBeInTheDocument();
     expect(within(card).getByRole('button', { name: 'リストに戻す' })).toBeInTheDocument();
@@ -220,12 +220,12 @@ describe('WishlistBoard 統合', () => {
   it('思い出から現役リストへ戻せる', async () => {
     state.rows = [item({ status: 'done', archived: true })];
     renderBoard();
-    fireEvent.click(screen.getByRole('tab', { name: '思い出' }));
+    fireEvent.click(screen.getByRole('radio', { name: '思い出' }));
     fireEvent.click(await screen.findByRole('button', { name: 'リストに戻す' }));
 
     await waitFor(() => expect(screen.queryByText('コーヒーメーカー')).toBeNull());
 
-    fireEvent.click(screen.getByRole('tab', { name: 'ほしい物' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'ほしい物' }));
     expect(await screen.findByText('コーヒーメーカー')).toBeInTheDocument();
   });
 

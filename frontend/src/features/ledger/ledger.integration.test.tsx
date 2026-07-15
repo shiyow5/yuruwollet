@@ -208,8 +208,8 @@ describe('LedgerPage 統合', () => {
 
   it('自分表示では自分/相手タブと追加 FAB が出る', async () => {
     renderLedger();
-    expect(await screen.findByRole('tab', { name: 'ゆるり' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'しよを' })).toBeInTheDocument();
+    expect(await screen.findByRole('radio', { name: 'ゆるり' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'しよを' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '収支を追加' })).toBeInTheDocument();
   });
 
@@ -322,7 +322,7 @@ describe('LedgerPage 統合', () => {
     renderLedger();
     expect(await screen.findByText('ゆるりの記録')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'しよを' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'しよを' }));
     // 書込導線は消える
     await waitFor(() => expect(screen.queryByRole('button', { name: '収支を追加' })).toBeNull());
     // しよを のデータ（空）に差し替わり、ゆるりの記録は消える
@@ -403,8 +403,8 @@ describe('LedgerPage 統合', () => {
     state.rows = [row({ id: 'y1', owner_member_id: 'yururi', memo: 'ゆるり分' })];
     renderLedger(authedSession, '/ledger?member=shiyowo');
     // 相手(しよを)ビューなので FAB は出ず、自分の記録も出ない
-    expect(await screen.findByRole('tab', { name: 'しよを' })).toHaveAttribute(
-      'aria-selected',
+    expect(await screen.findByRole('radio', { name: 'しよを' })).toHaveAttribute(
+      'aria-checked',
       'true',
     );
     await waitFor(() => expect(screen.queryByRole('button', { name: '収支を追加' })).toBeNull());
@@ -462,11 +462,11 @@ describe('LedgerPage 統合', () => {
     fireEvent.click(await screen.findByRole('button', { name: '収支を追加' }));
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('tab', { name: 'しよを' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'しよを' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
     // 自分タブへ戻しても勝手に開き直さない
-    fireEvent.click(screen.getByRole('tab', { name: 'ゆるり' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'ゆるり' }));
     await waitFor(() =>
       expect(screen.getByRole('button', { name: '収支を追加' })).toBeInTheDocument(),
     );

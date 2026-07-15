@@ -39,10 +39,13 @@ FORBIDDEN_PATTERNS = [
 def precache_urls(sw_source: str) -> list[str]:
     """sw.js の precache マニフェスト（{url:"...",revision:...} の配列）から URL を抜き出す。
 
-    workbox のランタイム内にも "index.html" 等の文字列が出るため、**url+revision の対**だけを
-    見て誤検知を避ける（precacheAndRoute に渡る実エントリはこの形をしている）。
+    workbox のランタイム内にも "index.html" 等の文字列が出るため、**url が revision と隣接する対**
+    だけを見て誤検知を避ける（precacheAndRoute に渡る実エントリはこの形をしている）。
+    キー順は workbox のバージョンで変わり得るので **両順**（url→revision / revision→url）を拾う。
     """
-    return re.findall(r'url:\s*"([^"]+)"\s*,\s*revision:', sw_source)
+    return re.findall(r'url:\s*"([^"]+)"\s*,\s*revision:', sw_source) + re.findall(
+        r'revision:[^,{}]*,\s*url:\s*"([^"]+)"', sw_source
+    )
 
 
 def main() -> None:
@@ -71,8 +74,17 @@ def main() -> None:
             sys.exit(f'sw.js の precache に {label}({ext}) が 1 つもありません（シェルが precache されていない）')
 
     # 3. NavigationRoute を登録していないこと（navigateFallback: null が効いている）。
-    #    navigateFallback を設定すると sw-template は createHandlerBoundToURL("index.html") を出す。
-    if re.search(r'createHandlerBoundToURL\(\s*["\']', source):
+    #
+    #    navigateFallback を設定すると workbox は NavigationRoute を登録し、
+    #    createHandlerBoundToURL(navigateFallback) を **呼び出す**。**文字列リテラルで探してはいけない**:
+    #    minify 後は URL が変数へ巻き上げられ `createHandlerBoundToURL("index.html")` ではなく
+    #    `x().createHandlerBoundToURL(N)` になる（NavigationRoute というクラス名も mangle で消える）。
+    #    実測（workbox-build 7.4.1 / inlineWorkboxRuntime:true / minify）:
+    #      navigateFallback:null  → `createHandlerBoundToURL(` は 1回（メソッド定義のみ）/ `.createHandlerBoundToURL(` は 0回
+    #      navigateFallback:設定  → `createHandlerBoundToURL(` は 2回（定義 + 呼出）/ `.createHandlerBoundToURL(` は 1回
+    #    メソッド定義（省略記法 `createHandlerBoundToURL(t){`）には先頭ドットが付かないので、
+    #    **呼び出し（先頭ドット付き）**か、**定義以外の 2 回目以降の出現**を NavigationRoute の証拠とする。
+    if re.search(r'\.createHandlerBoundToURL\(', source) or len(re.findall(r'createHandlerBoundToURL\(', source)) > 1:
         sys.exit('sw.js が NavigationRoute を登録しています（navigateFallback が有効 = Access のログインを食う）')
 
     # 4. index.html が改ざんされていないこと。
@@ -89,11 +101,23 @@ def main() -> None:
         sys.exit('index.html にインライン SW 登録が含まれています（CSP でブロックされる。injectRegister:null にする）')
 
     # 5. 手書き site.webmanifest が出力に残っていること。
-    if not (dist / 'site.webmanifest').is_file():
-        sys.exit(f'{dist / "site.webmanifest"} がありません（手書き manifest が出力されていない）')
+    manifest = dist / 'site.webmanifest'
+    if not manifest.is_file():
+        sys.exit(f'{manifest} がありません（手書き manifest が出力されていない）')
+
+    # 6. **installable の前提条件**（#55 の目的）を成果物レベルで守る。
+    #    完全な Lighthouse PWA 監査は Access 背後のため手動だが、静的に確認できる前提が退行したら止める
+    #    （manifest のアイコンや SW の fetch ハンドラが将来外れて installable でなくなるのを黙って通さない）。
+    manifest_text = manifest.read_text(errors='ignore')
+    for size in ('192x192', '512x512'):
+        if size not in manifest_text:
+            sys.exit(f'site.webmanifest に {size} アイコンがありません（Android の installable 条件）')
+    #    fetch ハンドラの無い SW では Chrome は install バナー（beforeinstallprompt）を出さない。
+    if 'fetch' not in source:
+        sys.exit('sw.js に fetch ハンドラがありません（installable にならない）')
 
     print(f'sw.js OK: precache {len(urls)} エントリ（機微データ・遷移フォールバック無し / '
-          f'NavigationRoute 無し / index.html の manifest リンク健在）')
+          f'NavigationRoute 無し / index.html の manifest リンク健在 / installable 前提あり）')
 
 
 if __name__ == '__main__':

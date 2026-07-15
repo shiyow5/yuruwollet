@@ -17,9 +17,10 @@ describe('pwaOptions (#55 PWA service worker)', () => {
   });
 
   it('登録スクリプトをインライン注入しない（CSP script-src self を壊さない）', () => {
-    // injectRegister が 'inline'/'auto' だと index.html にインライン <script> が差し込まれる。
-    // 本番 CSP は script-src 'self'（unsafe-inline 無し）なので必ずブロックされ、SW が登録されない。
-    // main.tsx から virtual:pwa-register 経由で登録する（バンドル内 = 外部 module script = self）。
+    // injectRegister:'inline' は index.html にインライン <script> を差し込み、本番 CSP の
+    // script-src 'self'（unsafe-inline 無し）に弾かれて SW が登録されない。
+    // null にして main.tsx が import する virtual:pwa-register から登録する（外部 module script = self）。
+    // （'auto' は virtual module を import 済みなら null 相当だが、二重登録回避のため明示的に null。）
     expect(pwaOptions.injectRegister).toBeNull();
   });
 

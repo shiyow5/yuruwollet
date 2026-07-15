@@ -26,8 +26,11 @@ export const FORBIDDEN_PRECACHE_TOKENS = ['html', 'json', 'webmanifest', 'api'] 
 export const pwaOptions: Partial<VitePWAOptions> = {
   // 新しい SW を即座に有効化して「消えたチャンクの 404」を避ける（#12 の vite:preloadError と補完）。
   registerType: 'autoUpdate',
-  // **インライン登録スクリプトを使わない。** CSP は script-src 'self'（unsafe-inline 無し）なので、
-  // index.html に差し込まれるインライン登録は必ずブロックされる。main.tsx で virtual module から登録する。
+  // **登録はインライン script で注入しない。** injectRegister:'inline' は index.html に
+  // インライン <script> を差し込み、CSP script-src 'self'（unsafe-inline 無し）に弾かれる。
+  // null にして main.tsx が import する virtual:pwa-register から登録する（バンドル内 = 外部
+  // module script = self）。（'auto' は virtual module を import 済みなら null 相当に解決されるが、
+  // 二重登録を避けるため明示的に null にする。外部 registerSW.js を出す 'script' も使わない。）
   injectRegister: null,
   // **手書きの site.webmanifest を使い続ける。** プラグインに生成させると
   // crossorigin=use-credentials の無い <link rel=manifest> を差し込み、Access 下で manifest が

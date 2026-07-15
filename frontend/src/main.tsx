@@ -22,8 +22,10 @@ window.addEventListener('vite:preloadError', (event) => {
 
 // service worker を登録する（#55）。これで Chrome が「アプリをインストール」バナー
 // （beforeinstallprompt）を出せるようになる。dev では pwa-config の devOptions.enabled=false
-// のため registerSW は no-op。registerType:'autoUpdate' なので、新しい SW が有効化されたら
-// 既定で window.location.reload() され、消えたチャンクの 404 も避けられる（#12 と補完）。
+// のため registerSW は no-op。registerType:'autoUpdate' の自動リロードは **更新時のみ**
+// （既存 SW を置き換える activated で event.isUpdate/isExternal のときだけ location.reload）。
+// 初回インストールではリロードしないので、初回訪問がリロードでちらつくことはない。
+// 更新時のリロードで消えたチャンクの 404 も避けられる（#12 の vite:preloadError と補完）。
 // **キャッシュ戦略は pwa-config.ts で厳格に制限**（/api の JWT・Supabase の家計データは非キャッシュ、
 // トップレベル遷移は Access のためネットワークへ）。
 registerSW({ immediate: true });

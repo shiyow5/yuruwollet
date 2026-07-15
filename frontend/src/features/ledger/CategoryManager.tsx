@@ -11,6 +11,7 @@ import {
   useDeleteCategory,
 } from './hooks';
 import { DeleteCategoryDialog } from './DeleteCategoryDialog';
+import { IconPicker } from './IconPicker';
 
 const KIND_OPTIONS = [
   { value: 'expense' as const, label: '支出' },
@@ -27,7 +28,8 @@ export function CategoryManager() {
 
   const [kind, setKind] = useState<TxnType>('expense');
   const [name, setName] = useState('');
-  const [icon, setIcon] = useState('');
+  // 既定は 'label'（パレット内の汎用アイコン）。ピッカーで選び直せる。
+  const [icon, setIcon] = useState('label');
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   // 削除確認ダイアログの対象（ユーザー追加カテゴリのみ）
@@ -83,7 +85,7 @@ export function CategoryManager() {
     createCategory.mutate(result.value, {
       onSuccess: () => {
         setName('');
-        setIcon('');
+        setIcon('label');
       },
       onError: () => {
         setError('追加できませんでした。同じ名前のカテゴリが既にあるかもしれません。');
@@ -103,12 +105,7 @@ export function CategoryManager() {
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
-        <Input
-          label="アイコン（Material Symbols 名・任意）"
-          placeholder="restaurant"
-          value={icon}
-          onChange={(e) => setIcon(e.target.value)}
-        />
+        <IconPicker value={icon} onChange={setIcon} />
         {error && (
           <p role="alert" className="font-label-sm text-label-sm text-error">
             {error}

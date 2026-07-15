@@ -152,13 +152,15 @@ describe('StatTile / Card / Icon / IconTile / EmptyState / Skeleton', () => {
     render(<Card>中身</Card>);
     expect(screen.getByText('中身')).toBeInTheDocument();
   });
-  it('Icon はシンボル名を描画', () => {
-    render(<Icon name="restaurant" filled />);
-    expect(screen.getByText('restaurant')).toBeInTheDocument();
+  it('Icon はアイコン名を data-icon に持つ（描画はコードポイント glyph）', () => {
+    // #9: ligature ではなくコードポイントで描くので、テキストは glyph 文字になる。
+    // 名前は data-icon で引く。
+    const { container } = render(<Icon name="restaurant" filled />);
+    expect(container.querySelector('[data-icon="restaurant"]')).toBeInTheDocument();
   });
   it('IconTile はアイコンを内包', () => {
-    render(<IconTile name="home" />);
-    expect(screen.getByText('home')).toBeInTheDocument();
+    const { container } = render(<IconTile name="home" />);
+    expect(container.querySelector('[data-icon="home"]')).toBeInTheDocument();
   });
   it('EmptyState は title/description', () => {
     render(<EmptyState title="まだありません" description="追加してね" />);

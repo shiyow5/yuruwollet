@@ -37,6 +37,10 @@ seed: ## seed を投入
 gen-types: ## Supabase から TS 型を生成
 	npx supabase gen types typescript --local > frontend/src/lib/database.types.ts
 
+.PHONY: subset-icons
+subset-icons: ## アイコンフォントをパレット(#9)だけにサブセット再生成
+	python3 scripts/subset_icons.py
+
 # ---- Quality --------------------------------------------------------------
 .PHONY: lint fmt fmt-check
 lint: ## lint (frontend + backend)

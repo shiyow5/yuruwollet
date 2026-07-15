@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { parseAmount } from '../format';
+import { isCategoryIcon } from '../icons/palette';
 import type { TransactionDraft, CategoryDraft } from './types';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -24,7 +25,13 @@ export const categoryDraftSchema = z.object({
     .trim()
     .min(1, 'カテゴリ名を入力してください')
     .max(20, 'カテゴリ名は20文字以内です'),
-  icon: z.string().trim().max(40).default('label'),
+  // アイコンはパレット（フォントにサブセットしたもの）からのみ。自由入力を許すと、
+  // フォントに無い名前が「文字列」で表示されてしまう（#9）。
+  icon: z
+    .string()
+    .trim()
+    .default('label')
+    .refine(isCategoryIcon, 'アイコンはパレットから選んでください'),
 });
 
 /** フォームの生入力（すべて文字列。UI から渡る） */

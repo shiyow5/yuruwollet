@@ -1,0 +1,137 @@
+{
+  "_comment": "アイコンの単一の真実。ここに載っているものだけを Material Symbols フォントにサブセットする（#9）。ui = アプリchrome用（ユーザーは選べない）。categories = カテゴリで選べるアイコン（グループ別）。scripts/subset_icons.py がこの和集合でフォントを作り、drift は palette.manifest.test.ts が検出する。新しいアイコンを使うときは、ここに足してから `make subset-icons`（または python3 scripts/subset_icons.py）で woff2 を再生成すること。",
+  "ui": [
+    "account_balance_wallet",
+    "add",
+    "archive",
+    "bar_chart",
+    "chevron_left",
+    "chevron_right",
+    "cloud_off",
+    "code",
+    "delete",
+    "donut_small",
+    "edit",
+    "favorite",
+    "help",
+    "home",
+    "inbox",
+    "insights",
+    "label",
+    "link",
+    "mic",
+    "payments",
+    "person",
+    "person_add",
+    "place",
+    "receipt_long",
+    "savings",
+    "send",
+    "sentiment_dissatisfied",
+    "subscriptions",
+    "sync_alt",
+    "unarchive"
+  ],
+  "categories": [
+    {
+      "group": "食事",
+      "icons": [
+        "restaurant",
+        "local_cafe",
+        "fastfood",
+        "ramen_dining",
+        "lunch_dining",
+        "bakery_dining",
+        "local_bar",
+        "cake",
+        "local_pizza",
+        "coffee"
+      ]
+    },
+    {
+      "group": "買い物",
+      "icons": ["shopping_cart", "shopping_bag", "storefront", "local_mall", "checkroom", "redeem"]
+    },
+    {
+      "group": "交通",
+      "icons": [
+        "directions_subway",
+        "directions_bus",
+        "directions_car",
+        "train",
+        "flight",
+        "local_taxi",
+        "directions_bike",
+        "local_gas_station"
+      ]
+    },
+    {
+      "group": "住まい・光熱",
+      "icons": [
+        "home",
+        "bolt",
+        "water_drop",
+        "local_fire_department",
+        "wifi",
+        "cleaning_services",
+        "chair",
+        "bed"
+      ]
+    },
+    {
+      "group": "健康・美容",
+      "icons": [
+        "medical_services",
+        "fitness_center",
+        "spa",
+        "medication",
+        "dentistry",
+        "content_cut",
+        "health_and_safety"
+      ]
+    },
+    {
+      "group": "娯楽・趣味",
+      "icons": [
+        "sports_esports",
+        "movie",
+        "music_note",
+        "sports_soccer",
+        "celebration",
+        "casino",
+        "palette",
+        "menu_book",
+        "photo_camera",
+        "mic",
+        "confirmation_number"
+      ]
+    },
+    {
+      "group": "学業・教育",
+      "icons": ["school", "science", "auto_stories", "draw"]
+    },
+    {
+      "group": "通信・サブスク",
+      "icons": ["subscriptions", "smartphone", "devices", "language", "cell_tower"]
+    },
+    {
+      "group": "収入・お金",
+      "icons": [
+        "work",
+        "payments",
+        "savings",
+        "account_balance_wallet",
+        "volunteer_activism",
+        "card_giftcard",
+        "currency_yen",
+        "paid",
+        "sell",
+        "request_quote"
+      ]
+    },
+    {
+      "group": "その他",
+      "icons": ["pets", "more_horiz", "label", "category", "star", "favorite", "handshake"]
+    }
+  ]
+}

@@ -31,11 +31,13 @@ function walk(dir: string): string[] {
  * ここでは icon を渡しうる書き方を広めに拾う:
  *   1. <Icon|IconTile ... name="x">
  *   2. （任意の識別子）icon [:=] 'x' / "x"     … icon= / actionIcon= / icon: / 既定値 icon='x'
- *   3. icon を含む行の `?? 'x'` フォールバック    … name={c.icon ?? 'label'} など
+ *   3. name={...} / icon={...} 式の中の三項・フォールバックの値
+ *        … icon={cond ? 'a' : 'b'} / name={c.icon ?? 'label'}（条件側の比較文字列は拾わない）
  * 関数が返すアイコン（genreIcon など）は静的に追えないので、別途 exercise する。
  */
 function usedIconNames(): Set<string> {
   const names = new Set<string>();
+  const LIT = /['"]([a-z][a-z0-9_]{2,})['"]/;
   for (const file of walk(srcRoot)) {
     const code = readFileSync(file, 'utf8');
     for (const m of code.matchAll(/<Icon(?:Tile)?\b[^>]*?\bname="([a-z0-9_]+)"/gs)) {
@@ -46,10 +48,11 @@ function usedIconNames(): Set<string> {
     )) {
       names.add(m[1]);
     }
-    for (const line of code.split('\n')) {
-      if (!/icon/i.test(line)) continue;
-      for (const m of line.matchAll(/\?\?\s*['"]([a-z][a-z0-9_]{2,})['"]/g)) {
-        names.add(m[1]);
+    // name={...} / icon={...} / *Icon={...} 式の中の三項・?? の「値」位置だけを拾う。
+    // 比較の条件側（=== 'archive' 等）は ? / : / ?? の後ろではないので拾わない。
+    for (const m of code.matchAll(/\b(?:name|[a-zA-Z]*[Ii]con)\s*=\s*\{([^{}]*)\}/g)) {
+      for (const vm of m[1].matchAll(new RegExp(`(?:[?:]|\\?\\?)\\s*${LIT.source}`, 'g'))) {
+        names.add(vm[1]);
       }
     }
   }

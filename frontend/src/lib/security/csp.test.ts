@@ -84,6 +84,11 @@ describe('buildCsp', () => {
   it('manifest は self（Access 配下で読む）', () => {
     expect(d['manifest-src']).toEqual(["'self'"]);
   });
+
+  // service worker（#55）は same-origin の /sw.js。外部 worker は許可しない。
+  it('worker-src は self（same-origin の SW だけ許可する）', () => {
+    expect(d['worker-src']).toEqual(["'self'"]);
+  });
 });
 
 // **CSP と avatar.ts の許可ホストがずれると、検証を通ったアバターが CSP で落ちる。**

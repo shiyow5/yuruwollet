@@ -23,7 +23,7 @@ describe('SubscriptionForm', () => {
 
   it('USD は月換算の概算をプレビューする', () => {
     render(<SubscriptionForm fxRate={fx} onSubmit={vi.fn()} />);
-    fireEvent.click(screen.getByRole('tab', { name: 'ドル' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'ドル' }));
     fireEvent.change(screen.getByPlaceholderText('9.99'), { target: { value: '10' } });
     // 10 USD × 150 = ¥1,500（概算）
     expect(screen.getByText(/月換算 ¥1,500（概算）/)).toBeInTheDocument();
@@ -32,7 +32,7 @@ describe('SubscriptionForm', () => {
   it('為替未取得(fxRate=null)では USD を登録できない', () => {
     const onSubmit = vi.fn();
     render(<SubscriptionForm fxRate={null} submitLabel="追加" onSubmit={onSubmit} />);
-    fireEvent.click(screen.getByRole('tab', { name: 'ドル' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'ドル' }));
     fireEvent.change(screen.getByPlaceholderText('Netflix など'), { target: { value: 'ChatGPT' } });
     fireEvent.change(screen.getByPlaceholderText('9.99'), { target: { value: '20' } });
     fireEvent.click(screen.getByRole('button', { name: '追加' }));
@@ -53,7 +53,7 @@ describe('SubscriptionForm', () => {
   // SegmentedControl の既定を自然幅にしたので、fullWidth を渡し忘れると静かに縮む。
   it('フォーム内のタブは幅いっぱい（fullWidth の付け忘れを落とす）', () => {
     render(<SubscriptionForm fxRate={fx} onSubmit={vi.fn()} />);
-    const lists = screen.getAllByRole('tablist');
+    const lists = screen.getAllByRole('radiogroup');
     expect(lists.length).toBeGreaterThanOrEqual(2); // 通貨 / 周期
     for (const list of lists) {
       expect(list).toHaveClass('w-full');

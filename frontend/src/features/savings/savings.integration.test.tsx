@@ -178,7 +178,7 @@ describe('MyPage 統合（目標貯金 + プロフィール）', () => {
     renderPage();
     await screen.findByText('今月の目標はまだありません'); // 自分は未設定
 
-    fireEvent.click(screen.getByRole('tab', { name: 'しよを' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'しよを' }));
 
     expect(
       await screen.findByRole('img', { name: /目標 ¥50,000 に対して ¥20,000（40%）/ }),
@@ -194,7 +194,7 @@ describe('MyPage 統合（目標貯金 + プロフィール）', () => {
     fireEvent.click(await screen.findByRole('button', { name: '目標を決める' }));
     fireEvent.change(screen.getByLabelText('目標額'), { target: { value: '30000' } });
 
-    fireEvent.click(screen.getByRole('tab', { name: 'しよを' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'しよを' }));
 
     await waitFor(() => expect(screen.queryByLabelText('目標額')).toBeNull());
     expect(screen.queryByRole('button', { name: '保存' })).toBeNull();

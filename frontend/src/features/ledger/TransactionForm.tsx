@@ -96,6 +96,7 @@ export function TransactionForm({
         options={TYPE_OPTIONS}
         value={values.type}
         onChange={handleTypeChange}
+        ariaLabel="収支の種別"
       />
 
       <div>

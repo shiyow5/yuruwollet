@@ -75,18 +75,59 @@ describe('SegmentedControl', () => {
     { value: 'place', label: '行きたい場所' },
   ] as const;
 
-  it('選択中に aria-selected、変更で onChange', () => {
+  // #18: 相互排他の値選択は tab ではなく radiogroup/radio が WAI-ARIA APG 上正しい
+  // （tab は対応する tabpanel を要求するが、ここには無い）。role/state/キーボードまで揃える。
+  it('radiogroup + radio で、選択中は aria-checked、クリックで onChange', () => {
     const onChange = vi.fn();
     render(<SegmentedControl options={[...options]} value="want" onChange={onChange} />);
-    expect(screen.getByRole('tab', { name: 'ほしい物' })).toHaveAttribute('aria-selected', 'true');
-    fireEvent.click(screen.getByRole('tab', { name: '行きたい場所' }));
+    expect(screen.getByRole('radiogroup')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'ほしい物' })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: '行きたい場所' })).toHaveAttribute(
+      'aria-checked',
+      'false',
+    );
+    fireEvent.click(screen.getByRole('radio', { name: '行きたい場所' }));
     expect(onChange).toHaveBeenCalledWith('place');
   });
+
   it('ariaLabel でグループにアクセシブルネームを付与', () => {
     render(
       <SegmentedControl options={[...options]} value="want" onChange={vi.fn()} ariaLabel="通貨" />,
     );
-    expect(screen.getByRole('tablist', { name: '通貨' })).toBeInTheDocument();
+    expect(screen.getByRole('radiogroup', { name: '通貨' })).toBeInTheDocument();
+  });
+
+  // radiogroup は 1 タブストップ（roving tabindex）。選択中の radio だけ Tab で到達でき、
+  // グループ内の移動は矢印キーで行う。
+  it('選択中の radio だけ tabbable（roving tabindex）', () => {
+    render(<SegmentedControl options={[...options]} value="want" onChange={vi.fn()} />);
+    expect(screen.getByRole('radio', { name: 'ほしい物' })).toHaveAttribute('tabindex', '0');
+    expect(screen.getByRole('radio', { name: '行きたい場所' })).toHaveAttribute('tabindex', '-1');
+  });
+
+  it('矢印キーで前後の値を選択し、端でラップする', () => {
+    const onChange = vi.fn();
+    render(<SegmentedControl options={[...options]} value="want" onChange={onChange} />);
+    const first = screen.getByRole('radio', { name: 'ほしい物' });
+    const second = screen.getByRole('radio', { name: '行きたい場所' });
+    fireEvent.keyDown(first, { key: 'ArrowRight' });
+    expect(onChange).toHaveBeenLastCalledWith('place'); // 0 → 1
+    fireEvent.keyDown(second, { key: 'ArrowRight' });
+    expect(onChange).toHaveBeenLastCalledWith('want'); // 1 → 0（ラップ）
+    fireEvent.keyDown(second, { key: 'ArrowLeft' });
+    expect(onChange).toHaveBeenLastCalledWith('want'); // 1 → 0
+    fireEvent.keyDown(first, { key: 'ArrowLeft' });
+    expect(onChange).toHaveBeenLastCalledWith('place'); // 0 → 1（ラップ）
+  });
+
+  it('Home/End で先頭/末尾を選択する', () => {
+    const onChange = vi.fn();
+    render(<SegmentedControl options={[...options]} value="place" onChange={onChange} />);
+    const second = screen.getByRole('radio', { name: '行きたい場所' });
+    fireEvent.keyDown(second, { key: 'Home' });
+    expect(onChange).toHaveBeenLastCalledWith('want');
+    fireEvent.keyDown(second, { key: 'End' });
+    expect(onChange).toHaveBeenLastCalledWith('place');
   });
 
   // inline-flex は `flex flex-col` の親に置かれると align-items:stretch で横いっぱいに
@@ -94,23 +135,23 @@ describe('SegmentedControl', () => {
   // 既定では伸ばさず、フォーム内だけ fullWidth で明示的に伸ばす。
   it('既定では親に引き伸ばされない', () => {
     render(<SegmentedControl options={[...options]} value="want" onChange={vi.fn()} />);
-    const list = screen.getByRole('tablist');
-    expect(list).toHaveClass('w-fit');
-    expect(list).not.toHaveClass('w-full');
+    const group = screen.getByRole('radiogroup');
+    expect(group).toHaveClass('w-fit');
+    expect(group).not.toHaveClass('w-full');
   });
 
   it('fullWidth で幅いっぱいになる（モーダル内のフォーム用）', () => {
     render(<SegmentedControl options={[...options]} value="want" onChange={vi.fn()} fullWidth />);
-    const list = screen.getByRole('tablist');
-    expect(list).toHaveClass('w-full');
-    expect(list).not.toHaveClass('w-fit');
+    const group = screen.getByRole('radiogroup');
+    expect(group).toHaveClass('w-full');
+    expect(group).not.toHaveClass('w-fit');
   });
 
   // w-fit は max-content なので、選択肢が多いと狭い画面で親からはみ出す
   // （ウィッシュリストの 3 択が 360px で溢れる）。上限は必ず親幅にする。
   it('親より広くならない', () => {
     render(<SegmentedControl options={[...options]} value="want" onChange={vi.fn()} />);
-    expect(screen.getByRole('tablist')).toHaveClass('max-w-full');
+    expect(screen.getByRole('radiogroup')).toHaveClass('max-w-full');
   });
 });
 

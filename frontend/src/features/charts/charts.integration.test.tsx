@@ -128,7 +128,7 @@ describe('ChartsBoard 統合', () => {
     renderBoard();
     await screen.findByText('サブスクはまだありません');
 
-    fireEvent.click(screen.getByRole('tab', { name: 'しよを' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'しよを' }));
 
     await waitFor(() =>
       expect(listSubscriptionSlices).toHaveBeenCalledWith(expect.anything(), 'shiyowo'),

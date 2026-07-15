@@ -73,11 +73,12 @@ test('設定へ TopAppBar から到達できる（未認証でも）', async ({ 
  * SegmentedControl の既定を自然幅 (w-fit) にしたので、選択肢が多いと
  * 狭い画面で親からはみ出しうる。ウィッシュリストの 3 択が最悪ケース。
  */
-test('タブが 360px 幅に収まる', async ({ page }) => {
+test('トグルが 360px 幅に収まる', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 740 });
   await page.goto('/wishlist');
 
-  const tabs = page.getByRole('tablist').first();
+  // #18 で role を radiogroup に是正（相互排他の値選択は tab ではない）。
+  const tabs = page.getByRole('radiogroup').first();
   await expect(tabs).toBeVisible();
 
   const box = await tabs.boundingBox();

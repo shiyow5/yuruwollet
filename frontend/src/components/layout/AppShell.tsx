@@ -1,10 +1,11 @@
 import { Suspense } from 'react';
-import { Outlet } from 'react-router';
+import { Outlet, useLocation } from 'react-router';
 import { TopAppBar } from './TopAppBar';
 import { BottomNav } from './BottomNav';
 import { BalanceWall } from '../../features/wall/BalanceWall';
 import { useSessionContext } from '../../lib/auth/session-context';
 import { Skeleton } from '../ui';
+import { RouteErrorBoundary } from './RouteErrorBoundary';
 
 /** ルートのチャンク読み込み中（#12 の遅延ロード）。ナビは出したままコンテンツだけ差し替える。 */
 function PageFallback() {
@@ -19,6 +20,9 @@ function PageFallback() {
 
 export function AppShell() {
   const session = useSessionContext();
+  // pathname を key にする。読み込み失敗で境界が開いても、別画面へ遷移すれば
+  // 境界が作り直されて自動で復帰する。
+  const { pathname } = useLocation();
 
   return (
     // ボトムナビの高さ + セーフエリアぶん、コンテンツの下に余白を空ける。
@@ -35,9 +39,11 @@ export function AppShell() {
         </div>
       )}
       <main className="mx-auto flex max-w-[1200px] flex-col gap-8 px-5 pb-16 pt-2 md:px-16">
-        <Suspense fallback={<PageFallback />}>
-          <Outlet />
-        </Suspense>
+        <RouteErrorBoundary key={pathname}>
+          <Suspense fallback={<PageFallback />}>
+            <Outlet />
+          </Suspense>
+        </RouteErrorBoundary>
       </main>
       <BottomNav />
       {/* 毎月24日の残高確認の壁（条件を満たすときだけ全画面ロックで出る） */}

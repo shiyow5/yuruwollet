@@ -7,6 +7,18 @@ import './styles/material-symbols.css';
 import './styles/index.css';
 import App from './App';
 
+// デプロイ直後に古い index.html が指す（もう存在しない）チャンクの取得に失敗したら、
+// 新しい index.html を取り直すため 1 回だけ自動リロードする（#12）。本リポジトリは
+// 小さな修正を頻繁に出すので、開きっぱなしの端末がこれを踏みやすい。無限ループを
+// 防ぐため sessionStorage で 1 回に制限し、2 回目以降は RouteErrorBoundary に任せる。
+const PRELOAD_RELOAD_KEY = 'vite-preload-reloaded';
+window.addEventListener('vite:preloadError', (event) => {
+  if (sessionStorage.getItem(PRELOAD_RELOAD_KEY)) return;
+  event.preventDefault();
+  sessionStorage.setItem(PRELOAD_RELOAD_KEY, '1');
+  window.location.reload();
+});
+
 const rootEl = document.getElementById('root');
 if (!rootEl) {
   throw new Error('#root element not found');

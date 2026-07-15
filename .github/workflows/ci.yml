@@ -139,12 +139,16 @@ jobs:
       - name: db reset (migrations + seed)
         run: npx supabase db reset
       - name: write .dev.vars for wrangler pages dev
-        # ローカル supabase の JWT secret は固定の公開 default。/api/session はこの鍵で発行 JWT を
-        # 署名し、supabase 側の検証鍵と一致する必要がある。本番の秘密ではないのでベタ書きでよい。
+        # /api/session はこの鍵で発行 JWT を署名し、supabase 側の検証鍵と一致する必要がある。
+        # **実行中の supabase から取得**し（CLI 既定が変わっても追随）、取れなければ固定の公開 default に
+        # フォールバックする（現状はこれと一致）。本番の秘密ではないのでログに出ても問題ない。
         run: |
-          cat > frontend/.dev.vars <<'VARS'
+          JWT_SECRET="$(npx supabase status -o env 2>/dev/null \
+            | sed -n 's/^JWT_SECRET="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p')"
+          : "${JWT_SECRET:=super-secret-jwt-token-with-at-least-32-characters-long}"
+          cat > frontend/.dev.vars <<VARS
           SUPABASE_URL=http://127.0.0.1:54321
-          SUPABASE_JWT_SECRET=super-secret-jwt-token-with-at-least-32-characters-long
+          SUPABASE_JWT_SECRET=$JWT_SECRET
           EMAIL_YURURI=yururi@example.com
           EMAIL_SHIYOWO=shiyowo@example.com
           DEV_BYPASS_EMAIL=yururi@example.com

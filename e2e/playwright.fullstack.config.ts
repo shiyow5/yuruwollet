@@ -27,6 +27,9 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [['html', { open: 'never' }], ['list']] : 'list',
   globalSetup: './fullstack-setup.ts',
+  // 初回 goto は「冷えた」/api/session（Pages Function の初回起動）+ supabase REST の
+  // ウォームアップを含むので、負荷の高いランナーでは既定 5s を超えうる。データ待ちを 15s に広げる。
+  expect: { timeout: 15_000 },
   use: {
     baseURL,
     trace: 'on-first-retry',
@@ -40,7 +43,9 @@ export default defineConfig({
     command:
       'cd ../frontend && npm run build && npx wrangler pages dev dist --port 8788 --ip 127.0.0.1',
     url: baseURL,
-    // ローカルは起動済みの wrangler を再利用。CI は毎回新規。
+    // ローカルは起動済みの wrangler を再利用。CI は毎回新規（クリーンビルド）。
+    // **注意**（ローカル）: 再利用は build をスキップするので、前回の wrangler が 8788 に残っていると
+    // フロントの変更が反映されない。フロントを変えたら wrangler を止めてから再実行する（make は db reset 込み）。
     reuseExistingServer: !process.env.CI,
     timeout: 180_000,
   },

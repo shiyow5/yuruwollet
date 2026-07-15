@@ -212,7 +212,7 @@ export function useDeleteCategory() {
  */
 export function useCategoryUsage(categoryId: string | null) {
   return useQuery({
-    queryKey: ['categoryUsage', categoryId],
+    queryKey: queryKeys.categoryUsage(categoryId),
     queryFn: () => getCategoryUsage(supabase, categoryId as string),
     enabled: categoryId !== null,
     staleTime: 0,

@@ -27,7 +27,7 @@ export function DeleteCategoryDialog({
   onDelete,
   onArchive,
 }: Props) {
-  const { data: usage, isLoading } = useCategoryUsage(category?.id ?? null);
+  const { data: usage, isLoading, isError } = useCategoryUsage(category?.id ?? null);
 
   if (category === null) return null;
 
@@ -44,6 +44,12 @@ export function DeleteCategoryDialog({
 
           {isLoading ? (
             <Skeleton className="mt-2 h-5 w-56" />
+          ) : isError ? (
+            // **取得できないときは「未使用（=削除可）」に倒さない。** 取り消せない操作なので、
+            // 使用状況が不明なら削除させないのが安全（0 件と区別できない undefined を消せる、にしない）。
+            <p role="alert" className="mt-1 text-body-md text-error">
+              使用状況を確認できませんでした。時間をおいて再度お試しください。
+            </p>
           ) : inUse ? (
             // 使われているカテゴリを消すと FK restrict で失敗する。事前にアーカイブへ誘導する。
             <p className="mt-1 text-body-md text-custom-text/60">
@@ -63,7 +69,7 @@ export function DeleteCategoryDialog({
           <Button variant="secondary" fullWidth onClick={onCancel} disabled={busy}>
             キャンセル
           </Button>
-          {isLoading ? null : inUse ? (
+          {isLoading || isError ? null : inUse ? (
             <Button fullWidth onClick={onArchive} disabled={busy}>
               {archiving ? 'アーカイブ中…' : 'アーカイブする'}
             </Button>

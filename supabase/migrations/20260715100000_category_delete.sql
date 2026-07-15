@@ -23,6 +23,7 @@ comment on column public.categories.is_default is
 -- 走るので、同じ行に印が付く。
 update public.categories set is_default = true
 where is_system = false
+  and household_id = 'main'
   and (kind::text, name) in (
     ('expense', '食費'),
     ('expense', '友好費'),
@@ -49,3 +50,27 @@ create policy categories_delete on public.categories for delete to authenticated
     and is_system = false
     and is_default = false
   );
+
+-- **is_default / is_system はユーザーが書き換えられないようにする。**
+--
+-- これが無いと、削除ポリシーの is_default=false 条件を **2 段階で迂回できる**:
+--   1) update categories set is_default = false where id = <サブスクの id>   ← categories_update は
+--      is_system しか見ないので通ってしまう
+--   2) delete from categories where id = 同じ id                            ← is_default が false に
+--      なったので削除ポリシーを通過
+-- 結果、settle_subscription が name='サブスク' で参照するカテゴリを消せて、精算が PT404 で壊れる。
+--
+-- 印を old のまま強制する（renewal_anchor と同じパターン）。update は成功扱いだが値は変わらないので、
+-- 上の (1) が無効化され、(2) は削除ポリシーで弾かれる。
+-- **この update より後にトリガを作る**こと（上の印付け update をトリガが拒否しないため）。
+create or replace function public.guard_category_flags()
+returns trigger language plpgsql set search_path = '' as $$
+begin
+  new.is_default := old.is_default;
+  new.is_system := old.is_system;
+  return new;
+end;
+$$;
+
+create trigger guard_category_flags before update on public.categories
+  for each row execute function public.guard_category_flags();

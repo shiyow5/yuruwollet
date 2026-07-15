@@ -56,6 +56,7 @@ import {
   archiveCategory,
   unarchiveCategory,
   deleteCategory,
+  getCategoryUsage,
 } from '../../lib/data/categories';
 
 const authedSession: SessionState = {
@@ -69,7 +70,9 @@ const authedSession: SessionState = {
 };
 
 function renderManager() {
+  // retry を切る。既定は retry:1 で、使用数の取得失敗テストがバックオフで遅くなる。
   const qc = createQueryClient();
+  qc.setDefaultOptions({ queries: { retry: false } });
   return render(
     <QueryClientProvider client={qc}>
       <SessionContext.Provider value={authedSession}>
@@ -168,6 +171,21 @@ describe('CategoryManager 統合', () => {
     expect((deleteCategory as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][1]).toBe(
       'c-kar',
     );
+  });
+
+  // 取り消せない操作なので、使用状況が取れないときは「削除可」に倒さない（安全側）。
+  it('使用状況を取得できないときは削除ボタンを出さず、エラーを表示する', async () => {
+    (
+      getCategoryUsage as unknown as { mockRejectedValueOnce: (e: Error) => void }
+    ).mockRejectedValueOnce(new Error('network'));
+    renderManager();
+    fireEvent.click(await screen.findByRole('button', { name: 'カラオケ を削除' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'カテゴリを削除' });
+    expect(await within(dialog).findByText(/使用状況を確認できませんでした/)).toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: '削除する' })).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: 'アーカイブする' })).toBeNull();
+    expect(deleteCategory).not.toHaveBeenCalled();
   });
 
   // 使われているカテゴリは FK restrict で消せない。消す前に伝え、アーカイブへ誘導する。

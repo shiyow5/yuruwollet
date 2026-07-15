@@ -1,6 +1,6 @@
 -- pgTAP: RLS の cross-household 分離 + per-member 書込強制 + confirm_balance_checkpoint RPC
 begin;
-select plan(123);
+select plan(125);
 
 -- ============================================================
 -- Block A: ゆるり @ main として認証
@@ -1103,6 +1103,24 @@ select is(
   (select count(*)::int from public.categories where name = 'カラオケ'),
   0,
   'ユーザー追加カテゴリ（未使用）は削除できる'
+);
+
+-- **update→delete の 2 段階迂回でもデフォルトは消せない**（トリガで is_default が不変）。
+-- これが無いと、update で is_default を false にしてから delete でき、
+-- 削除ポリシーの is_default=false 条件をすり抜けて「サブスク」を消せてしまう（精算が PT404 で壊れる）。
+update public.categories set is_default = false where kind = 'expense' and name = 'サブスク';
+select is(
+  (select is_default from public.categories where kind = 'expense' and name = 'サブスク'),
+  true,
+  'is_default はユーザーが書き換えられない（トリガで不変）'
+);
+delete from public.categories where kind = 'expense' and name = 'サブスク';
+-- **kind='expense' で数える。** Block D が income の「サブスク」も作っているので、
+-- kind を指定しないと 2 件になり、削除が防げているのに誤検知する。
+select is(
+  (select count(*)::int from public.categories where kind = 'expense' and name = 'サブスク'),
+  1,
+  'update→delete の迂回でもサブスクは消せない'
 );
 
 -- 取引で使われているユーザー追加カテゴリは FK restrict で削除できない

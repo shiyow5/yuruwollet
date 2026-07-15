@@ -9,6 +9,8 @@ export const queryKeys = {
   memberBalances: () => ['memberBalances'] as const,
   /** household 共有のカテゴリ一覧 (非archived) */
   categories: () => ['categories'] as const,
+  /** そのカテゴリが取引で何件使われているか（削除ダイアログ用） */
+  categoryUsage: (categoryId: string | null) => ['categoryUsage', categoryId] as const,
   /** member×月 の取引一覧（家計簿ページ） */
   transactions: (memberId: string, month?: string) =>
     ['transactions', memberId, month ?? 'all'] as const,

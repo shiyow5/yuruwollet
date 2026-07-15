@@ -17,6 +17,9 @@ export function MemberTabs({ options, value, onChange, className }: Props) {
       options={options.map((o) => ({ value: o.memberId, label: o.label }))}
       value={value}
       onChange={onChange}
+      // radiogroup にはアクセシブルネームが要る（#18 レビュー）。選択肢が人名なので、
+      // グループ名が無いと「誰のデータを表示するかの切替」だと分からない。
+      ariaLabel="表示するメンバー"
     />
   );
 }

@@ -1,11 +1,26 @@
-import type { ReactElement } from 'react';
-import { HomePage } from './pages/HomePage';
-import { LedgerPage } from './pages/LedgerPage';
-import { SubscriptionsPage } from './pages/SubscriptionsPage';
-import { WishlistPage } from './pages/WishlistPage';
-import { ChartsPage } from './pages/ChartsPage';
-import { MyPage } from './pages/MyPage';
-import { SettingsPage } from './pages/SettingsPage';
+import { lazy, type ReactElement } from 'react';
+
+// 画面はルート単位で遅延ロードする（#12）。初回に全画面ぶんの JS を積まず、
+// 開いた画面のチャンクだけ取りに行く。AppShell の <Suspense> がロード中を受ける
+// （ナビは出したままコンテンツだけスケルトンにする）。
+// ページは名前付き export なので default に読み替える。
+const HomePage = lazy(() => import('./pages/HomePage').then((m) => ({ default: m.HomePage })));
+const LedgerPage = lazy(() =>
+  import('./pages/LedgerPage').then((m) => ({ default: m.LedgerPage })),
+);
+const SubscriptionsPage = lazy(() =>
+  import('./pages/SubscriptionsPage').then((m) => ({ default: m.SubscriptionsPage })),
+);
+const WishlistPage = lazy(() =>
+  import('./pages/WishlistPage').then((m) => ({ default: m.WishlistPage })),
+);
+const ChartsPage = lazy(() =>
+  import('./pages/ChartsPage').then((m) => ({ default: m.ChartsPage })),
+);
+const MyPage = lazy(() => import('./pages/MyPage').then((m) => ({ default: m.MyPage })));
+const SettingsPage = lazy(() =>
+  import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })),
+);
 
 export interface AppRoute {
   path: string;

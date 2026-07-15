@@ -55,6 +55,19 @@ export default defineConfig(({ mode }) => {
     // 付けないと E2E は CSP の無い世界で回り、「テストは緑なのに本番だけ真っ白」を
     // 検出できない。_headers と同じ securityHeaders() から作る。
     preview: { headers: securityHeaders(supabaseUrl) },
+    build: {
+      rollupOptions: {
+        output: {
+          // 変わりにくい vendor を分離してキャッシュを効かせ、初回の並列取得も速くする（#12）。
+          // 画面はルート単位で lazy 分割（src/app/routes.tsx）。
+          manualChunks: {
+            'react-vendor': ['react', 'react-dom', 'react-router'],
+            'supabase-vendor': ['@supabase/supabase-js'],
+            'query-vendor': ['@tanstack/react-query'],
+          },
+        },
+      },
+    },
     test: {
       environment: 'jsdom',
       globals: true,

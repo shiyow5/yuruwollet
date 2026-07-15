@@ -38,13 +38,13 @@ export function BottomNav() {
                 <Icon
                   name={item.icon}
                   filled={isActive}
-                  className={isActive ? 'text-custom-accent' : 'text-custom-text/40'}
+                  className={isActive ? 'text-custom-accent' : 'text-custom-text/70'}
                 />
               </span>
               <span
                 className={cn(
                   'w-full truncate text-center font-label-sm text-[10px] leading-tight',
-                  isActive ? 'font-bold text-custom-accent' : 'text-custom-text/40',
+                  isActive ? 'font-bold text-custom-accent' : 'text-custom-text/70',
                 )}
               >
                 {item.label}

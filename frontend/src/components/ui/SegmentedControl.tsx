@@ -114,7 +114,7 @@ export function SegmentedControl<T extends string>({
               'rounded-full px-5 py-2 font-label-sm text-label-sm transition',
               active
                 ? 'bg-custom-accent text-on-primary shadow-sm'
-                : 'text-custom-text/60 hover:text-custom-text',
+                : 'text-custom-text/70 hover:text-custom-text',
             )}
           >
             {o.label}

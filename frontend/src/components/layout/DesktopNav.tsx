@@ -17,7 +17,7 @@ export function DesktopNav() {
               'flex items-center gap-2 rounded-full px-4 py-2 font-label-sm text-label-sm transition',
               isActive
                 ? 'bg-custom-accent/15 text-custom-accent'
-                : 'text-custom-text/60 hover:text-custom-text',
+                : 'text-custom-text/70 hover:text-custom-text',
             )
           }
         >

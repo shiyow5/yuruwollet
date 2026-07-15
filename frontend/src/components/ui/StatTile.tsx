@@ -15,7 +15,7 @@ export function StatTile({ label, value, className }: Props) {
         className,
       )}
     >
-      <span className="mb-3 font-label-sm text-label-sm uppercase tracking-[0.2em] text-custom-text/60">
+      <span className="mb-3 font-label-sm text-label-sm uppercase tracking-[0.2em] text-custom-text/70">
         {label}
       </span>
       <span className="text-[28px] font-bold text-custom-text">{value}</span>

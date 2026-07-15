@@ -31,7 +31,7 @@ export function ChartCard({
     <Card className="flex flex-col gap-4">
       <div>
         <h3 className="font-headline-md text-body-lg font-medium text-custom-text">{title}</h3>
-        {description && <p className="text-label-sm text-custom-text/60">{description}</p>}
+        {description && <p className="text-label-sm text-custom-text/70">{description}</p>}
       </div>
 
       {isError ? (

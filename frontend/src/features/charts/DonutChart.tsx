@@ -33,7 +33,7 @@ export function DonutChart({ data }: Props) {
 
       {/* 中心の合計。凡例ぶんの高さを避けて円の中心に重ねる */}
       <div className="pointer-events-none absolute inset-x-0 top-[86px] flex flex-col items-center">
-        <span className="text-label-sm text-custom-text/60">合計</span>
+        <span className="text-label-sm text-custom-text/70">合計</span>
         <span className="font-headline-md text-body-lg font-medium text-custom-text">
           {formatYen(total)}
         </span>

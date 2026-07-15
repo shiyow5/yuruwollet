@@ -24,7 +24,7 @@ export function BalanceHero({ memberId, canAdd = false, onAdd }: Props) {
 
   return (
     <section className="flex flex-col items-center justify-center py-8">
-      <h2 className="mb-4 font-label-sm text-label-sm uppercase tracking-[0.2em] text-custom-text/60">
+      <h2 className="mb-4 font-label-sm text-label-sm uppercase tracking-[0.2em] text-custom-text/70">
         現在の残高
       </h2>
       {isLoading ? (

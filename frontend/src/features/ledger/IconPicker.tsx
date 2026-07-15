@@ -17,7 +17,7 @@ interface Props {
 export function IconPicker({ value, onChange, label = 'アイコン' }: Props) {
   return (
     <div className="flex flex-col gap-2">
-      <span id="icon-picker-label" className="font-label-sm text-label-sm text-custom-text/60">
+      <span id="icon-picker-label" className="font-label-sm text-label-sm text-custom-text/70">
         {label}
       </span>
       <div
@@ -27,7 +27,7 @@ export function IconPicker({ value, onChange, label = 'アイコン' }: Props) {
       >
         {CATEGORY_ICON_GROUPS.map((group) => (
           <div key={group.group} className="flex flex-col gap-1.5">
-            <span className="font-label-sm text-label-sm text-custom-text/40">{group.group}</span>
+            <span className="font-label-sm text-label-sm text-custom-text/70">{group.group}</span>
             <div className="flex flex-wrap gap-1.5">
               {group.icons.map((name) => {
                 const selected = name === value;

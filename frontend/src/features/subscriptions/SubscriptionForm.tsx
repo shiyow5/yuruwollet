@@ -119,7 +119,7 @@ export function SubscriptionForm({
       </div>
 
       <div className="flex flex-col gap-2">
-        <span id="sub-currency-label" className="font-label-sm text-label-sm text-custom-text/60">
+        <span id="sub-currency-label" className="font-label-sm text-label-sm text-custom-text/70">
           通貨
         </span>
         <SegmentedControl
@@ -151,7 +151,7 @@ export function SubscriptionForm({
           </FieldError>
         )}
         {monthlyPreview != null && (
-          <p className="mt-1 font-label-sm text-label-sm text-custom-text/60">
+          <p className="mt-1 font-label-sm text-label-sm text-custom-text/70">
             月換算 {formatYen(monthlyPreview)}
             {values.currency === 'USD' ? '（概算）' : ''}
           </p>
@@ -159,7 +159,7 @@ export function SubscriptionForm({
       </div>
 
       <div className="flex flex-col gap-2">
-        <span id="sub-cycle-label" className="font-label-sm text-label-sm text-custom-text/60">
+        <span id="sub-cycle-label" className="font-label-sm text-label-sm text-custom-text/70">
           支払いサイクル
         </span>
         <SegmentedControl

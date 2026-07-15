@@ -77,7 +77,7 @@ export function SubscriptionsPage() {
           <h2 className="font-headline-md text-headline-md font-bold text-custom-text">
             サブスク管理
           </h2>
-          <p className="text-body-md text-custom-text/60">月々の固定費をスマートに把握。</p>
+          <p className="text-body-md text-custom-text/70">月々の固定費をスマートに把握。</p>
         </div>
         <MemberTabs options={options} value={activeMember} onChange={handleMemberChange} />
       </header>

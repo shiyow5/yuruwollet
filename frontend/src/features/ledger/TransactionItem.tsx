@@ -34,7 +34,7 @@ export function TransactionItem({ txn, categories, onEdit, onDelete, now }: Prop
           <h4 className="truncate font-body-md text-body-md font-medium text-custom-text">
             {title}
           </h4>
-          <span className="font-label-sm text-label-sm text-custom-text/50">
+          <span className="font-label-sm text-label-sm text-custom-text/70">
             {pending ? '保存中…' : `${name} · ${relativeDay(txn.occurred_on, now)}`}
           </span>
         </div>
@@ -55,7 +55,7 @@ export function TransactionItem({ txn, categories, onEdit, onDelete, now }: Prop
             type="button"
             aria-label="編集"
             onClick={() => onEdit(txn)}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-custom-text/50 transition hover:bg-black/5"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-custom-text/60 transition hover:bg-black/5"
           >
             <Icon name="edit" size={20} />
           </button>
@@ -65,7 +65,7 @@ export function TransactionItem({ txn, categories, onEdit, onDelete, now }: Prop
             type="button"
             aria-label="削除"
             onClick={() => onDelete(txn)}
-            className="flex h-9 w-9 items-center justify-center rounded-full text-custom-text/50 transition hover:bg-error/10 hover:text-error"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-custom-text/60 transition hover:bg-error/10 hover:text-error"
           >
             <Icon name="delete" size={20} />
           </button>

@@ -87,7 +87,7 @@ function Bar({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-baseline justify-between">
-        <span className="font-label-sm text-label-sm text-custom-text/60">{caption}</span>
+        <span className="font-label-sm text-label-sm text-custom-text/70">{caption}</span>
         <span className="font-headline-md text-body-md font-bold text-custom-text">
           {formatYen(bar.expense)}
         </span>

@@ -36,7 +36,7 @@ export function HomePage() {
           <h2 className="font-headline-md text-headline-md font-bold text-custom-text">
             {name ? `おかえり、${name} さん` : 'ホーム'}
           </h2>
-          <p className="text-body-md text-custom-text/60">今日もおつかれさま</p>
+          <p className="text-body-md text-custom-text/70">今日もおつかれさま</p>
         </div>
         <MemberTabs options={options} value={activeMember} onChange={handleMemberChange} />
       </header>

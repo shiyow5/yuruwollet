@@ -52,14 +52,14 @@ export function DeleteCategoryDialog({
             </p>
           ) : inUse ? (
             // 使われているカテゴリを消すと FK restrict で失敗する。事前にアーカイブへ誘導する。
-            <p className="mt-1 text-body-md text-custom-text/60">
+            <p className="mt-1 text-body-md text-custom-text/70">
               このカテゴリは <strong>{usage} 件</strong>の記録で使われているため、削除できません。
-              <span className="mt-1 block text-label-sm text-custom-text/50">
+              <span className="mt-1 block text-label-sm text-custom-text/70">
                 アーカイブすれば、これまでの記録はそのまま残り、新しい入力の選択肢からは消えます。
               </span>
             </p>
           ) : (
-            <p className="mt-1 text-body-md text-custom-text/60">
+            <p className="mt-1 text-body-md text-custom-text/70">
               まだどの記録にも使われていません。削除できます。
             </p>
           )}

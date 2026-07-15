@@ -180,11 +180,11 @@ function ActiveCategoryGroup({
 }) {
   return (
     <section className="flex flex-col gap-3">
-      <h4 className="font-label-sm text-label-sm uppercase tracking-[0.2em] text-custom-text/60">
+      <h4 className="font-label-sm text-label-sm uppercase tracking-[0.2em] text-custom-text/70">
         {title}
       </h4>
       {categories.length === 0 ? (
-        <p className="font-label-sm text-label-sm text-custom-text/40">まだありません</p>
+        <p className="font-label-sm text-label-sm text-custom-text/70">まだありません</p>
       ) : (
         <ul className="flex flex-col gap-2">
           {categories.map((c) => (
@@ -201,7 +201,7 @@ function ActiveCategoryGroup({
                   type="button"
                   aria-label={`${c.name} を削除`}
                   onClick={() => onDelete(c)}
-                  className="flex h-9 w-9 items-center justify-center rounded-full text-custom-text/40 transition hover:bg-error/10 hover:text-error"
+                  className="flex h-9 w-9 items-center justify-center rounded-full text-custom-text/60 transition hover:bg-error/10 hover:text-error"
                 >
                   <Icon name="delete" size={20} />
                 </button>
@@ -210,7 +210,7 @@ function ActiveCategoryGroup({
                   type="button"
                   aria-label={`${c.name} をアーカイブ`}
                   onClick={() => onArchive(c.id)}
-                  className="flex h-9 w-9 items-center justify-center rounded-full text-custom-text/40 transition hover:bg-error/10 hover:text-error"
+                  className="flex h-9 w-9 items-center justify-center rounded-full text-custom-text/60 transition hover:bg-error/10 hover:text-error"
                 >
                   <Icon name="archive" size={20} />
                 </button>
@@ -240,11 +240,11 @@ function CategoryGroup({
 }) {
   return (
     <section className="flex flex-col gap-3">
-      <h4 className="font-label-sm text-label-sm uppercase tracking-[0.2em] text-custom-text/60">
+      <h4 className="font-label-sm text-label-sm uppercase tracking-[0.2em] text-custom-text/70">
         {title}
       </h4>
       {categories.length === 0 ? (
-        <p className="font-label-sm text-label-sm text-custom-text/40">まだありません</p>
+        <p className="font-label-sm text-label-sm text-custom-text/70">まだありません</p>
       ) : (
         <ul className="flex flex-col gap-2">
           {categories.map((c) => (
@@ -260,7 +260,7 @@ function CategoryGroup({
                 type="button"
                 aria-label={`${c.name} を${actionVerb}`}
                 onClick={() => onAction(c.id)}
-                className={`flex h-9 w-9 items-center justify-center rounded-full text-custom-text/40 transition ${actionHover}`}
+                className={`flex h-9 w-9 items-center justify-center rounded-full text-custom-text/60 transition ${actionHover}`}
               >
                 <Icon name={actionIcon} size={20} />
               </button>

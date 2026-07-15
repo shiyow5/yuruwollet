@@ -21,7 +21,7 @@ export function MyPage() {
           <h2 className="font-headline-md text-headline-md font-bold text-custom-text">
             マイページ
           </h2>
-          <p className="text-body-md text-custom-text/60">
+          <p className="text-body-md text-custom-text/70">
             {formatMonthLabel(month)}の目標と、あなたの設定。
           </p>
         </div>

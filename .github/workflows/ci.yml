@@ -127,8 +127,34 @@ jobs:
       - run: npm ci
       - name: install playwright browsers
         run: npm run install-browsers --workspace @yuruwollet/e2e
-      - name: run e2e
+      # 未認証のスモーク / CSP（vite preview、Pages Functions も supabase も無い世界）。
+      - name: run e2e (unauthenticated smoke / csp)
         run: npm run test --workspace @yuruwollet/e2e
+
+      # --- full-stack E2E（#6）: 本物の全経路を通す ---
+      # Access 迂回(DEV_BYPASS) → /api/session の JWT → supabase REST → RLS(household 一致) → 描画。
+      # e2e ジョブは supabase ジョブとは別ランナーなのでポート衝突しない。
+      - name: start supabase (local stack)
+        run: npx supabase start
+      - name: db reset (migrations + seed)
+        run: npx supabase db reset
+      - name: write .dev.vars for wrangler pages dev
+        # ローカル supabase の JWT secret は固定の公開 default。/api/session はこの鍵で発行 JWT を
+        # 署名し、supabase 側の検証鍵と一致する必要がある。本番の秘密ではないのでベタ書きでよい。
+        run: |
+          cat > frontend/.dev.vars <<'VARS'
+          SUPABASE_URL=http://127.0.0.1:54321
+          SUPABASE_JWT_SECRET=super-secret-jwt-token-with-at-least-32-characters-long
+          EMAIL_YURURI=yururi@example.com
+          EMAIL_SHIYOWO=shiyowo@example.com
+          DEV_BYPASS_EMAIL=yururi@example.com
+          VARS
+      - name: run full-stack e2e (wrangler pages dev + supabase)
+        run: npm run test:fullstack --workspace @yuruwollet/e2e
+      - name: stop supabase
+        if: always()
+        run: npx supabase stop
+
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

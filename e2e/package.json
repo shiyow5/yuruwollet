@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "playwright test",
+    "test:fullstack": "playwright test --config playwright.fullstack.config.ts",
     "test:ui": "playwright test --ui",
     "install-browsers": "playwright install --with-deps chromium"
   },

@@ -8,11 +8,11 @@ import { test, expect } from '@playwright/test';
 test.describe('full-stack: ダッシュボードが実データを表示', () => {
   test('現在の残高が取得・表示される（エラーにならない）', async ({ page }) => {
     await page.goto('/');
-    const hero = page.locator('section').filter({ hasText: '現在の残高' });
-    await expect(hero.getByRole('heading', { name: '現在の残高' })).toBeVisible();
-    // データ取得に失敗すると「残高を取得できませんでした」が出る（BalanceHero）。全経路が通れば ¥ 金額が出る。
-    await expect(hero.getByText('残高を取得できませんでした')).toHaveCount(0);
-    await expect(hero.getByText(/¥[\d,]+/)).toBeVisible();
+    await expect(page.getByRole('heading', { name: '現在の残高' })).toBeVisible();
+    // データ取得に失敗すると「残高を取得できませんでした」が出る（BalanceHero）。出ていない=RLS 越しに取得成功。
+    await expect(page.getByText('残高を取得できませんでした')).toHaveCount(0);
+    // 残高の値が ¥ 金額で出る（月次サマリの ¥ と混ざらないよう data-testid で一意に特定）。
+    await expect(page.getByTestId('current-balance')).toHaveText(/¥[\d,]+/);
   });
 
   test('自分ビューには収入/支出の追加導線が出る', async ({ page }) => {

@@ -34,7 +34,10 @@ export function BalanceHero({ memberId, canAdd = false, onAdd }: Props) {
           残高を取得できませんでした
         </p>
       ) : (
-        <div className="mb-8 text-[56px] font-bold leading-none tracking-tight text-custom-accent">
+        <div
+          data-testid="current-balance"
+          className="mb-8 text-[56px] font-bold leading-none tracking-tight text-custom-accent"
+        >
           {formatYen(balance ?? 0)}
         </div>
       )}

@@ -56,7 +56,7 @@ fmt-check: ## フォーマット差分チェック (CI 用)
 	cd backend && test -z "$$(gofmt -l .)" || (echo "gofmt 差分あり:"; gofmt -l .; exit 1)
 
 # ---- Tests ----------------------------------------------------------------
-.PHONY: test test-frontend test-functions test-backend test-e2e
+.PHONY: test test-frontend test-functions test-backend test-e2e test-e2e-fullstack
 test: test-frontend test-backend ## 単体/統合テスト一括
 
 test-frontend: ## フロント Vitest (+coverage)
@@ -68,8 +68,14 @@ test-functions: ## Pages Functions のテスト (frontend の vitest に内包)
 test-backend: ## Go テスト (race + coverage)
 	cd backend && go test -race -cover ./internal/...
 
-test-e2e: ## Playwright E2E
+test-e2e: ## Playwright E2E (フロントのみ / 未認証スモーク・CSP)
 	npm run test --workspace e2e
+
+test-e2e-fullstack: ## full-stack E2E (supabase + wrangler pages dev)。要 Docker。
+	npx supabase status >/dev/null 2>&1 || npx supabase start
+	npx supabase db reset
+	[ -f frontend/.dev.vars ] || cp frontend/.dev.vars.example frontend/.dev.vars
+	npm run test:fullstack --workspace e2e
 
 # ---- Build ----------------------------------------------------------------
 .PHONY: build build-frontend build-backend

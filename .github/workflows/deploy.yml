@@ -110,6 +110,13 @@ jobs:
       - name: verify CSP allows production Supabase
         run: python3 scripts/verify_csp.py frontend/dist --production
 
+      # service worker（#55）が **本番の JWT・二人分の家計データを precache しない**こと、
+      # navigateFallback で Access のログイン 302 を食わないことを、生成された sw.js 実物で検算する。
+      # pwa-config.test.ts が設定を、こちらが成果物を守る（プラグイン既定の変化で設定は正しいのに
+      # sw.js だけ壊れる事故を捕まえる）。
+      - name: verify service worker is safe (no data/JWT caching, Access-safe)
+        run: python3 scripts/verify_sw.py frontend/dist
+
       # frontend から実行すること。wrangler は **カレントディレクトリの functions/** を
       # Pages Functions としてバンドルする。リポジトリルートから叩くと
       # frontend/functions/api/session.ts が拾われず、/api/session が消える。

@@ -1,5 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { registerSW } from 'virtual:pwa-register';
 import '@fontsource-variable/plus-jakarta-sans/wght.css';
 // 全アイコン(約3.8MB)を積む material-symbols/outlined.css の代わりに、使うぶんだけの
 // サブセット(十数KB)を読む（#9）。scripts/subset_icons.py が生成する。
@@ -18,6 +19,16 @@ window.addEventListener('vite:preloadError', (event) => {
   sessionStorage.setItem(PRELOAD_RELOAD_KEY, '1');
   window.location.reload();
 });
+
+// service worker を登録する（#55）。これで Chrome が「アプリをインストール」バナー
+// （beforeinstallprompt）を出せるようになる。dev では pwa-config の devOptions.enabled=false
+// のため registerSW は no-op。registerType:'autoUpdate' の自動リロードは **更新時のみ**
+// （既存 SW を置き換える activated で event.isUpdate/isExternal のときだけ location.reload）。
+// 初回インストールではリロードしないので、初回訪問がリロードでちらつくことはない。
+// 更新時のリロードで消えたチャンクの 404 も避けられる（#12 の vite:preloadError と補完）。
+// **キャッシュ戦略は pwa-config.ts で厳格に制限**（/api の JWT・Supabase の家計データは非キャッシュ、
+// トップレベル遷移は Access のためネットワークへ）。
+registerSW({ immediate: true });
 
 const rootEl = document.getElementById('root');
 if (!rootEl) {

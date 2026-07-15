@@ -3,7 +3,9 @@ import { defineConfig, type Plugin } from 'vitest/config';
 import { loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { VitePWA } from 'vite-plugin-pwa';
 import { buildHeadersFile, securityHeaders } from './src/lib/security/csp';
+import { pwaOptions } from './src/lib/pwa/pwa-config';
 
 /** ローカル supabase。src/lib/supabase.ts の既定値と揃えること。 */
 const LOCAL_SUPABASE_URL = 'http://127.0.0.1:54321';
@@ -50,7 +52,9 @@ export default defineConfig(({ mode }) => {
   const supabaseUrl = resolveSupabaseUrl(mode);
 
   return {
-    plugins: [react(), tailwindcss(), headersPlugin(supabaseUrl)],
+    // VitePWA は service worker を生成する（#55）。設定の理由（Access/CSP との両立）は
+    // src/lib/pwa/pwa-config.ts と pwa-config.test.ts を参照。
+    plugins: [react(), tailwindcss(), headersPlugin(supabaseUrl), VitePWA(pwaOptions)],
     // **E2E（vite preview）にも本番と同じヘッダを付ける。**
     // 付けないと E2E は CSP の無い世界で回り、「テストは緑なのに本番だけ真っ白」を
     // 検出できない。_headers と同じ securityHeaders() から作る。

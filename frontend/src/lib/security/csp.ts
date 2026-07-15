@@ -45,6 +45,10 @@ export function buildCsp(supabaseUrl: string): string {
     // Access の再ログインは **トップレベル遷移**で起きるので connect-src には要らない。
     'connect-src': ["'self'", httpOrigin, wsOrigin],
     'manifest-src': ["'self'"],
+    // service worker（/sw.js, #55）は same-origin。省略すると script-src → default-src の
+    // 'self' にフォールバックして今も動くが、SW を意図的に許可していることを明示しておく
+    // （将来 default-src を締めても SW 登録が黙って壊れないように）。外部 worker は許可しない。
+    'worker-src': ["'self'"],
     'object-src': ["'none'"],
     'frame-ancestors': ["'none'"],
     'base-uri': ["'self'"],

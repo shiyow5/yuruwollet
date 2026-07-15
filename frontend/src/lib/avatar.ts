@@ -12,7 +12,8 @@ const TONES: Record<string, string> = {
   shiyowo: 'bg-member-shiyowo text-on-primary',
 };
 
-const DEFAULT_TONE = 'bg-surface-container-high text-custom-text/60';
+// フォールバックの頭文字は読める文字なので、二次テキストと同じ AA 下限 /70 にする（#13）。
+const DEFAULT_TONE = 'bg-surface-container-high text-custom-text/70';
 
 /** 表示名の頭文字（「ゆるり」→「ゆ」）。画像が無いときのフォールバック。 */
 export function initialOf(displayName: string): string {

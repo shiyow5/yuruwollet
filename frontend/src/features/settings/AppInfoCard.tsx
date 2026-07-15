@@ -12,7 +12,7 @@ export function AppInfoCard() {
   return (
     <Card className="flex flex-col gap-4">
       <h3 className="font-headline-md text-body-lg font-medium text-custom-text">アプリについて</h3>
-      <p className="text-body-md text-custom-text/60">
+      <p className="text-body-md text-custom-text/70">
         ゆるり と しよを の二人だけが使える共同ウォレットです。
       </p>
       <a

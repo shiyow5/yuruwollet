@@ -31,16 +31,16 @@ export function SubscriptionItem({ sub, onEdit, onDelete }: Props) {
           <h3 className="truncate font-headline-md text-headline-md font-semibold text-custom-text">
             {sub.name}
           </h3>
-          <p className="font-body-md text-body-md text-custom-text/60">
+          <p className="font-body-md text-body-md text-custom-text/70">
             {formatYen(monthly)}
-            <span className="text-custom-text/40"> /月{approx ? '（概算）' : ''}</span>
+            <span className="text-custom-text/70"> /月{approx ? '（概算）' : ''}</span>
           </p>
         </div>
       </div>
 
       <div className="flex items-center justify-between gap-4 border-t border-black/5 pt-4 sm:justify-end sm:border-none sm:pt-0">
         <div className="flex items-center gap-3">
-          <span className="font-label-sm text-label-sm text-custom-text/50">
+          <span className="font-label-sm text-label-sm text-custom-text/70">
             次回更新日: {formatMonthDay(sub.next_renewal_date)}
           </span>
           <Chip tone={STATUS_TONES[sub.status]}>{STATUS_LABELS[sub.status]}</Chip>
@@ -52,7 +52,7 @@ export function SubscriptionItem({ sub, onEdit, onDelete }: Props) {
                 type="button"
                 aria-label="編集"
                 onClick={() => onEdit(sub)}
-                className="flex h-9 w-9 items-center justify-center rounded-full text-custom-text/50 transition hover:bg-black/5"
+                className="flex h-9 w-9 items-center justify-center rounded-full text-custom-text/60 transition hover:bg-black/5"
               >
                 <Icon name="edit" size={20} />
               </button>
@@ -62,7 +62,7 @@ export function SubscriptionItem({ sub, onEdit, onDelete }: Props) {
                 type="button"
                 aria-label="削除"
                 onClick={() => onDelete(sub)}
-                className="flex h-9 w-9 items-center justify-center rounded-full text-custom-text/50 transition hover:bg-error/10 hover:text-error"
+                className="flex h-9 w-9 items-center justify-center rounded-full text-custom-text/60 transition hover:bg-error/10 hover:text-error"
               >
                 <Icon name="delete" size={20} />
               </button>

@@ -55,7 +55,7 @@ export function GoalRing({ saved, target }: Props) {
         >
           {savedLabel(saved)}
         </span>
-        <span className="text-label-sm text-custom-text/60">/ {formatYen(target)}</span>
+        <span className="text-label-sm text-custom-text/70">/ {formatYen(target)}</span>
       </div>
     </div>
   );

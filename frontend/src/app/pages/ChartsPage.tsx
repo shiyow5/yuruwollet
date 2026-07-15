@@ -27,7 +27,7 @@ export function ChartsPage() {
     <section className="flex flex-col gap-6">
       <header>
         <h2 className="font-headline-md text-headline-md font-bold text-custom-text">グラフ</h2>
-        <p className="text-body-md text-custom-text/60">お金の流れを、ひと目で。</p>
+        <p className="text-body-md text-custom-text/70">お金の流れを、ひと目で。</p>
       </header>
 
       <Suspense fallback={<ChartsFallback />}>

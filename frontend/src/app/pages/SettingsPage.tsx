@@ -16,7 +16,7 @@ export function SettingsPage() {
     <section className="flex flex-col gap-6">
       <header>
         <h2 className="font-headline-md text-headline-md font-bold text-custom-text">設定</h2>
-        <p className="text-body-md text-custom-text/60">アカウントとアプリの情報。</p>
+        <p className="text-body-md text-custom-text/70">アカウントとアプリの情報。</p>
       </header>
 
       <AccountCard />

@@ -53,7 +53,7 @@ export function WishlistItemCard({
           </a>
         )}
 
-        <div className="flex items-center gap-1 text-label-sm text-custom-text/60">
+        <div className="flex items-center gap-1 text-label-sm text-custom-text/70">
           <Icon name="person_add" className="text-sm" />
           <span>{registrantName}</span>
         </div>

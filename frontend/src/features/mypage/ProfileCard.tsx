@@ -76,25 +76,25 @@ export function ProfileCard({ selfId }: Props) {
           <p className="font-headline-md text-body-lg font-medium text-custom-text">
             {me.display_name}
           </p>
-          {me.email && <p className="truncate text-label-sm text-custom-text/60">{me.email}</p>}
+          {me.email && <p className="truncate text-label-sm text-custom-text/70">{me.email}</p>}
         </div>
       </div>
 
       <div className="flex flex-col gap-3 rounded-2xl bg-surface-container-high p-4">
         <div className="flex items-baseline justify-between">
-          <span className="text-label-sm text-custom-text/60">初期残高</span>
+          <span className="text-label-sm text-custom-text/70">初期残高</span>
           <span className="text-body-md font-medium text-custom-text">
             {formatYen(me.opening_balance)}
           </span>
         </div>
         <div className="flex items-baseline justify-between">
-          <span className="text-label-sm text-custom-text/60">現在の残高</span>
+          <span className="text-label-sm text-custom-text/70">現在の残高</span>
           <span className="text-body-md text-custom-text">
             {/* 取得失敗/読込中に ¥0 を「実データ」として見せない */}
             {balances.isError || balances.isLoading || balance == null ? '—' : formatYen(balance)}
           </span>
         </div>
-        <p className="text-label-sm text-custom-text/50">
+        <p className="text-label-sm text-custom-text/70">
           現在の残高 = 初期残高 + これまでの収入 − 支出。
           初期残高を変えると現在の残高もそのぶん動きます。
         </p>

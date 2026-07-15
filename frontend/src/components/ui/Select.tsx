@@ -10,7 +10,7 @@ interface Props extends SelectHTMLAttributes<HTMLSelectElement> {
 export function Select({ label, className, children, ...props }: Props) {
   return (
     <label className="flex flex-col gap-2">
-      {label && <span className="font-label-sm text-label-sm text-custom-text/60">{label}</span>}
+      {label && <span className="font-label-sm text-label-sm text-custom-text/70">{label}</span>}
       <select
         className={cn(
           'w-full rounded-2xl bg-surface-container-high px-4 py-3 text-body-md text-custom-text outline-none focus:ring-2 focus:ring-custom-accent',

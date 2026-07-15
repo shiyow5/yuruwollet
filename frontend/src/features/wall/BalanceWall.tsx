@@ -239,15 +239,15 @@ function WallDialog({ selfId, month }: { selfId: string; month: string }) {
             残高のズレを確認
           </h2>
           <p className="text-body-md text-custom-text">{diffMessage(pending.diff)}</p>
-          <p className="text-label-sm text-custom-text/60">{diffDirectionLabel(pending.diff)}</p>
+          <p className="text-label-sm text-custom-text/70">{diffDirectionLabel(pending.diff)}</p>
 
           <dl className="flex flex-col gap-1 rounded-2xl bg-surface-container-high p-4">
             <div className="flex justify-between">
-              <dt className="text-label-sm text-custom-text/60">アプリの計算</dt>
+              <dt className="text-label-sm text-custom-text/70">アプリの計算</dt>
               <dd className="text-body-md text-custom-text">{formatYen(pending.computed)}</dd>
             </div>
             <div className="flex justify-between">
-              <dt className="text-label-sm text-custom-text/60">実際の残高</dt>
+              <dt className="text-label-sm text-custom-text/70">実際の残高</dt>
               <dd className="text-body-md font-medium text-custom-text">
                 {formatYen(pending.actual)}
               </dd>

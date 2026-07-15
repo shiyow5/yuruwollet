@@ -69,7 +69,7 @@ export function WishlistBoard() {
 
       {/* 同期が黙って止まらないようにする（相手の変更が反映されていない可能性を伝える） */}
       {realtime === 'error' && (
-        <p role="status" className="text-label-sm text-custom-text/60">
+        <p role="status" className="text-label-sm text-custom-text/70">
           リアルタイム同期が切れています。最新の状態は再読み込みで確認してください。
         </p>
       )}

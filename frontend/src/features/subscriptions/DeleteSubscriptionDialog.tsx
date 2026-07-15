@@ -46,12 +46,12 @@ export function DeleteSubscriptionDialog({ subscription, deleting, onCancel, onC
           {isLoading ? (
             <Skeleton className="mt-2 h-5 w-64" />
           ) : hasPayments ? (
-            <p className="mt-1 text-body-md text-custom-text/60">
+            <p className="mt-1 text-body-md text-custom-text/70">
               このサブスクの支払い記録が <strong>{count} 件</strong>（計{' '}
               {formatYen(payments?.total ?? 0)}）家計簿にあります。
             </p>
           ) : (
-            <p className="mt-1 text-body-md text-custom-text/60">
+            <p className="mt-1 text-body-md text-custom-text/70">
               まだ支払いは記録されていません。
             </p>
           )}
@@ -68,7 +68,7 @@ export function DeleteSubscriptionDialog({ subscription, deleting, onCancel, onC
               />
               <span className="text-body-md text-custom-text">
                 支払い記録も一緒に消す
-                <span className="mt-1 block text-label-sm text-custom-text/50">
+                <span className="mt-1 block text-label-sm text-custom-text/70">
                   {alsoDeletePayments
                     ? `家計簿から ${count} 件（計 ${formatYen(payments?.total ?? 0)}）が消え、残高もその分もどります。`
                     : '外すと、支払いは「ただの支出」として家計簿に残ります（実際に払ったお金なので、残高は変わりません）。あとから家計簿で消せます。'}

@@ -36,7 +36,7 @@ export function AccountCard() {
           <p className="font-headline-md text-body-lg font-medium text-custom-text">
             {member?.displayName ?? 'ログイン情報を取得できません'}
           </p>
-          <p className="truncate text-label-sm text-custom-text/60">{email ?? '—'}</p>
+          <p className="truncate text-label-sm text-custom-text/70">{email ?? '—'}</p>
         </div>
       </div>
 
@@ -53,7 +53,7 @@ export function AccountCard() {
             <h3 className="font-headline-md text-body-lg font-medium text-custom-text">
               ログアウトしますか？
             </h3>
-            <p className="mt-1 text-body-md text-custom-text/60">
+            <p className="mt-1 text-body-md text-custom-text/70">
               次に開くときは Google でログインし直します。
             </p>
             {/*
@@ -62,7 +62,7 @@ export function AccountCard() {
               Entra ID 専用）、Access 側から再認証を強制する手段が存在しない。
               黙っていると「ログアウトしたのにすぐ入れる」と混乱するので、先に伝える。
             */}
-            <p className="mt-2 text-label-sm text-custom-text/50">
+            <p className="mt-2 text-label-sm text-custom-text/70">
               ブラウザの Google のログイン状態は残ります。同じ端末では、ログインボタンを押すだけで
               入り直せます。
             </p>

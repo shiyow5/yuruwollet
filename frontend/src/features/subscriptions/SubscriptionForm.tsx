@@ -1,7 +1,11 @@
 import { useState } from 'react';
 import { Button, Input, Select, SegmentedControl } from '../../components/ui';
 import { formatYen, jstToday, parseAmount } from '../../lib/format';
-import { validateSubscriptionForm, type FieldErrors } from '../../lib/subscriptions/schema';
+import {
+  validateSubscriptionForm,
+  renewalFloorIso,
+  type FieldErrors,
+} from '../../lib/subscriptions/schema';
 import {
   computeSubscriptionAmounts,
   monthlyEquivalent,
@@ -172,6 +176,8 @@ export function SubscriptionForm({
           label="次回更新日"
           id="sub-renewal"
           type="date"
+          // 1 周期より前は選べない（大きく過去だと精算が暴走する。#65）
+          min={renewalFloorIso(values.cycle, jstToday())}
           value={values.nextRenewalDate}
           aria-invalid={errors.nextRenewalDate ? true : undefined}
           aria-describedby={errors.nextRenewalDate ? 'sub-renewal-error' : undefined}

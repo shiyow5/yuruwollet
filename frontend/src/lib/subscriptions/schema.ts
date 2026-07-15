@@ -1,8 +1,23 @@
 import { z } from 'zod';
-import { parseAmount } from '../format';
+import { parseAmount, jstToday } from '../format';
 import type { SubscriptionDraft } from './types';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * 次回更新日の下限（含む）。1 周期より前には設定できない。
+ *
+ * 大きく過去（例: 1900-01-01）を選ぶと、その周期ぶん台帳に取引が作られ、
+ * subscription_id 付きのためユーザーが個別に消せなくなる（#65）。DB 側の
+ * guard_renewal_floor トリガと同じ規則（今日から monthly=1 ヶ月 / yearly=1 年）。
+ */
+export function renewalFloorIso(cycle: 'monthly' | 'yearly', todayIso: string): string {
+  const [y, m, d] = todayIso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  if (cycle === 'yearly') dt.setUTCFullYear(dt.getUTCFullYear() - 1);
+  else dt.setUTCMonth(dt.getUTCMonth() - 1);
+  return dt.toISOString().slice(0, 10);
+}
 
 /** numeric(12,2) 列に合わせ、小数第2位までの通貨額か判定する。 */
 function hasAtMostTwoDecimals(v: number): boolean {
@@ -50,6 +65,7 @@ function collectErrors<T>(issues: z.ZodIssue[]): FieldErrors<T> {
 /** サブスクフォームの生入力を検証し、正規化済みドラフトにする。 */
 export function validateSubscriptionForm(
   raw: RawSubscriptionForm,
+  today: string = jstToday(),
 ): ValidationResult<SubscriptionDraft> {
   const amount = parseAmount(raw.amount);
   if (Number.isNaN(amount)) {
@@ -64,6 +80,20 @@ export function validateSubscriptionForm(
     status: raw.status,
   };
   const result = subscriptionDraftSchema.safeParse(candidate);
-  if (result.success) return { ok: true, value: result.data };
-  return { ok: false, errors: collectErrors<SubscriptionDraft>(result.error.issues) };
+  if (!result.success) {
+    return { ok: false, errors: collectErrors<SubscriptionDraft>(result.error.issues) };
+  }
+
+  // 形式が正しくても、大きく過去の更新日は精算ループを暴走させる（#65）。
+  const floor = renewalFloorIso(result.data.cycle, today);
+  if (result.data.nextRenewalDate < floor) {
+    return {
+      ok: false,
+      errors: {
+        nextRenewalDate: `次回更新日は ${floor} より前にできません（1 周期ぶんまで遡れます）`,
+      },
+    };
+  }
+
+  return { ok: true, value: result.data };
 }

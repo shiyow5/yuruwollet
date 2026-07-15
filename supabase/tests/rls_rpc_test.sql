@@ -1,6 +1,6 @@
 -- pgTAP: RLS の cross-household 分離 + per-member 書込強制 + confirm_balance_checkpoint RPC
 begin;
-select plan(125);
+select plan(135);
 
 -- ============================================================
 -- Block A: ゆるり @ main として認証
@@ -150,10 +150,12 @@ select is(
   'yearly の月換算生成列 = round(amount_jpy/12)'
 );
 
--- 本来の課金日(anchor) は挿入時に next_renewal_date の日から自動で入る
+-- 本来の課金日(anchor) は挿入時に next_renewal_date の日から自動で入る。
+-- **未来日を使う。** ここは jst_today() 差し替え前（実 CI 日付）なので、過去日にすると
+-- #65 の下限ガード(guard_renewal_floor)に弾かれる。anchor は日(31/10)だけを見るので年は任意。
 insert into public.subscriptions
   (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
-values ('main', 'yururi', 'MonthEnd', 'JPY', 800, 800, 'monthly', date '2026-01-31', 'active');
+values ('main', 'yururi', 'MonthEnd', 'JPY', 800, 800, 'monthly', date '2027-01-31', 'active');
 select is(
   (select renewal_anchor_day from public.subscriptions where name = 'MonthEnd'),
   31::smallint,
@@ -161,7 +163,7 @@ select is(
 );
 
 -- ユーザーが課金日を変えたら anchor も追随する
-update public.subscriptions set next_renewal_date = date '2026-02-10' where name = 'MonthEnd';
+update public.subscriptions set next_renewal_date = date '2027-02-10' where name = 'MonthEnd';
 select is(
   (select renewal_anchor_day from public.subscriptions where name = 'MonthEnd'),
   10::smallint,
@@ -1136,6 +1138,118 @@ select throws_ok(
   null,
   '取引で使われているカテゴリは FK restrict で削除できない'
 );
+
+-- ============================================================
+-- Block N: 次回更新日の下限ガード + 精算ループの上限（#65）
+-- ============================================================
+-- 更新日を大きく過去にすると、精算ループがその周期ぶん回り、削除できない取引が
+-- 数百〜数千件作られる。書き込み時ガード(authenticated のみ)とループ上限で塞ぐ。
+--
+-- 「今日」を 2026-07-15 に固定する（下限・上限の判定を決定的にする）。DDL なので postgres で撃つ。
+reset role;
+create or replace function public.jst_today() returns date language sql stable
+as $$ select date '2026-07-15' $$;
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","household_id":"main","member_id":"yururi"}',
+  true
+);
+
+-- monthly の下限 = 今日 - 1 ヶ月 = 2026-06-15（含む）。それより前は拒否。
+select throws_ok(
+  $$ insert into public.subscriptions
+       (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+     values ('main', 'yururi', 'FloorTooOld', 'JPY', 500, 500, 'monthly', date '2026-05-15', 'active') $$,
+  'PT400', null,
+  'monthly: 1 周期より前（2 ヶ月前）の更新日は拒否'
+);
+
+select lives_ok(
+  $$ insert into public.subscriptions
+       (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+     values ('main', 'yururi', 'FloorExact', 'JPY', 500, 500, 'monthly', date '2026-06-15', 'active') $$,
+  'monthly: 下限ちょうど（1 ヶ月前）は許可（境界は含む）'
+);
+
+select lives_ok(
+  $$ insert into public.subscriptions
+       (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+     values ('main', 'yururi', 'FloorRecent', 'JPY', 500, 500, 'monthly', date '2026-06-25', 'active') $$,
+  'monthly: 下限内（20 日前）は許可'
+);
+
+-- 既存サブスクの更新日を大きく過去へ編集するのも拒否
+insert into public.subscriptions
+  (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+values ('main', 'yururi', 'EditToPast', 'JPY', 500, 500, 'monthly', date '2026-07-20', 'active');
+select throws_ok(
+  $$ update public.subscriptions set next_renewal_date = date '2026-05-01' where name = 'EditToPast' $$,
+  'PT400', null,
+  '更新日を 1 周期より前へ編集するのも拒否'
+);
+
+-- yearly の下限 = 今日 - 1 年 = 2025-07-15
+select lives_ok(
+  $$ insert into public.subscriptions
+       (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+     values ('main', 'yururi', 'YearRecent', 'JPY', 12000, 12000, 'yearly', date '2026-04-15', 'active') $$,
+  'yearly: 1 年以内の過去は許可'
+);
+select throws_ok(
+  $$ insert into public.subscriptions
+       (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+     values ('main', 'yururi', 'YearTooOld', 'JPY', 12000, 12000, 'yearly', date '2025-06-15', 'active') $$,
+  'PT400', null,
+  'yearly: 1 周期（1 年）より前は拒否'
+);
+
+-- service_role（cron）は素通し。数ヶ月遅れの正当な過去埋めを妨げない。
+reset role;
+set local role service_role;
+select lives_ok(
+  $$ insert into public.subscriptions
+       (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+     values ('main', 'yururi', 'CapPast', 'JPY', 500, 500, 'monthly', date '2024-01-15', 'active') $$,
+  'service_role は大きく過去の更新日でも挿入できる（下限ガードは authenticated のみ）'
+);
+
+-- 下限より前の日付を持つサブスク（service_role 経由）。N5 で「日付を触らない編集」を試す。
+insert into public.subscriptions
+  (household_id, owner_member_id, name, currency, original_amount, amount_jpy, cycle, next_renewal_date, status)
+values ('main', 'yururi', 'StatusOnly', 'JPY', 500, 500, 'monthly', date '2024-03-15', 'active');
+
+-- 30 ヶ月前のサブスクを 1 回精算しても、記録は上限（24 周期）で止まる。
+select is(
+  (select recorded from public.settle_subscription(
+     (select id from public.subscriptions where name = 'CapPast'))),
+  24,
+  '1 回の精算で記録するのは最大 24 件（無制限に作らない）'
+);
+select is(
+  (select next_renewal_date from public.subscriptions where name = 'CapPast'),
+  date '2026-01-15',
+  '上限で止め、更新日は到達点（24 周期ぶん進んだ 2026-01-15）まで進む（残りは次回に持ち越す）'
+);
+
+-- authenticated が「日付を変えない編集」をするのは、下限より前のサブスクでも通す
+reset role;
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","household_id":"main","member_id":"yururi"}',
+  true
+);
+select lives_ok(
+  $$ update public.subscriptions set status = 'considering_cancel' where name = 'StatusOnly' $$,
+  '下限より前のサブスクでも、更新日を触らない編集（ステータス変更）は通す'
+);
+
+-- 「今日」を実時刻に戻す（この先で使う人がいても壊れないように）。DDL なので postgres で撃つ。
+reset role;
+create or replace function public.jst_today() returns date language sql stable
+as $$ select (now() at time zone 'Asia/Tokyo')::date $$;
 
 select * from finish();
 rollback;

@@ -7,6 +7,16 @@ import type { SessionState } from '../../lib/auth/useSession';
 import { SettingsPage } from '../../app/pages/SettingsPage';
 
 vi.mock('../../lib/supabase', () => ({ supabase: {} }));
+
+// カテゴリ管理は設定に一本化した（#75）。CategoryManager がデータ層を呼ぶのでモックする。
+vi.mock('../../lib/data/categories', () => ({
+  listCategories: vi.fn(async () => []),
+  createCategory: vi.fn(),
+  archiveCategory: vi.fn(),
+  unarchiveCategory: vi.fn(),
+  deleteCategory: vi.fn(),
+  getCategoryUsage: vi.fn(async () => 0),
+}));
 vi.mock('../../lib/auth/logout', () => ({
   ACCESS_LOGOUT_URL: '/cdn-cgi/access/logout',
   logout: vi.fn(async () => {}),
@@ -139,5 +149,12 @@ describe('SettingsPage', () => {
     state.profilesFail = true;
     renderSettings();
     expect(await screen.findByRole('button', { name: 'ログアウト' })).toBeEnabled();
+  });
+
+  // #75: カテゴリ管理は設定に一本化した（以前は家計簿ページのモーダル）
+  it('カテゴリ管理が設定にある', async () => {
+    renderSettings();
+    expect(await screen.findByRole('heading', { name: 'カテゴリ管理' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'カテゴリを追加' })).toBeInTheDocument();
   });
 });

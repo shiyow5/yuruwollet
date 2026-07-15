@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router';
-import { Button, Card, Fab, Icon, Modal } from '../../components/ui';
+import { Card, Fab, Icon, Modal } from '../../components/ui';
 import { addMonths, formatMonthLabel, jstMonthStart } from '../../lib/format';
 import { defaultOccurredOn } from '../../lib/ledger/defaults';
 import type { Transaction, TransactionDraft } from '../../lib/ledger/types';
@@ -8,7 +8,6 @@ import { MemberTabs } from '../../features/shared/MemberTabs';
 import { useMemberOptions } from '../../features/shared/members';
 import { TransactionForm, type TransactionFormValues } from '../../features/ledger/TransactionForm';
 import { TransactionList } from '../../features/ledger/TransactionList';
-import { CategoryManager } from '../../features/ledger/CategoryManager';
 import { AddTransactionModal } from '../../features/ledger/AddTransactionModal';
 import {
   useCategories,
@@ -17,11 +16,7 @@ import {
   useUpdateTransaction,
 } from '../../features/ledger/hooks';
 
-type ModalState =
-  | { kind: 'none' }
-  | { kind: 'create' }
-  | { kind: 'edit'; txn: Transaction }
-  | { kind: 'categories' };
+type ModalState = { kind: 'none' } | { kind: 'create' } | { kind: 'edit'; txn: Transaction };
 
 export function LedgerPage() {
   const { options, selfId } = useMemberOptions();
@@ -80,15 +75,9 @@ export function LedgerPage() {
       </header>
 
       <Card className="flex flex-col gap-6">
-        <div className="flex items-center justify-between">
-          <h3 className="font-headline-md text-headline-md text-custom-text">
-            {formatMonthLabel(month)}の記録
-          </h3>
-          <Button variant="ghost" onClick={() => setModal({ kind: 'categories' })}>
-            <Icon name="tune" size={20} />
-            カテゴリ
-          </Button>
-        </div>
+        <h3 className="font-headline-md text-headline-md text-custom-text">
+          {formatMonthLabel(month)}の記録
+        </h3>
         {deleteTransaction.isError && (
           <p role="alert" className="font-label-sm text-label-sm text-error">
             削除に失敗しました。通信環境を確認して再度お試しください。
@@ -134,18 +123,6 @@ export function LedgerPage() {
             />
           </>
         )}
-      </Modal>
-
-      <Modal
-        open={modal.kind === 'categories'}
-        onClose={closeModal}
-        label="カテゴリ管理"
-        className="max-h-[85vh] overflow-y-auto"
-      >
-        <CategoryManager />
-        <Button variant="secondary" fullWidth className="mt-6" onClick={closeModal}>
-          閉じる
-        </Button>
       </Modal>
     </section>
   );

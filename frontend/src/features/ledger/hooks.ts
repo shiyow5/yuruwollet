@@ -13,6 +13,8 @@ import {
   createCategory,
   archiveCategory,
   unarchiveCategory,
+  deleteCategory,
+  getCategoryUsage,
 } from '../../lib/data/categories';
 import { getMonthlySummary, getCategoryBreakdown } from '../../lib/data/aggregates';
 import {
@@ -189,5 +191,31 @@ export function useUnarchiveCategory() {
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.categories() });
     },
+  });
+}
+
+export function useDeleteCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteCategory(supabase, id),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.categories() });
+    },
+  });
+}
+
+/**
+ * そのカテゴリを使う取引の件数（削除ダイアログで見せる）。
+ *
+ * **staleTime: 0。ダイアログを開くたびに取り直す。** 取り消せない操作の直前に、
+ * 古い「0 件」を見せて「消して大丈夫」と誤認させないため（#71 の削除ダイアログと同じ方針）。
+ */
+export function useCategoryUsage(categoryId: string | null) {
+  return useQuery({
+    queryKey: ['categoryUsage', categoryId],
+    queryFn: () => getCategoryUsage(supabase, categoryId as string),
+    enabled: categoryId !== null,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveCategory, selectableCategories, userCategories } from './categories';
+import { isDeletable, resolveCategory, selectableCategories, userCategories } from './categories';
 import type { Category } from './types';
 
 function cat(over: Partial<Category>): Category {
@@ -11,6 +11,7 @@ function cat(over: Partial<Category>): Category {
     icon: 'restaurant',
     sort_order: 0,
     is_system: false,
+    is_default: false,
     is_archived: false,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
@@ -51,5 +52,20 @@ describe('selectableCategories', () => {
 describe('userCategories', () => {
   it('非system のみ（archived 含む）', () => {
     expect(userCategories(cats).map((c) => c.id)).toEqual(['c1', 'c2', 'c3', 'c4']);
+  });
+});
+
+describe('isDeletable', () => {
+  // 削除できるのは「システムでもデフォルトでもない」= ユーザーが後から足したもの。
+  // （実際に消せるかは取引で使われているか＝FK にもよるが、それは DB 側の関門。
+  //   ここは「そもそも削除ボタンを出してよいカテゴリか」の判定。）
+  it('ユーザー追加カテゴリは削除できる', () => {
+    expect(isDeletable(cat({ is_system: false, is_default: false }))).toBe(true);
+  });
+  it('デフォルトカテゴリ（seed）は削除できない', () => {
+    expect(isDeletable(cat({ is_default: true }))).toBe(false);
+  });
+  it('システムカテゴリ（残高調整）は削除できない', () => {
+    expect(isDeletable(cat({ is_system: true }))).toBe(false);
   });
 });

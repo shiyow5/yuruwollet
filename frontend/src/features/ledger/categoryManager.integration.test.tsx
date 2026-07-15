@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { createQueryClient } from '../../lib/queryClient';
 import { SessionContext } from '../../lib/auth/session-context';
@@ -8,51 +8,55 @@ import { CategoryManager } from './CategoryManager';
 
 vi.mock('../../lib/supabase', () => ({ supabase: {} }));
 
+// 削除ダイアログが見せる使用数（テストごとに切り替える）
+const state = vi.hoisted(() => ({ usage: 0 }));
+
+function catRow(over: Record<string, unknown>) {
+  return {
+    id: 'c',
+    household_id: 'main',
+    kind: 'expense',
+    name: 'X',
+    icon: 'label',
+    sort_order: 0,
+    is_system: false,
+    is_default: false,
+    is_archived: false,
+    created_at: '2026-01-01T00:00:00Z',
+    updated_at: '2026-01-01T00:00:00Z',
+    ...over,
+  };
+}
+
 vi.mock('../../lib/data/categories', () => ({
   listCategories: vi.fn(async () => [
-    {
-      id: 'c-exp',
-      household_id: 'main',
-      kind: 'expense',
-      name: '食費',
-      icon: 'restaurant',
-      sort_order: 0,
-      is_system: false,
-      is_archived: false,
-      created_at: '2026-01-01T00:00:00Z',
-      updated_at: '2026-01-01T00:00:00Z',
-    },
-    {
-      id: 'c-inc',
-      household_id: 'main',
-      kind: 'income',
-      name: '給与',
-      icon: 'payments',
-      sort_order: 0,
-      is_system: false,
-      is_archived: false,
-      created_at: '2026-01-01T00:00:00Z',
-      updated_at: '2026-01-01T00:00:00Z',
-    },
-    {
+    // デフォルト（seed）: アーカイブのみ・削除不可
+    catRow({ id: 'c-exp', kind: 'expense', name: '食費', icon: 'restaurant', is_default: true }),
+    catRow({ id: 'c-inc', kind: 'income', name: '給与', icon: 'payments', is_default: true }),
+    // ユーザー追加: 削除できる
+    catRow({ id: 'c-kar', kind: 'expense', name: 'カラオケ', icon: 'mic', is_default: false }),
+    // アーカイブ済（ユーザー追加）
+    catRow({
       id: 'c-old',
-      household_id: 'main',
       kind: 'expense',
       name: '旧カテゴリ',
-      icon: 'label',
-      sort_order: 2,
-      is_system: false,
+      is_default: false,
       is_archived: true,
-      created_at: '2026-01-01T00:00:00Z',
-      updated_at: '2026-01-01T00:00:00Z',
-    },
+    }),
   ]),
   createCategory: vi.fn(async () => ({ id: 'new', name: '交際費' })),
   archiveCategory: vi.fn(async () => {}),
   unarchiveCategory: vi.fn(async () => {}),
+  deleteCategory: vi.fn(async () => {}),
+  getCategoryUsage: vi.fn(async () => state.usage),
 }));
 
-import { createCategory, archiveCategory, unarchiveCategory } from '../../lib/data/categories';
+import {
+  createCategory,
+  archiveCategory,
+  unarchiveCategory,
+  deleteCategory,
+} from '../../lib/data/categories';
 
 const authedSession: SessionState = {
   status: 'authenticated',
@@ -76,7 +80,10 @@ function renderManager() {
 }
 
 describe('CategoryManager 統合', () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    state.usage = 0;
+    vi.clearAllMocks();
+  });
 
   it('既存カテゴリを種別ごとに表示する', async () => {
     renderManager();
@@ -133,5 +140,52 @@ describe('CategoryManager 統合', () => {
     expect(
       (unarchiveCategory as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][1],
     ).toBe('c-old');
+  });
+
+  // ---- #75 削除 ----
+
+  // デフォルト（seed）はアーカイブのみ。ユーザー追加は削除できる。
+  it('デフォルトカテゴリはアーカイブ、ユーザー追加は削除のボタンが出る', async () => {
+    renderManager();
+    // 食費（デフォルト）はアーカイブ、削除ボタンは無い
+    expect(await screen.findByRole('button', { name: '食費 をアーカイブ' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '食費 を削除' })).toBeNull();
+    // カラオケ（ユーザー追加）は削除、アーカイブボタンは無い
+    expect(screen.getByRole('button', { name: 'カラオケ を削除' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'カラオケ をアーカイブ' })).toBeNull();
+  });
+
+  it('未使用のカテゴリは、確認して削除できる', async () => {
+    state.usage = 0;
+    renderManager();
+    fireEvent.click(await screen.findByRole('button', { name: 'カラオケ を削除' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'カテゴリを削除' });
+    expect(await within(dialog).findByText(/まだどの記録にも使われていません/)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: '削除する' }));
+
+    await waitFor(() => expect(deleteCategory).toHaveBeenCalledTimes(1));
+    expect((deleteCategory as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][1]).toBe(
+      'c-kar',
+    );
+  });
+
+  // 使われているカテゴリは FK restrict で消せない。消す前に伝え、アーカイブへ誘導する。
+  it('使用中のカテゴリは削除できず、アーカイブに誘導される', async () => {
+    state.usage = 5;
+    renderManager();
+    fireEvent.click(await screen.findByRole('button', { name: 'カラオケ を削除' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'カテゴリを削除' });
+    expect(await within(dialog).findByText(/5 件/)).toBeInTheDocument();
+    // 削除ボタンは出ず、アーカイブボタンが出る
+    expect(within(dialog).queryByRole('button', { name: '削除する' })).toBeNull();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'アーカイブする' }));
+
+    await waitFor(() => expect(archiveCategory).toHaveBeenCalledTimes(1));
+    expect(deleteCategory).not.toHaveBeenCalled();
+    expect((archiveCategory as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][1]).toBe(
+      'c-kar',
+    );
   });
 });

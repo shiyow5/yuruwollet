@@ -169,6 +169,56 @@ else:
     )
     log(f"✓ Access アプリを作成 ({app['id']})")
 
+# ---- アイコンだけ Access の外に出す（#72）--------------------------------------
+# iOS の「ホーム画面に追加」は、**クッキーの載らない経路**でアイコンを取りに行く。
+# Access は全パスをゲートしているので 302（ログイン画面の HTML）が返り、
+# iOS はそれを画像として解釈できず、アプリ名の頭文字「Y」で代替アイコンを作る
+# （2026-07-15 に実機で確認: ログイン済み Safari で直接開くと財布が出るが、
+#  ホーム画面追加のアイコンは Y。＝取得経路にクッキーが載っていない）。
+#
+# アイコンは公開されて害がないので、**そのパスだけ**を bypass する。
+# より具体的なパスのアプリが優先されるので、既存の「2人だけ Allow」アプリ
+# （ルート全体）は一切変わらない。
+#
+# **site.webmanifest は入れない。** name/description に二人の名前が入るため。
+# iOS は manifest の icons を見ない（apple-touch-icon を使う）ので、これで足りる。
+ICON_APP_NAME = "yuruwollet public icons"
+ICON_PATHS = [
+    "apple-touch-icon.png",
+    "favicon.ico",
+    "favicon.svg",
+    "icon-192.png",
+    "icon-512.png",
+    "icon-maskable-512.png",
+]
+
+icon_app_body = {
+    "name": ICON_APP_NAME,
+    "type": "self_hosted",
+    # domain は required。destinations と併記でき、両方が secured 対象になる。
+    # （廃止予定なのは self_hosted_domains であって domain ではない。
+    #   ここは destinations[0] と同じ値なので重複するが無害。）
+    "domain": f"{HOSTNAME}/{ICON_PATHS[0]}",
+    "destinations": [{"type": "public", "uri": f"{HOSTNAME}/{p}"} for p in ICON_PATHS],
+    "app_launcher_visible": False,
+    # bypass はログされず identity セレクタも使えないが、公開アイコンなので問題ない。
+    "policies": [
+        {
+            "name": "public",
+            "decision": "bypass",
+            "include": [{"everyone": {}}],
+        }
+    ],
+}
+
+icon_app = next((a for a in apps if a.get("name") == ICON_APP_NAME), None)
+if icon_app:
+    call("PUT", f"/accounts/{ACCOUNT}/access/apps/{icon_app['id']}", icon_app_body)
+    log("✓ アイコン公開アプリを更新（apple-touch-icon 等を Access の外に出す）")
+else:
+    call("POST", f"/accounts/{ACCOUNT}/access/apps", icon_app_body)
+    log("✓ アイコン公開アプリを作成（apple-touch-icon 等を Access の外に出す）")
+
 aud = app.get("aud")
 if not aud:
     sys.exit("AUD タグを取得できませんでした（Access アプリの作成に失敗している可能性があります）")

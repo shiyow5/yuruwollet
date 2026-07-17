@@ -16,9 +16,10 @@
   --color-custom-accent: #4a769e;
   /* 文字・アイコン用の accent。塗りは「白文字が乗る」ため暗くしすぎられず、
      文字は「淡い背景に乗る」ため暗くしたい ——要求が逆向きなので分けてある。
-     全サーフェス + accent/10 の下地で AA(4.5:1) を満たす（最悪 4.77:1）。
+     全サーフェス × accent/5〜/20 の淡い下地（Chip は /20、IconTile は /10）の
+     **全組み合わせ**で AA(4.5:1) を満たす（最悪 4.58:1）。
      検算は theme-contrast.test.ts、使われ方は accent-usage.test.ts が守る。 */
-  --color-accent-text: #3f6589;
+  --color-accent-text: #3a5d7f;
   --color-primary: #4a769e;
   /* メンバー色。アバターの頭文字フォールバックで使う（Google の画像が
      届かないことがあるため。Access の picture クレームは best-effort）。

@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+
+/** src 配下の実装ファイル（テストを除く）。 */
+function walkSource(dir: string = resolve(process.cwd(), 'src')): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) return walkSource(p);
+    return /\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name) ? [p] : [];
+  });
+}
 
 /**
  * 二次テキスト・アイコンのコントラストが WCAG を満たすことを、**実際の @theme トークン値**で検算する（#13）。
@@ -107,12 +116,38 @@ describe('accent のコントラスト（#90）', () => {
     }
   });
 
-  it('accent-text は accent/10 の淡い下地の上でも AA を満たす（Chip / IconTile）', () => {
-    for (const bg of BACKGROUNDS) {
-      const tinted = composite(ACCENT, 0.1, bg.rgb);
-      const ratio = contrast(ACCENT_TEXT, tinted);
-      expect(ratio, `accent-text over accent/10 on ${bg.name}`).toBeGreaterThanOrEqual(AA_NORMAL);
+  // ソースで実際に使っている accent の不透明度（`bg-custom-accent/NN`）。
+  // **/10 しか見ていなかったせいで、/20 を使う Chip が最初この検査を素通りしていた。**
+  // 新しい濃さを使い始めたらここに足す（足し忘れても TINT_OPACITIES の検査が拾う）。
+  const TINT_OPACITIES = [0.05, 0.1, 0.15, 0.2];
+
+  it('accent-text は accent の淡い下地の上でも AA を満たす（Chip=/20, IconTile=/10）', () => {
+    for (const alpha of TINT_OPACITIES) {
+      for (const bg of BACKGROUNDS) {
+        const tinted = composite(ACCENT, alpha, bg.rgb);
+        const ratio = contrast(ACCENT_TEXT, tinted);
+        expect(
+          ratio,
+          `accent-text over accent/${alpha * 100} on ${bg.name}`,
+        ).toBeGreaterThanOrEqual(AA_NORMAL);
+      }
     }
+  });
+
+  it('検査している不透明度が、ソースで実際に使われているものを網羅している', () => {
+    // 「守っているつもりで守っていない」を防ぐ。新しい濃さが増えたらここが落ちる。
+    const src = walkSource();
+    const used = new Set<number>();
+    for (const file of src) {
+      for (const m of readFileSync(file, 'utf8').matchAll(/bg-custom-accent\/(\d+)/g)) {
+        used.add(Number(m[1]) / 100);
+      }
+    }
+    const unchecked = [...used].filter((a) => !TINT_OPACITIES.includes(a)).sort();
+    expect(
+      unchecked,
+      `TINT_OPACITIES に無い濃さが使われている: ${unchecked.map((a) => `/${a * 100}`).join(', ')}`,
+    ).toEqual([]);
   });
 
   it('塗りの上の白文字が AA を満たす（主要ボタン・選択中のトグル）', () => {

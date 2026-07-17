@@ -13,20 +13,31 @@ import { join, resolve } from 'node:path';
  * theme-contrast.test.ts が「色が足りているか」を、こちらが「正しい方を使っているか」を見る。
  */
 
+/** src 配下の実装ファイル。**.css も含める**（@apply で書かれたら .tsx だけ見ても拾えない）。 */
 function walk(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
     const p = join(dir, e.name);
     if (e.isDirectory()) return walk(p);
-    return /\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name) ? [p] : [];
+    return /\.(tsx?|css)$/.test(e.name) && !/\.test\.tsx?$/.test(e.name) ? [p] : [];
   });
 }
 
 const SRC = resolve(process.cwd(), 'src');
 
+/**
+ * ブランド色を文字色にする書き方。
+ * **`text-primary` を忘れていて、WishlistItemCard のリンクが素通りしていた**
+ * （`--color-primary` は custom-accent と同じ値の別名）。別名を足したらここにも足す。
+ */
+const FORBIDDEN = ['text-custom-accent', 'text-primary'];
+
 describe('accent の使われ方（#90）', () => {
-  it('text-custom-accent を使っているファイルが無い（文字には accent-text を使う）', () => {
+  it('ブランド色を文字色に使っているファイルが無い（文字には accent-text を使う）', () => {
     const offenders = walk(SRC)
-      .filter((f) => readFileSync(f, 'utf8').includes('text-custom-accent'))
+      .filter((f) => {
+        const src = readFileSync(f, 'utf8');
+        return FORBIDDEN.some((cls) => new RegExp(`${cls}(?![\\w-])`).test(src));
+      })
       .map((f) => f.slice(SRC.length + 1));
 
     expect(
@@ -36,8 +47,9 @@ describe('accent の使われ方（#90）', () => {
     ).toEqual([]);
   });
 
-  it('塗りとしての custom-accent は今も使われている（分離が行き過ぎていない）', () => {
-    const fills = walk(SRC).filter((f) => /bg-custom-accent/.test(readFileSync(f, 'utf8')));
-    expect(fills.length).toBeGreaterThan(0);
+  it('index.css も検査対象に含まれている（@apply で書かれても拾う）', () => {
+    // walk が .css を落としていたら、この検査自体が意味を失う。
+    const scanned = walk(SRC).map((f) => f.slice(SRC.length + 1));
+    expect(scanned).toContain('styles/index.css');
   });
 });

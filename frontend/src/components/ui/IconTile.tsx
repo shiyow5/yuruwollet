@@ -13,7 +13,7 @@ export function IconTile({ name, className, filled, size = 24 }: Props) {
   return (
     <div
       className={cn(
-        'flex h-12 w-12 items-center justify-center rounded-2xl bg-custom-accent/10 text-accent-text',
+        'flex h-12 w-12 items-center justify-center rounded-2xl bg-custom-accent/10 text-custom-accent',
         className,
       )}
     >

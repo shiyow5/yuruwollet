@@ -41,7 +41,7 @@ export function TrendChart({ data }: Props) {
           type="monotone"
           dataKey="net"
           name="収支"
-          stroke="#4a769e"
+          stroke="#769cbf"
           strokeWidth={2}
           dot={false}
         />
@@ -71,7 +71,7 @@ export function SavingsHistoryChart({
         <Tooltip formatter={(v) => formatYen(Number(v))} />
         <Legend wrapperStyle={{ fontSize: 12 }} />
         <Bar dataKey="target" name="目標" fill="#c9d6e2" radius={[4, 4, 0, 0]} />
-        <Bar dataKey="saved" name="実績" fill="#4a769e" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="saved" name="実績" fill="#769cbf" radius={[4, 4, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );

@@ -27,7 +27,7 @@ export function TransactionItem({ txn, categories, onEdit, onDelete, now }: Prop
   return (
     <div className="flex items-center justify-between gap-4">
       <div className="flex min-w-0 items-center gap-4">
-        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-custom-accent/10 text-accent-text">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-custom-accent/10 text-custom-accent">
           <Icon name={icon} />
         </div>
         <div className="flex min-w-0 flex-col gap-1">
@@ -44,7 +44,7 @@ export function TransactionItem({ txn, categories, onEdit, onDelete, now }: Prop
         <span
           className={
             isIncome
-              ? 'font-body-md text-body-md font-medium text-accent-text'
+              ? 'font-body-md text-body-md font-medium text-custom-accent'
               : 'font-body-md text-body-md font-medium text-custom-text'
           }
         >

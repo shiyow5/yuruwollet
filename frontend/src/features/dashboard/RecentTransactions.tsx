@@ -21,7 +21,7 @@ export function RecentTransactions({ memberId, className, limit = 5 }: Props) {
         <h2 className="font-headline-md text-headline-md text-custom-text">直近の履歴</h2>
         <Link
           to={memberId ? `/ledger?member=${encodeURIComponent(memberId)}` : '/ledger'}
-          className="font-label-sm text-label-sm text-custom-accent transition hover:underline"
+          className="font-label-sm text-label-sm text-accent-text transition hover:underline"
         >
           すべて見る
         </Link>

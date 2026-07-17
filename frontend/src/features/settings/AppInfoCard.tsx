@@ -19,7 +19,7 @@ export function AppInfoCard() {
         href={REPO_URL}
         target="_blank"
         rel="noreferrer"
-        className="flex items-center gap-2 text-body-md text-custom-accent hover:underline"
+        className="flex items-center gap-2 text-body-md text-accent-text hover:underline"
       >
         <Icon name="code" size={20} />
         ソースコード（GitHub）

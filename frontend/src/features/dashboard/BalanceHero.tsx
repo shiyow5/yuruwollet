@@ -36,7 +36,7 @@ export function BalanceHero({ memberId, canAdd = false, onAdd }: Props) {
       ) : (
         <div
           data-testid="current-balance"
-          className="mb-8 text-[56px] font-bold leading-none tracking-tight text-custom-accent"
+          className="mb-8 text-[56px] font-bold leading-none tracking-tight text-accent-text"
         >
           {formatYen(balance ?? 0)}
         </div>
@@ -54,7 +54,7 @@ export function BalanceHero({ memberId, canAdd = false, onAdd }: Props) {
           <button
             type="button"
             onClick={() => onAdd?.('expense')}
-            className="flex flex-1 items-center justify-center gap-2 rounded-full border border-custom-accent/20 bg-white px-6 py-4 font-label-sm text-label-sm text-custom-accent shadow-sm transition hover:bg-custom-accent/5"
+            className="flex flex-1 items-center justify-center gap-2 rounded-full border border-custom-accent/20 bg-white px-6 py-4 font-label-sm text-label-sm text-accent-text shadow-sm transition hover:bg-custom-accent/5"
           >
             <Icon name="send" size={20} />
             支出

@@ -46,22 +46,26 @@ export function IconPicker({ value, onChange, label = 'アイコン' }: Props) {
 
   // パレット外（旧データの独自アイコン）はフォーカスの起点にできないので先頭に落とす。
   const selected = isCategoryIcon(value) ? value : null;
-  const tabbable = selected ?? FLAT_ICONS[0];
+  const initial = selected ?? FLAT_ICONS[0];
 
-  // 開いたら選択中のアイコンにフォーカスを載せる（APG: listbox は選択項目から始める）。
-  // Modal 側の初期フォーカス（最初のフォーカス可能要素 = 閉じるボタン）より後に動く
-  // ため、こちらが勝つ。
+  // **tab stop はフォーカス中のアイコンに追随させる。**選択中に固定したままだと、矢印で
+  // 移動した先が tabIndex=-1 のままになる。Modal のトラップは tabIndex=-1 を巡回先から
+  // 除くので、今フォーカスしている要素がリストに載らず Tab でダイアログの外へ抜ける
+  // （codex が指摘 → 実ブラウザで再現した）。
+  const [tabbable, setTabbable] = useState(initial);
+
+  // 開いたら選択中のアイコンから始める（APG: listbox は選択項目にフォーカス）。
+  // Modal 側の初期フォーカス（最初のフォーカス可能要素 = 閉じるボタン）より後に動くので
+  // こちらが勝つ。閉じている間に選択が変わった場合もここで追随する。
   useEffect(() => {
     if (!open) return;
-    optionRefs.current.get(tabbable)?.focus();
-  }, [open, tabbable]);
+    setTabbable(initial);
+    optionRefs.current.get(initial)?.focus();
+  }, [open, initial]);
 
-  function moveFocus(from: string, delta: number) {
-    const i = FLAT_ICONS.indexOf(from);
-    if (i < 0) return;
-    // 端で止める（回り込ませない）。76 個を一周させても迷うだけなので。
-    const next = Math.min(Math.max(i + delta, 0), FLAT_ICONS.length - 1);
-    optionRefs.current.get(FLAT_ICONS[next])?.focus();
+  function focusIcon(name: string) {
+    setTabbable(name);
+    optionRefs.current.get(name)?.focus();
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLDivElement>) {
@@ -75,13 +79,15 @@ export function IconPicker({ value, onChange, label = 'アイコン' }: Props) {
 
     if (delta !== undefined) {
       e.preventDefault(); // シートごとスクロールさせない
-      moveFocus(current, delta);
+      const i = FLAT_ICONS.indexOf(current);
+      if (i < 0) return;
+      // 端で止める（回り込ませない）。76 個を一周させても迷うだけなので。
+      focusIcon(FLAT_ICONS[Math.min(Math.max(i + delta, 0), FLAT_ICONS.length - 1)]);
       return;
     }
     if (e.key === 'Home' || e.key === 'End') {
       e.preventDefault();
-      const target = e.key === 'Home' ? FLAT_ICONS[0] : FLAT_ICONS[FLAT_ICONS.length - 1];
-      optionRefs.current.get(target)?.focus();
+      focusIcon(e.key === 'Home' ? FLAT_ICONS[0] : FLAT_ICONS[FLAT_ICONS.length - 1]);
     }
   }
 
@@ -98,7 +104,7 @@ export function IconPicker({ value, onChange, label = 'アイコン' }: Props) {
         aria-label={`${label}を選ぶ`}
         className="flex w-fit items-center gap-3 rounded-2xl bg-surface-container-high px-3 py-2 transition hover:bg-custom-accent/10"
       >
-        <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-custom-accent/10 text-custom-accent">
+        <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-custom-accent/10 text-accent-text">
           {/* パレット外だと iconGlyph が名前をそのまま返して英単語が出てしまうので、
               描く前に既定アイコンへ落とす。 */}
           <Icon name={selected ?? DEFAULT_CATEGORY_ICON} size={24} filled />
@@ -115,7 +121,7 @@ export function IconPicker({ value, onChange, label = 'アイコン' }: Props) {
           <button
             type="button"
             onClick={() => setOpen(false)}
-            className="rounded-full px-3 py-2 font-label-sm text-label-sm text-custom-accent transition hover:bg-custom-accent/10"
+            className="rounded-full px-3 py-2 font-label-sm text-label-sm text-accent-text transition hover:bg-custom-accent/10"
           >
             閉じる
           </button>
@@ -169,7 +175,7 @@ export function IconPicker({ value, onChange, label = 'アイコン' }: Props) {
                         'flex h-11 w-11 items-center justify-center rounded-xl transition',
                         isSelected
                           ? 'bg-custom-accent text-on-primary'
-                          : 'text-custom-text/70 hover:bg-custom-accent/10 hover:text-custom-accent',
+                          : 'text-custom-text/70 hover:bg-custom-accent/10 hover:text-accent-text',
                       )}
                     >
                       <Icon name={name} size={22} filled={isSelected} />

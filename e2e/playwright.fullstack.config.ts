@@ -40,8 +40,10 @@ export default defineConfig({
   webServer: {
     // **frontend から実行**して functions/ と .dev.vars を拾わせる（リポジトリルートから叩くと
     // /api/session が消える）。build 済み dist を wrangler pages dev が配信する。
+    // VITE_ALLOW_CLOCK_OVERRIDE: 24日の壁を `?now=` で試すために要る。**ビルド時**に渡さないと
+    // 効かず、しかもエラーにならず黙って無視される（frontend/src/lib/clock.ts:9）。
     command:
-      'cd ../frontend && npm run build && npx wrangler pages dev dist --port 8788 --ip 127.0.0.1',
+      'cd ../frontend && VITE_ALLOW_CLOCK_OVERRIDE=true npm run build && npx wrangler pages dev dist --port 8788 --ip 127.0.0.1',
     url: baseURL,
     // ローカルは起動済みの wrangler を再利用。CI は毎回新規（クリーンビルド）。
     // **注意**（ローカル）: 再利用は build をスキップするので、前回の wrangler が 8788 に残っていると

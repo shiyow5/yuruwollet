@@ -97,6 +97,30 @@ describe('IconPicker', () => {
       expect(tabbable[0]).toHaveAccessibleName('restaurant');
     });
 
+    it('矢印で移動すると tab stop も追随する（フォーカスがダイアログから逃げない）', () => {
+      // Modal のフォーカストラップは tabIndex=-1 を除外して巡回先を決める（#88）。
+      // 移動後も選択中のアイコンに tabIndex=0 が残ったままだと、今フォーカスしている
+      // 要素がトラップの巡回リストに載らず、Tab でダイアログの外へ抜けてしまう。
+      render(<IconPicker value={flat[0]} onChange={vi.fn()} />);
+      fireEvent.click(screen.getByRole('button', { name: /アイコン/ }));
+      fireEvent.keyDown(screen.getByRole('listbox'), { key: 'ArrowRight' });
+
+      const tabbable = screen.getAllByRole('option').filter((el) => el.tabIndex === 0);
+      expect(tabbable).toHaveLength(1);
+      expect(tabbable[0]).toHaveFocus();
+      expect(tabbable[0]).toHaveAccessibleName(flat[1]);
+    });
+
+    it('閉じて開き直すと、また選択中のアイコンから始まる', () => {
+      render(<IconPicker value={flat[0]} onChange={vi.fn()} />);
+      fireEvent.click(screen.getByRole('button', { name: /アイコン/ }));
+      fireEvent.keyDown(screen.getByRole('listbox'), { key: 'End' });
+      fireEvent.click(screen.getByRole('button', { name: '閉じる' }));
+
+      fireEvent.click(screen.getByRole('button', { name: /アイコン/ }));
+      expect(screen.getByRole('option', { name: flat[0] })).toHaveFocus();
+    });
+
     it('矢印キーはフォーカスだけ動かし、選択も閉じもしない', () => {
       const onChange = vi.fn();
       render(<IconPicker value={flat[0]} onChange={onChange} />);

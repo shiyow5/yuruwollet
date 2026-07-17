@@ -26,8 +26,13 @@ import subprocess
 import sys
 import uuid
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
+
+# アプリと DB は JST を単一の真実にしている（jst_today / jstMonthStart / checkpoint RPC）。
+# ホストのローカル日付を既定にすると、UTC マシンの月初に「今月」が前月へずれる。
+JST = timezone(timedelta(hours=9))
 
 CONTAINER = 'supabase_db_yuruwollet'
 HOUSEHOLD = 'main'
@@ -45,6 +50,16 @@ FX_RATE = 150.0
 def tid(label: str) -> str:
     """ラベルから決定的な UUID を作る。同じラベルなら何度でも同じ id。"""
     return str(uuid.uuid5(NS, label))
+
+
+def jpy(amount: float) -> int:
+    """本番と同じ丸めで円に落とす。
+
+    Python の `round` は偶数丸め（バンカーズ）なので `round(10.99*150)` = 1648 になるが、
+    アプリは `Math.round`、精算 SQL は Postgres の `round` で、どちらも 1649 を返す。
+    そのままだと fixture が「本番では起こりえない合計」を検証してしまう。
+    """
+    return int(Decimal(str(amount)).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
 
 
 # ---------------------------------------------------------------- 月の計算
@@ -245,8 +260,34 @@ def resolve_renewal(today: date, sub: Sub) -> date:
     return date(base.year, base.month, min(sub.renewal_day, last.day))
 
 
+def anchor_seed_date(renewal: date, renewal_day: int) -> date | None:
+    """anchor を正しく立てるための「1 段前の日付」。丸めが起きていないなら None。
+
+    `set_renewal_anchor` トリガは **INSERT では必ず `next_renewal_date` の日から anchor を
+    決める**（20260713060000_subscription_renewal_anchor.sql:31）。31 日課金を 2/28 に丸めた
+    状態でいきなり INSERT すると anchor が 28 になり、以降ずっと 28 日に固定される
+    ——まさにそのトリガが防ごうとしているバグを、テストデータ側で再現してしまう。
+
+    そこで cron と同じ経路を踏む: **31 日がある月に INSERT して anchor=31 を立て、
+    そのあと service_role で日付だけ進める**（UPDATE 時、service_role なら anchor は保持される）。
+    """
+    if renewal.day == renewal_day:
+        return None  # 丸められていない = そのまま INSERT すれば anchor は正しい
+    # renewal の月から遡って、renewal_day が存在する直近の月を探す
+    for back in range(1, 13):
+        base = month_start(renewal, back)
+        last = month_start(base, -1) - timedelta(days=1)
+        if last.day >= renewal_day:
+            return date(base.year, base.month, renewal_day)
+    return None
+
+
 def build_apply_sql(today: date) -> str:
-    lines: list[str] = ['begin;']
+    # `guard_renewal_floor` は「次回更新日を実 JST 日付より 1 周期以上前にできない」を守る
+    # （supabase/migrations/20260715110000_cap_settlement.sql）。--today で過去日を基準に
+    # 投入するとこれに弾かれるので、トリガが公式に素通しする service_role を名乗る。
+    # cron が同じ経路を使っている。SET LOCAL なのでトランザクションを抜ければ戻る。
+    lines: list[str] = ['begin;', "set local role = 'service_role';"]
 
     for member, bal in OPENING_BALANCE.items():
         lines.append(
@@ -265,8 +306,13 @@ def build_apply_sql(today: date) -> str:
                 f'c.id, {q(t.memo)}, {q(occurred.isoformat())} '
                 f'from public.categories c where c.household_id = {q(HOUSEHOLD)} '
                 f'and c.kind = {q(t.kind)} and c.name = {q(t.category)} '
-                'on conflict (id) do update set amount = excluded.amount, '
-                'memo = excluded.memo, occurred_on = excluded.occurred_on;'
+                # UI で編集できる列は全部戻す。amount/memo/date だけ戻していたときは、
+                # type や category_id が編集されたままでも --status が 75/75 と言った。
+                'on conflict (id) do update set type = excluded.type, '
+                'amount = excluded.amount, category_id = excluded.category_id, '
+                'memo = excluded.memo, occurred_on = excluded.occurred_on, '
+                'owner_member_id = excluded.owner_member_id, '
+                'subscription_id = null, is_system_generated = false;'
             )
 
     # savings_goals は unique(member_id, period_month)。`--today` を変えて再投入すると
@@ -287,24 +333,34 @@ def build_apply_sql(today: date) -> str:
         row_id = tid(f'sub:{s.member}:{s.name}')
         renewal = resolve_renewal(today, s)
         if s.currency == 'USD':
-            amount_jpy = round(s.original * FX_RATE)
+            amount_jpy = jpy(s.original * FX_RATE)
             fx_rate = f'{FX_RATE:.6f}'
             fx_date = q(today.isoformat())
         else:
             amount_jpy = int(s.original)
             fx_rate = 'null'
             fx_date = 'null'
+        # 丸めが起きる課金日（31 日など）は、まず丸めの無い日付で INSERT して anchor を立てる。
+        # そうしないと INSERT トリガが丸めた日を anchor にしてしまう（anchor_seed_date 参照）。
+        seed_date = anchor_seed_date(renewal, s.renewal_day)
+        insert_date = seed_date or renewal
         lines.append(
             'insert into public.subscriptions '
             '(id, household_id, owner_member_id, name, currency, original_amount, amount_jpy, '
             'fx_rate, fx_rate_date, cycle, next_renewal_date, status) '
             f'values ({q(row_id)}, {q(HOUSEHOLD)}, {q(s.member)}, {q(s.name)}, {q(s.currency)}, '
             f'{s.original}, {amount_jpy}, {fx_rate}, {fx_date}, {q(s.cycle)}, '
-            f'{q(renewal.isoformat())}, {q(s.status)}) '
+            f'{q(insert_date.isoformat())}, {q(s.status)}) '
             'on conflict (id) do update set original_amount = excluded.original_amount, '
             'amount_jpy = excluded.amount_jpy, next_renewal_date = excluded.next_renewal_date, '
-            'status = excluded.status;'
+            'cycle = excluded.cycle, status = excluded.status;'
         )
+        if seed_date:
+            # service_role なので anchor は保持される（= cron のロールフォワードと同じ扱い）。
+            lines.append(
+                f'update public.subscriptions set next_renewal_date = {q(renewal.isoformat())} '
+                f'where id = {q(row_id)};'
+            )
 
     for i, w in enumerate(WISHES):
         row_id = tid(f'wish:{i}')
@@ -337,10 +393,35 @@ def all_ids() -> dict[str, list[str]]:
     }
 
 
-def build_remove_sql(restore: dict[str, int]) -> str:
+def build_remove_sql(restore: dict[str, int], today: date) -> str:
     lines = ['begin;']
     ids = all_ids()
-    # transactions は subscriptions からの参照（決済行）がありうるので先に消す
+
+    # --- チェックリストを実施すると DB が自分で作る行（id を知りようがない）---
+    # これを残すと「撤去したのに戻っていない」状態になるので、テストデータに紐づくものだけ消す。
+
+    # 1. サブスクの精算で生えた決済行。FK が `on delete set null` なので、サブスクだけ消すと
+    #    subscription_id を失った普通の支出として台帳に残る。**サブスクより先に**消す。
+    sub_ids = ', '.join(q(i) for i in ids['subscriptions'])
+    lines.append(
+        f'delete from public.transactions where subscription_id in ({sub_ids});'
+    )
+
+    # 2. 24 日の壁を試すと balance_checkpoints が生える。残すと次回の壁が出なくなる
+    #    （確認済み扱いになる）＝ 手順が再現しない。あわせて、確定で入る残高調整
+    #    （is_system_generated、RPC が採番）も消す。テストデータのメンバー × 投入した月に限る。
+    members = ', '.join(q(m) for m in OPENING_BALANCE)
+    months = ', '.join(q(month_start(today, b).isoformat()) for b in LEDGER)
+    lines.append(
+        f'delete from public.balance_checkpoints where member_id in ({members}) '
+        f'and checkpoint_month in ({months});'
+    )
+    lines.append(
+        f'delete from public.transactions where is_system_generated and owner_member_id in ({members}) '
+        f"and date_trunc('month', occurred_on)::date in ({months});"
+    )
+
+    # --- 決定的 id を持つテストデータ本体 ---
     for table in ('transactions', 'savings_goals', 'subscriptions', 'wishlist_items'):
         joined = ', '.join(q(i) for i in ids[table])
         lines.append(f'delete from public.{table} where id in ({joined});')
@@ -451,7 +532,7 @@ def main() -> None:
     ap.add_argument('--today', help='基準日 (YYYY-MM-DD)。既定は今日。')
     args = ap.parse_args()
 
-    today = date.fromisoformat(args.today) if args.today else date.today()
+    today = date.fromisoformat(args.today) if args.today else datetime.now(JST).date()
 
     if args.dump_sql:
         print(build_apply_sql(today))
@@ -483,7 +564,7 @@ def main() -> None:
                 'あなたの編集とみなして触れません。',
                 file=sys.stderr,
             )
-        psql(build_remove_sql(restore))
+        psql(build_remove_sql(restore, today))
         BACKUP_FILE.unlink(missing_ok=True)
         restored = ' / '.join(f'{m}={v}' for m, v in restore.items()) or '触れず'
         print(f'撤去しました（テストデータの id のみ / opening_balance: {restored}）。')

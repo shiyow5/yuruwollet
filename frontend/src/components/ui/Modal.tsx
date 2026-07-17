@@ -12,7 +12,12 @@ interface Props {
   label?: string;
 }
 
-const FOCUSABLE = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+// `tabindex="-1"` を除くのは button/input 等にも効かせる必要がある。裸の `button` だけだと、
+// roving tabindex（APG のグリッド/リストボックス）で -1 にした要素まで拾い、
+// フォーカストラップが全部を tab stop に戻してしまう（#88 の IconPicker で踏んだ）。
+const FOCUSABLE = ['button', '[href]', 'input', 'select', 'textarea', '[tabindex]']
+  .map((s) => `${s}:not([tabindex="-1"])`)
+  .join(', ');
 
 export function Modal({ open, onClose, children, className, locked = false, label }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);

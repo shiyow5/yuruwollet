@@ -129,7 +129,12 @@ export function IconPicker({ value, onChange, label = 'アイコン' }: Props) {
         >
           {CATEGORY_ICON_GROUPS.map((group) => (
             // listbox の子として合法なグルーピング
-            <div key={group.group} role="group" aria-label={group.group} className="flex flex-col gap-2">
+            <div
+              key={group.group}
+              role="group"
+              aria-label={group.group}
+              className="flex flex-col gap-2"
+            >
               <span aria-hidden="true" className="font-label-sm text-label-sm text-custom-text/70">
                 {group.group}
               </span>

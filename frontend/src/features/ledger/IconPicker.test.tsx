@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { IconPicker } from './IconPicker';
-import { CATEGORY_ICON_GROUPS, CATEGORY_ICONS, DEFAULT_CATEGORY_ICON } from '../../lib/icons/palette';
+import {
+  CATEGORY_ICON_GROUPS,
+  CATEGORY_ICONS,
+  DEFAULT_CATEGORY_ICON,
+} from '../../lib/icons/palette';
 
 /**
  * #88: 76 個のアイコンを 248px の内部スクロール箱から選ぶ形をやめ、

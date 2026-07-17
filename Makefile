@@ -37,6 +37,14 @@ seed: ## seed を投入
 gen-types: ## Supabase から TS 型を生成
 	npx supabase gen types typescript --local > frontend/src/lib/database.types.ts
 
+.PHONY: testdata testdata-remove testdata-status
+testdata: ## ローカル DB に網羅確認用のテストデータを投入 (#44)
+	python3 scripts/seed_testdata.py --apply
+testdata-remove: ## テストデータだけを撤去する (#44)
+	python3 scripts/seed_testdata.py --remove
+testdata-status: ## テストデータが今いくつ入っているか
+	python3 scripts/seed_testdata.py --status
+
 .PHONY: subset-icons
 subset-icons: ## アイコンフォントをパレット(#9)だけにサブセット再生成
 	python3 scripts/subset_icons.py

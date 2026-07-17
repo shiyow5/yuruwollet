@@ -269,13 +269,18 @@ def build_apply_sql(today: date) -> str:
                 'memo = excluded.memo, occurred_on = excluded.occurred_on;'
             )
 
+    # savings_goals は unique(member_id, period_month)。`--today` を変えて再投入すると
+    # テストデータの目標同士が席を奪い合う（back=2 の行が back=1 の行のいる月へ移ろうとして
+    # unique 違反 → トランザクションごと巻き戻る）。**自分の行を先に消してから入れ直す**。
+    # 同じトランザクション内なので、途中で目標が消えた状態は誰にも見えない。
+    goal_ids = ', '.join(q(tid(f'goal:{m}:{b}')) for m, b, _ in GOALS)
+    lines.append(f'delete from public.savings_goals where id in ({goal_ids});')
     for member, back, target in GOALS:
         base = month_start(today, back)
         row_id = tid(f'goal:{member}:{back}')
         lines.append(
             'insert into public.savings_goals (id, household_id, member_id, period_month, target_amount) '
-            f'values ({q(row_id)}, {q(HOUSEHOLD)}, {q(member)}, {q(base.isoformat())}, {target}) '
-            'on conflict (id) do update set target_amount = excluded.target_amount;'
+            f'values ({q(row_id)}, {q(HOUSEHOLD)}, {q(member)}, {q(base.isoformat())}, {target});'
         )
 
     for s in SUBS:
@@ -363,10 +368,10 @@ def build_status_sql() -> str:
 # ---------------------------------------------------------------- 実行
 
 
-def psql(sql: str) -> str:
+def psql(sql: str, *extra: str) -> str:
     proc = subprocess.run(
         ['docker', 'exec', '-i', CONTAINER, 'psql', '-U', 'postgres', '-d', 'postgres',
-         '-v', 'ON_ERROR_STOP=1'],
+         '-v', 'ON_ERROR_STOP=1', *extra],
         input=sql,
         capture_output=True,
         text=True,
@@ -376,18 +381,63 @@ def psql(sql: str) -> str:
     return proc.stdout
 
 
+def rows(sql: str) -> list[str]:
+    """値だけを行のリストで取る。
+
+    **`\\pset` を使ってはいけない**: "Output format is unaligned." が stdout に混ざって
+    結果を汚す（実際にそれで preflight が全件誤検知した）。psql のフラグで指定する。
+    """
+    return [line for line in psql(sql, '-t', '-A').strip().splitlines() if line]
+
+
+def preflight(today: date) -> None:
+    """投入前に、黙って壊れる条件を潰しておく。
+
+    どちらも「エラーにならず、静かに間違った状態になる」種類なので、先に止める。
+    """
+    problems: list[str] = []
+
+    # 1. LEDGER が参照するカテゴリが実在するか。
+    #    insert ... select なので、名前が変わっていると **0 件挿入されるだけでエラーにならない**。
+    needed = {(t.kind, t.category) for txns in LEDGER.values() for t in txns}
+    have = {
+        tuple(line.split('|', 1))
+        for line in rows(
+            f'select kind, name from public.categories where household_id = {q(HOUSEHOLD)};'
+        )
+        if '|' in line
+    }
+    for kind, name in sorted(needed - have):
+        problems.append(f'カテゴリ「{name}」({kind}) が見つかりません（改名・削除された？）')
+
+    # 2. savings_goals は unique(member_id, period_month)。同じ枠に**手で作った目標**があると
+    #    on conflict (id) では拾えず、--apply 全体が duplicate key で落ちる。
+    ours = {tid(f'goal:{m}:{b}') for m, b, _ in GOALS}
+    for member, back, _ in GOALS:
+        month = month_start(today, back).isoformat()
+        for found in rows(
+            f'select id from public.savings_goals where member_id = {q(member)} '
+            f'and period_month = {q(month)};'
+        ):
+            if found not in ours:
+                problems.append(
+                    f'{member} の {month} に別の目標（id={found}）が既にあります。'
+                    'テストデータの目標と衝突します（先に UI で消してください）'
+                )
+
+    if problems:
+        sys.exit('投入を中止しました:\n  - ' + '\n  - '.join(problems))
+
+
 def read_opening_balance() -> dict[str, int]:
     """投入前の opening_balance を読む（撤去時に書き戻すため）。"""
-    out = psql(
-        '\\pset format unaligned\n\\pset tuples_only on\n'
+    result: dict[str, int] = {}
+    for line in rows(
         'select member_id || \'=\' || opening_balance from public.profiles '
         f'where member_id in ({", ".join(q(m) for m in OPENING_BALANCE)}) order by member_id;'
-    )
-    result: dict[str, int] = {}
-    for line in out.strip().splitlines():
-        if '=' in line:
-            member, _, bal = line.strip().partition('=')
-            result[member] = int(bal)
+    ):
+        member, _, bal = line.partition('=')
+        result[member] = int(bal)
     return result
 
 
@@ -408,6 +458,7 @@ def main() -> None:
         return
 
     if args.apply:
+        preflight(today)
         # 上書きする前に元の opening_balance を控える。
         # 既に控えがある = 前回の投入が撤去されていない → 控えを上書きすると元の値を永久に失う。
         if not BACKUP_FILE.exists():
@@ -421,6 +472,17 @@ def main() -> None:
         else:
             restore = {}
             print('注意: opening_balance の控えが無いので、初期残高には触れません。', file=sys.stderr)
+        # 投入後に UI で初期残高を変えた場合、控えを書き戻すとその編集を消してしまう。
+        # 「投入時に自分が書いた値のまま」のときだけ戻す（＝まだ自分の持ち物のときだけ）。
+        current = read_opening_balance()
+        skipped = [m for m, v in current.items() if v != OPENING_BALANCE.get(m)]
+        restore = {m: v for m, v in restore.items() if m not in skipped}
+        for m in skipped:
+            print(
+                f'注意: {m} の初期残高は投入後に {current[m]:,} へ変更されています。'
+                'あなたの編集とみなして触れません。',
+                file=sys.stderr,
+            )
         psql(build_remove_sql(restore))
         BACKUP_FILE.unlink(missing_ok=True)
         restored = ' / '.join(f'{m}={v}' for m, v in restore.items()) or '触れず'

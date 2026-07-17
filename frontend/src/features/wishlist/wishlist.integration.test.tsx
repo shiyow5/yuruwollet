@@ -229,11 +229,28 @@ describe('WishlistBoard 統合', () => {
     expect(await screen.findByText('コーヒーメーカー')).toBeInTheDocument();
   });
 
-  it('削除できる', async () => {
+  it('削除は確認してから消す（家計簿と揃える, #95）', async () => {
     state.rows = [item()];
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     renderBoard();
     fireEvent.click(await screen.findByRole('button', { name: 'コーヒーメーカー を削除' }));
+
+    expect(confirm).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(screen.queryByText('コーヒーメーカー')).toBeNull());
+    confirm.mockRestore();
+  });
+
+  it('確認をキャンセルしたら消さない（#95）', async () => {
+    state.rows = [item()];
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    renderBoard();
+    fireEvent.click(await screen.findByRole('button', { name: 'コーヒーメーカー を削除' }));
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    // 消えない
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.getByText('コーヒーメーカー')).toBeInTheDocument();
+    confirm.mockRestore();
   });
 
   // 相手が別端末で追加した変更が自分の画面に反映される

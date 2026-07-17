@@ -123,7 +123,6 @@ export function SubscriptionForm({
           通貨
         </span>
         <SegmentedControl
-          fullWidth
           ariaLabelledby="sub-currency-label"
           options={CURRENCY_OPTIONS}
           value={values.currency}
@@ -163,7 +162,6 @@ export function SubscriptionForm({
           支払いサイクル
         </span>
         <SegmentedControl
-          fullWidth
           ariaLabelledby="sub-cycle-label"
           options={CYCLE_OPTIONS}
           value={values.cycle}

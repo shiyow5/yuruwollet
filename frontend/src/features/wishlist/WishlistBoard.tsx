@@ -58,6 +58,14 @@ export function WishlistBoard() {
     create.mutate(value, { onSuccess: () => setFormOpen(false) });
   }
 
+  // 削除は完全消去（思い出アーカイブとは別）で取り返しがつかないので、
+  // 家計簿の取引削除（LedgerPage）と同じく確認を挟む（#95）。
+  function handleDelete(id: string) {
+    if (window.confirm('この項目を削除しますか？')) {
+      remove.mutate(id);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <SegmentedControl
@@ -105,7 +113,7 @@ export function WishlistBoard() {
               busy={mutating}
               onComplete={complete.mutate}
               onRestore={restore.mutate}
-              onDelete={remove.mutate}
+              onDelete={handleDelete}
             />
           ))}
         </ul>

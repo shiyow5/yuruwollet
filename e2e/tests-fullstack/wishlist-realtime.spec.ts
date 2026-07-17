@@ -27,6 +27,8 @@ async function addWish(page: Page, title: string) {
 async function removeWish(page: Page, title: string, archived = false) {
   await page.goto('/wishlist');
   if (archived) await page.getByRole('radio', { name: '思い出' }).click();
+  // 削除は window.confirm を挟む（#95）。Playwright は既定で拒否するので accept する。
+  page.once('dialog', (d) => d.accept());
   // タブ切替の直後は一覧がまだ描画されていない。count() を先に読むと 0 と判断して
   // 素通りし、消したつもりで残る（実際にそうなった）。**出るのを待ってから**押す。
   const button = page.getByRole('button', { name: `${title} を削除` });
@@ -72,14 +74,9 @@ test.describe('ウィッシュリストの Realtime', () => {
 
     // replica identity が default だと **DELETE はフィルタ付きチャンネルに届かない**。
     // ここが落ちたら full が外れたと考えてよい（pgTAP も守っているが、これは実配信の確認）。
+    // 削除は window.confirm を挟む（#95）。Playwright は既定で拒否するので accept する。
+    pa.once('dialog', (d) => d.accept());
     await pa.getByRole('button', { name: `${title} を削除` }).click();
-    const dialog = pa.getByRole('dialog');
-    if (await dialog.count()) {
-      await dialog
-        .getByRole('button', { name: /削除|はい/ })
-        .last()
-        .click();
-    }
 
     await expect(pa.getByText(title)).toHaveCount(0);
     await expect(pb.getByText(title)).toHaveCount(0, { timeout: 15_000 });

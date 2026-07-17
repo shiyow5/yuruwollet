@@ -99,7 +99,6 @@ export function CategoryManager() {
 
       <form className="flex flex-col gap-4" onSubmit={handleAdd} aria-label="カテゴリ追加フォーム">
         <SegmentedControl
-          fullWidth
           options={KIND_OPTIONS}
           value={kind}
           onChange={setKind}

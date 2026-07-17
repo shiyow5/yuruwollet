@@ -51,13 +51,15 @@ describe('SubscriptionForm', () => {
 
   // モーダル内のフォームのタブは幅いっぱいのままにする（タップしやすさ優先）。
   // SegmentedControl の既定を自然幅にしたので、fullWidth を渡し忘れると静かに縮む。
-  it('フォーム内のタブは幅いっぱい（fullWidth の付け忘れを落とす）', () => {
+  it('フォーム内のタブは文字幅（w-fit）で、横いっぱいには広げない（#96）', () => {
+    // 以前は fullWidth（w-full）にしていたが、選択肢の右に灰色の余白が出て
+    // 間延びするという実機フィードバックで、文字幅に合わせる方針にした。
     render(<SubscriptionForm fxRate={fx} onSubmit={vi.fn()} />);
     const lists = screen.getAllByRole('radiogroup');
     expect(lists.length).toBeGreaterThanOrEqual(2); // 通貨 / 周期
     for (const list of lists) {
-      expect(list).toHaveClass('w-full');
-      expect(list).not.toHaveClass('w-fit');
+      expect(list).toHaveClass('w-fit');
+      expect(list).not.toHaveClass('w-full');
     }
   });
 });

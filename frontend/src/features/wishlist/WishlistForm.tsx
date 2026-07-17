@@ -45,7 +45,6 @@ export function WishlistForm({ initialGenre, submitting, submitError, onSubmit, 
       <h2 className="font-headline-md text-headline-md font-bold text-custom-text">追加する</h2>
 
       <SegmentedControl
-        fullWidth
         ariaLabel="ジャンル"
         options={GENRE_OPTIONS}
         value={values.genre as WishGenre}

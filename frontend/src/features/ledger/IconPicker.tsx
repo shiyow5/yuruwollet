@@ -104,7 +104,7 @@ export function IconPicker({ value, onChange, label = 'アイコン' }: Props) {
         aria-label={`${label}を選ぶ`}
         className="flex w-fit items-center gap-3 rounded-2xl bg-surface-container-high px-3 py-2 transition hover:bg-custom-accent/10"
       >
-        <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-custom-accent/10 text-accent-text">
+        <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-custom-accent/10 text-custom-accent">
           {/* パレット外だと iconGlyph が名前をそのまま返して英単語が出てしまうので、
               描く前に既定アイコンへ落とす。 */}
           <Icon name={selected ?? DEFAULT_CATEGORY_ICON} size={24} filled />
@@ -121,7 +121,7 @@ export function IconPicker({ value, onChange, label = 'アイコン' }: Props) {
           <button
             type="button"
             onClick={() => setOpen(false)}
-            className="rounded-full px-3 py-2 font-label-sm text-label-sm text-accent-text transition hover:bg-custom-accent/10"
+            className="rounded-full px-3 py-2 font-label-sm text-label-sm text-custom-accent transition hover:bg-custom-accent/10"
           >
             閉じる
           </button>
@@ -175,7 +175,7 @@ export function IconPicker({ value, onChange, label = 'アイコン' }: Props) {
                         'flex h-11 w-11 items-center justify-center rounded-xl transition',
                         isSelected
                           ? 'bg-custom-accent text-on-primary'
-                          : 'text-custom-text/70 hover:bg-custom-accent/10 hover:text-accent-text',
+                          : 'text-custom-text/70 hover:bg-custom-accent/10 hover:text-custom-accent',
                       )}
                     >
                       <Icon name={name} size={22} filled={isSelected} />

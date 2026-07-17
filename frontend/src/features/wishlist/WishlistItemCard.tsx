@@ -46,7 +46,7 @@ export function WishlistItemCard({
             href={safeUrl}
             target="_blank"
             rel="noopener noreferrer nofollow"
-            className="inline-flex items-center gap-1 truncate text-label-sm text-accent-text underline"
+            className="inline-flex items-center gap-1 truncate text-label-sm text-primary underline"
           >
             <Icon name="link" className="text-sm" />
             <span className="truncate">{safeUrl}</span>

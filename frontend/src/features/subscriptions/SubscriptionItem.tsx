@@ -24,7 +24,7 @@ export function SubscriptionItem({ sub, onEdit, onDelete }: Props) {
   return (
     <div className="flex flex-col gap-4 rounded-3xl border border-black/5 bg-surface-container-lowest p-6 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 items-center gap-4">
-        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-custom-accent/10 text-accent-text">
+        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-custom-accent/10 text-custom-accent">
           <Icon name="subscriptions" />
         </div>
         <div className="min-w-0">

@@ -20,5 +20,14 @@ alter table public.wishlist_items replica identity full;
 alter publication supabase_realtime add table public.wishlist_items;
 
 -- 既知の制約（Postgres Changes の仕様）: DELETE はフィルタも RLS も適用されないため、
--- 別 household の購読者にも「削除された行の id」と発生タイミングだけは届く。
--- 現状 household は 1 つしか存在しないため実害は無い。恒久対策（論理削除）は別 Issue。
+-- 別 household の購読者にも「削除された行の id」と発生タイミングだけは届く
+-- （上記のとおり old は主キーに切り詰められるので、title/memo/url は流れない）。
+--
+-- **現状は実害が無い**（#24 で判断して close）: このアプリの household は
+-- seed_baseline が入れる 'main' の 1 つだけで、二人専用の設計。
+-- 「別 household の購読者」がそもそも存在しないので、この漏れは発火しない。
+--
+-- **household を増やすなら恒久対策が要る**: 物理削除（frontend/src/lib/data/wishlist.ts の
+-- .delete()）をやめて論理削除（deleted フラグの UPDATE）にする。UPDATE はフィルタも RLS も
+-- 効くので削除同期が household 内に閉じ、副次的に replica identity full も不要になる
+-- （WAL が軽くなる）。2 household でのイベント配信の実測値は Issue #24 に残してある。

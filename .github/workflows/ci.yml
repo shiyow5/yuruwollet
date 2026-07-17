@@ -153,6 +153,11 @@ jobs:
           EMAIL_SHIYOWO=shiyowo@example.com
           DEV_BYPASS_EMAIL=yururi@example.com
           VARS
+      - name: seed test data (#44)
+        # 「自分/相手タブで残高が変わる」等、**両メンバーに別々のデータがある**前提のテストが
+        # あるため（db reset 直後は両方 0 で見分けがつかない）。
+        # 投入スクリプト自体（#44）の CI 検証も兼ねる。
+        run: python3 scripts/seed_testdata.py --apply
       - name: run full-stack e2e (wrangler pages dev + supabase)
         run: npm run test:fullstack --workspace @yuruwollet/e2e
       - name: stop supabase

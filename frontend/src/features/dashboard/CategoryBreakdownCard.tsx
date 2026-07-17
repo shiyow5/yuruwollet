@@ -38,14 +38,14 @@ export function CategoryBreakdownCard({ memberId, month, className }: Props) {
             <div key={bar.categoryId ?? 'uncategorized'}>
               <div className="mb-3 flex items-end justify-between">
                 <div className="flex items-center gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-custom-accent/10 text-custom-accent">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-custom-accent/10 text-accent-text">
                     <Icon name={bar.icon} />
                   </div>
                   <span className="font-body-lg text-body-lg font-medium text-custom-text">
                     {bar.name}
                   </span>
                 </div>
-                <span className="font-body-lg text-body-lg font-medium text-custom-accent">
+                <span className="font-body-lg text-body-lg font-medium text-accent-text">
                   {formatYen(bar.total)}
                 </span>
               </div>

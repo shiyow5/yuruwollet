@@ -9,12 +9,24 @@
   /* ---- Colors ---- */
   --color-custom-bg: #ffffff;
   --color-custom-text: #25271f;
-  --color-custom-accent: #769cbf;
-  --color-primary: #769cbf;
+  /* ブランド色。**塗り専用**（ボタン背景・選択状態・淡い下地・グラフ）。
+     元テンプレの #769cbf は白文字とのコントラストが 2.885:1 しかなく、主要ボタンの
+     ラベルが読めなかったため、色相 209° を保ったまま明度だけ下げた（#90）。
+     白文字 4.80:1 / 白背景との境界 4.80:1。 */
+  --color-custom-accent: #4a769e;
+  /* 文字・アイコン用の accent。塗りは「白文字が乗る」ため暗くしすぎられず、
+     文字は「淡い背景に乗る」ため暗くしたい ——要求が逆向きなので分けてある。
+     全サーフェス + accent/10 の下地で AA(4.5:1) を満たす（最悪 4.77:1）。
+     検算は theme-contrast.test.ts、使われ方は accent-usage.test.ts が守る。 */
+  --color-accent-text: #3f6589;
+  --color-primary: #4a769e;
   /* メンバー色。アバターの頭文字フォールバックで使う（Google の画像が
-     届かないことがあるため。Access の picture クレームは best-effort）。 */
-  --color-member-yururi: #769cbf;
-  --color-member-shiyowo: #c294b8;
+     届かないことがあるため。Access の picture クレームは best-effort）。
+     **白い頭文字が載る**ので、塗りと同じくコントラストが要る（#90）。
+     元は #769cbf(2.89:1) / #c294b8(2.55:1) で、どちらも読めなかった。
+     色相（209° / 313°）は保ったまま明度だけ下げてある。 */
+  --color-member-yururi: #4a769e;
+  --color-member-shiyowo: #a35d93;
   --color-on-primary: #ffffff;
   --color-surface: #ffffff;
   --color-surface-container-lowest: #ffffff;

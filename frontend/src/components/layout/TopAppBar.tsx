@@ -9,7 +9,7 @@ export function TopAppBar() {
 
   return (
     <header className="sticky top-0 z-30 flex w-full items-center justify-between gap-4 bg-custom-bg/90 px-5 py-5 backdrop-blur md:px-16">
-      <Link to="/" className="font-headline-md text-headline-md font-bold text-custom-accent">
+      <Link to="/" className="font-headline-md text-headline-md font-bold text-accent-text">
         yuruwollet
       </Link>
       <div className="flex items-center gap-2">

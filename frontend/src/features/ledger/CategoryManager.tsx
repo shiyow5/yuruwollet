@@ -146,7 +146,7 @@ export function CategoryManager() {
           categories={archived}
           actionIcon="unarchive"
           actionVerb="復元"
-          actionHover="hover:bg-custom-accent/10 hover:text-custom-accent"
+          actionHover="hover:bg-custom-accent/10 hover:text-accent-text"
           onAction={restore}
         />
       )}
@@ -193,7 +193,7 @@ function ActiveCategoryGroup({
               className="flex items-center justify-between rounded-2xl bg-surface-container-high px-4 py-3"
             >
               <span className="flex items-center gap-3">
-                <Icon name={c.icon ?? 'label'} size={20} className="text-custom-accent" />
+                <Icon name={c.icon ?? 'label'} size={20} className="text-accent-text" />
                 <span className="font-body-md text-body-md text-custom-text">{c.name}</span>
               </span>
               {isDeletable(c) ? (
@@ -253,7 +253,7 @@ function CategoryGroup({
               className="flex items-center justify-between rounded-2xl bg-surface-container-high px-4 py-3"
             >
               <span className="flex items-center gap-3">
-                <Icon name={c.icon ?? 'label'} size={20} className="text-custom-accent" />
+                <Icon name={c.icon ?? 'label'} size={20} className="text-accent-text" />
                 <span className="font-body-md text-body-md text-custom-text">{c.name}</span>
               </span>
               <button

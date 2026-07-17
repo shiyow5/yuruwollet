@@ -29,14 +29,14 @@ describe('Button', () => {
   });
   it('secondary variant のクラス', () => {
     render(<Button variant="secondary">x</Button>);
-    expect(screen.getByRole('button')).toHaveClass('text-custom-accent');
+    expect(screen.getByRole('button')).toHaveClass('text-accent-text');
   });
 });
 
 describe('Chip', () => {
   it('tone のクラスを付与', () => {
     render(<Chip tone="accent">利用中</Chip>);
-    expect(screen.getByText('利用中')).toHaveClass('text-custom-accent');
+    expect(screen.getByText('利用中')).toHaveClass('text-accent-text');
   });
   it('caution tone は amber', () => {
     render(<Chip tone="caution">無料体験中</Chip>);

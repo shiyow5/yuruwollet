@@ -12,7 +12,7 @@ import type {
 export const MAX_SLICES = 6;
 
 const PALETTE = [
-  '#769cbf', // ダスティブルー（アクセント）
+  '#4a769e', // ダスティブルー（アクセント）。custom-accent と揃える（#90 で暗くした）
   '#a8c0d6',
   '#e2b887',
   '#c2a4c8',

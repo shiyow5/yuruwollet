@@ -5,7 +5,7 @@ export type ChipTone = 'neutral' | 'accent' | 'success' | 'caution' | 'warning';
 
 const tones: Record<ChipTone, string> = {
   neutral: 'bg-black/5 text-custom-text/70',
-  accent: 'bg-custom-accent/20 text-custom-accent',
+  accent: 'bg-custom-accent/20 text-accent-text',
   success: 'bg-emerald-500/15 text-emerald-700',
   caution: 'bg-amber-500/15 text-amber-700',
   warning: 'bg-error/10 text-error',

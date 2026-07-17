@@ -84,3 +84,55 @@ describe('二次テキストのコントラスト（#13）', () => {
     }
   });
 });
+
+/**
+ * accent のコントラスト（#90）。
+ *
+ * #13 は custom-text の不透明度しか見ておらず、**accent は 1 度も検査していなかった**。
+ * その結果 `#769cbf` が「AA 対応済み」と report されたまま、白の上で 2.885:1、
+ * **塗りの上の白文字も 2.885:1** で放置されていた。
+ *
+ * 対応（ユーザーの選択）: ブランド色そのものを暗くする（色相 209° は維持）。
+ * 加えて、淡い背景に載る文字は塗りより更に暗い accent-text を使う
+ * （塗りは白文字とのコントラストが要るので暗く「しすぎられない」＝両者の要求が逆向きなため）。
+ */
+describe('accent のコントラスト（#90）', () => {
+  const ACCENT_TEXT = hexToRgb(token('accent-text'));
+  const ACCENT = hexToRgb(token('custom-accent'));
+
+  it('accent-text は全背景で AA(4.5:1) を満たす', () => {
+    for (const bg of BACKGROUNDS) {
+      const ratio = contrast(ACCENT_TEXT, bg.rgb);
+      expect(ratio, `accent-text over ${bg.name}`).toBeGreaterThanOrEqual(AA_NORMAL);
+    }
+  });
+
+  it('accent-text は accent/10 の淡い下地の上でも AA を満たす（Chip / IconTile）', () => {
+    for (const bg of BACKGROUNDS) {
+      const tinted = composite(ACCENT, 0.1, bg.rgb);
+      const ratio = contrast(ACCENT_TEXT, tinted);
+      expect(ratio, `accent-text over accent/10 on ${bg.name}`).toBeGreaterThanOrEqual(AA_NORMAL);
+    }
+  });
+
+  it('塗りの上の白文字が AA を満たす（主要ボタン・選択中のトグル）', () => {
+    // ここが #90 の本丸。ブランド色を塗りに使う限り、白文字とのコントラストは
+    // 「ブランド色をどこまで暗くしたか」で決まる。
+    const ratio = contrast(hexToRgb(token('on-primary')), ACCENT);
+    expect(ratio, 'on-primary over custom-accent').toBeGreaterThanOrEqual(AA_NORMAL);
+  });
+
+  it('塗り自体が白背景から見分けられる（非テキストの 3:1）', () => {
+    // 枠線の無いボタンなので、塗りと地の境界が見えないと形が分からない。
+    const ratio = contrast(ACCENT, hexToRgb(token('custom-bg')));
+    expect(ratio).toBeGreaterThanOrEqual(AA_NONTEXT);
+  });
+
+  it('メンバー色 + 白い頭文字が AA を満たす（アバターのフォールバック）', () => {
+    // ここも「塗りの上の文字」。accent と同じ理由で見落としていた（#90）。
+    for (const member of ['member-yururi', 'member-shiyowo']) {
+      const ratio = contrast(hexToRgb(token('on-primary')), hexToRgb(token(member)));
+      expect(ratio, `on-primary over ${member}`).toBeGreaterThanOrEqual(AA_NORMAL);
+    }
+  });
+});

@@ -38,6 +38,7 @@ vi.mock('../../lib/data/transactions', () => ({
         type: draft.type,
         amount: draft.amount,
         category_id: draft.categoryId,
+        account_id: null,
         memo: draft.memo,
         occurred_on: draft.occurredOn,
         is_system_generated: false,
@@ -117,6 +118,26 @@ vi.mock('../../lib/data/categories', () => ({
   unarchiveCategory: vi.fn(),
 }));
 
+vi.mock('../../lib/data/accounts', () => ({
+  listAccounts: vi.fn(async () => [
+    {
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      household_id: 'main',
+      name: '現金',
+      icon: 'payments',
+      sort_order: 10,
+      is_archived: false,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    },
+  ]),
+  createAccount: vi.fn(),
+  archiveAccount: vi.fn(),
+  unarchiveAccount: vi.fn(),
+  deleteAccount: vi.fn(),
+  getAccountUsage: vi.fn(async () => 0),
+}));
+
 vi.mock('../../lib/data/aggregates', () => ({
   listProfiles: vi.fn(async () => [
     {
@@ -158,6 +179,7 @@ function row(over: Partial<Transaction> = {}): Transaction {
     type: 'expense',
     amount: 4500,
     category_id: CATEGORY_ID,
+    account_id: null,
     memo: 'スーパー',
     occurred_on: '2026-07-10',
     is_system_generated: false,
@@ -220,7 +242,9 @@ describe('LedgerPage 統合', () => {
     const dialog = await screen.findByRole('dialog');
     await within(dialog).findByRole('option', { name: '食費' });
     fireEvent.change(within(dialog).getByPlaceholderText('0'), { target: { value: '3,000' } });
-    fireEvent.change(within(dialog).getByRole('combobox'), { target: { value: CATEGORY_ID } });
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'カテゴリ' }), {
+      target: { value: CATEGORY_ID },
+    });
     fireEvent.click(within(dialog).getByRole('button', { name: '追加' }));
 
     await waitFor(() => expect(createTransaction).toHaveBeenCalledTimes(1));
@@ -391,7 +415,7 @@ describe('LedgerPage 統合', () => {
     renderLedger();
     fireEvent.click(await screen.findByRole('button', { name: '編集' }));
     const dialog = await screen.findByRole('dialog');
-    const combobox = within(dialog).getByRole('combobox');
+    const combobox = within(dialog).getByRole('combobox', { name: 'カテゴリ' });
     // 現在のアーカイブ済カテゴリが選択値として保持され、選択肢にも出る
     expect(combobox).toHaveValue(ARCHIVED_CATEGORY_ID);
     expect(

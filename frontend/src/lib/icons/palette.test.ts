@@ -5,9 +5,13 @@ import {
   UI_ICONS,
   CATEGORY_ICONS,
   CATEGORY_ICON_GROUPS,
+  ACCOUNT_ICONS,
+  ACCOUNT_ICON_GROUPS,
   SUBSET_ICONS,
   isCategoryIcon,
+  isAccountIcon,
   DEFAULT_CATEGORY_ICON,
+  DEFAULT_ACCOUNT_ICON,
 } from './palette';
 import { genreIcon, GENRES } from '../wishlist/labels';
 
@@ -71,6 +75,15 @@ const SEED_CATEGORY_ICONS = [
   'volunteer_activism',
 ];
 
+// seed（20260724120000_accounts.sql）が入れるアカウントアイコン。
+const SEED_ACCOUNT_ICONS = [
+  'payments',
+  'account_balance',
+  'credit_card',
+  'qr_code_2',
+  'smartphone',
+];
+
 describe('アイコンパレット（#9 サブセットの単一の真実）', () => {
   it('ソースで使う全アイコンがサブセットに含まれる（chrome が文字化けしない）', () => {
     // 静的に拾えるもの（リテラル・icon= 属性・既定値・フォールバック）
@@ -88,8 +101,13 @@ describe('アイコンパレット（#9 サブセットの単一の真実）', (
     expect(missing, `seed だがパレットに無い: ${missing.join(', ')}`).toEqual([]);
   });
 
-  it('SUBSET_ICONS は ui ∪ categories（重複なし・ソート済み）', () => {
-    const expected = Array.from(new Set([...UI_ICONS, ...CATEGORY_ICONS])).sort();
+  it('seed のアカウントアイコンはすべてアカウントパレットにある（#98）', () => {
+    const missing = SEED_ACCOUNT_ICONS.filter((n) => !ACCOUNT_ICONS.includes(n));
+    expect(missing, `seed だがパレットに無い: ${missing.join(', ')}`).toEqual([]);
+  });
+
+  it('SUBSET_ICONS は ui ∪ categories ∪ accounts（重複なし・ソート済み）', () => {
+    const expected = Array.from(new Set([...UI_ICONS, ...CATEGORY_ICONS, ...ACCOUNT_ICONS])).sort();
     expect(SUBSET_ICONS).toEqual(expected);
     expect(new Set(SUBSET_ICONS).size).toBe(SUBSET_ICONS.length);
   });
@@ -100,10 +118,23 @@ describe('アイコンパレット（#9 サブセットの単一の真実）', (
     }
   });
 
+  it('各アカウントグループ内にアイコンの重複が無い（#98）', () => {
+    for (const g of ACCOUNT_ICON_GROUPS) {
+      expect(new Set(g.icons).size, `${g.group} に重複`).toBe(g.icons.length);
+    }
+  });
+
   it('isCategoryIcon はカテゴリパレットのみ true', () => {
     expect(isCategoryIcon('restaurant')).toBe(true);
     expect(isCategoryIcon(DEFAULT_CATEGORY_ICON)).toBe(true);
     expect(isCategoryIcon('not_a_real_icon')).toBe(false);
     expect(isCategoryIcon('chevron_left')).toBe(false);
+  });
+
+  it('isAccountIcon はアカウントパレットのみ true（#98）', () => {
+    expect(isAccountIcon('credit_card')).toBe(true);
+    expect(isAccountIcon(DEFAULT_ACCOUNT_ICON)).toBe(true);
+    expect(isAccountIcon('not_a_real_icon')).toBe(false);
+    expect(isAccountIcon('restaurant')).toBe(false);
   });
 });

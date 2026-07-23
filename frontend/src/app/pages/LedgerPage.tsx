@@ -11,6 +11,7 @@ import { TransactionList } from '../../features/ledger/TransactionList';
 import { AddTransactionModal } from '../../features/ledger/AddTransactionModal';
 import {
   useCategories,
+  useAccounts,
   useDeleteTransaction,
   useMonthTransactions,
   useUpdateTransaction,
@@ -34,6 +35,7 @@ export function LedgerPage() {
   const canWrite = activeMember !== '' && activeMember === selfId;
 
   const { data: categories = [] } = useCategories();
+  const { data: accounts = [] } = useAccounts();
   const { data: transactions = [], isLoading, isError } = useMonthTransactions(activeMember, month);
   const updateTransaction = useUpdateTransaction();
   const deleteTransaction = useDeleteTransaction();
@@ -110,6 +112,7 @@ export function LedgerPage() {
             <h3 className="mb-6 font-headline-md text-headline-md text-custom-text">収支を編集</h3>
             <TransactionForm
               categories={categories}
+              accounts={accounts}
               initial={toFormValues(modal.txn)}
               submitLabel="更新"
               submitting={updateTransaction.isPending}
@@ -133,6 +136,7 @@ function toFormValues(txn: Transaction): Partial<TransactionFormValues> {
     type: txn.type,
     amount: String(txn.amount),
     categoryId: txn.category_id ?? '',
+    accountId: txn.account_id ?? '',
     occurredOn: txn.occurred_on,
     memo: txn.memo,
   };

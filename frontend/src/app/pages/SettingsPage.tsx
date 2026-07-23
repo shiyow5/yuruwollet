@@ -2,6 +2,7 @@ import { Card } from '../../components/ui';
 import { AccountCard } from '../../features/settings/AccountCard';
 import { AppInfoCard } from '../../features/settings/AppInfoCard';
 import { CategoryManager } from '../../features/ledger/CategoryManager';
+import { AccountManager } from '../../features/ledger/AccountManager';
 
 /**
  * アプリ全体の設定。
@@ -22,6 +23,9 @@ export function SettingsPage() {
       <AccountCard />
       <Card>
         <CategoryManager />
+      </Card>
+      <Card>
+        <AccountManager />
       </Card>
       <AppInfoCard />
     </section>

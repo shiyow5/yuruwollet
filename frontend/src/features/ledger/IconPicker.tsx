@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { Icon, Modal } from '../../components/ui';
 import {
   CATEGORY_ICON_GROUPS,
   DEFAULT_CATEGORY_ICON,
   isCategoryIcon,
+  type CategoryIconGroup,
 } from '../../lib/icons/palette';
 import { cn } from '../../lib/cn';
 
@@ -11,15 +12,18 @@ interface Props {
   value: string;
   onChange: (icon: string) => void;
   label?: string;
+  /** 選べるアイコン群。既定はカテゴリパレット。アカウント用に差し替えできる（#98）。 */
+  groups?: readonly CategoryIconGroup[];
+  /** value がパレット内かの判定。groups とセットで渡す。 */
+  isValid?: (name: string) => boolean;
+  /** パレット外/未選択時に描く既定アイコン。 */
+  fallbackIcon?: string;
 }
 
 const SHEET_LABEL = 'アイコンを選ぶ';
 
 /** グリッドの列数。↑↓ の移動量と一致させる必要があるので、CSS と別々に持たない。 */
 const COLUMNS = 6;
-
-/** 見た目の並び順（グループをまたいで平坦化）。矢印キーはこの順で動く。 */
-const FLAT_ICONS: readonly string[] = CATEGORY_ICON_GROUPS.flatMap((g) => g.icons);
 
 /**
  * カテゴリアイコンをパレットから選ぶ（#9 / #88）。
@@ -40,13 +44,23 @@ const FLAT_ICONS: readonly string[] = CATEGORY_ICON_GROUPS.flatMap((g) => g.icon
  * シートが閉じるので、radiogroup にすると**矢印を 1 回押した瞬間に閉じる**ことになる。
  * listbox なら「フォーカスの移動」と「確定」を分けられる。
  */
-export function IconPicker({ value, onChange, label = 'アイコン' }: Props) {
+export function IconPicker({
+  value,
+  onChange,
+  label = 'アイコン',
+  groups = CATEGORY_ICON_GROUPS,
+  isValid = isCategoryIcon,
+  fallbackIcon = DEFAULT_CATEGORY_ICON,
+}: Props) {
   const [open, setOpen] = useState(false);
   const optionRefs = useRef(new Map<string, HTMLButtonElement>());
 
+  /** 見た目の並び順（グループをまたいで平坦化）。矢印キーはこの順で動く。 */
+  const flatIcons = useMemo(() => groups.flatMap((g) => g.icons), [groups]);
+
   // パレット外（旧データの独自アイコン）はフォーカスの起点にできないので先頭に落とす。
-  const selected = isCategoryIcon(value) ? value : null;
-  const initial = selected ?? FLAT_ICONS[0];
+  const selected = isValid(value) ? value : null;
+  const initial = selected ?? flatIcons[0];
 
   // **tab stop はフォーカス中のアイコンに追随させる。**選択中に固定したままだと、矢印で
   // 移動した先が tabIndex=-1 のままになる。Modal のトラップは tabIndex=-1 を巡回先から
@@ -79,15 +93,15 @@ export function IconPicker({ value, onChange, label = 'アイコン' }: Props) {
 
     if (delta !== undefined) {
       e.preventDefault(); // シートごとスクロールさせない
-      const i = FLAT_ICONS.indexOf(current);
+      const i = flatIcons.indexOf(current);
       if (i < 0) return;
-      // 端で止める（回り込ませない）。76 個を一周させても迷うだけなので。
-      focusIcon(FLAT_ICONS[Math.min(Math.max(i + delta, 0), FLAT_ICONS.length - 1)]);
+      // 端で止める（回り込ませない）。一周させても迷うだけなので。
+      focusIcon(flatIcons[Math.min(Math.max(i + delta, 0), flatIcons.length - 1)]);
       return;
     }
     if (e.key === 'Home' || e.key === 'End') {
       e.preventDefault();
-      focusIcon(e.key === 'Home' ? FLAT_ICONS[0] : FLAT_ICONS[FLAT_ICONS.length - 1]);
+      focusIcon(e.key === 'Home' ? flatIcons[0] : flatIcons[flatIcons.length - 1]);
     }
   }
 
@@ -107,7 +121,7 @@ export function IconPicker({ value, onChange, label = 'アイコン' }: Props) {
         <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-custom-accent/10 text-custom-accent">
           {/* パレット外だと iconGlyph が名前をそのまま返して英単語が出てしまうので、
               描く前に既定アイコンへ落とす。 */}
-          <Icon name={selected ?? DEFAULT_CATEGORY_ICON} size={24} filled />
+          <Icon name={selected ?? fallbackIcon} size={24} filled />
         </span>
         <span aria-hidden="true" className="font-label-sm text-label-sm text-custom-text/70">
           {SHEET_LABEL}
@@ -133,7 +147,7 @@ export function IconPicker({ value, onChange, label = 'アイコン' }: Props) {
           onKeyDown={handleKeyDown}
           className="mt-4 flex max-h-[60vh] flex-col gap-4 overflow-y-auto"
         >
-          {CATEGORY_ICON_GROUPS.map((group) => (
+          {groups.map((group) => (
             // listbox の子として合法なグルーピング
             <div
               key={group.group}

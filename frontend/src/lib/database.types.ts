@@ -34,6 +34,47 @@ export type Database = {
   }
   public: {
     Tables: {
+      accounts: {
+        Row: {
+          created_at: string
+          household_id: string
+          icon: string | null
+          id: string
+          is_archived: boolean
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          household_id: string
+          icon?: string | null
+          id?: string
+          is_archived?: boolean
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          household_id?: string
+          icon?: string | null
+          id?: string
+          is_archived?: boolean
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "accounts_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       balance_checkpoints: {
         Row: {
           actual: number | null
@@ -361,6 +402,7 @@ export type Database = {
       }
       transactions: {
         Row: {
+          account_id: string | null
           amount: number
           category_id: string | null
           created_at: string
@@ -375,6 +417,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          account_id?: string | null
           amount: number
           category_id?: string | null
           created_at?: string
@@ -389,6 +432,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          account_id?: string | null
           amount?: number
           category_id?: string | null
           created_at?: string
@@ -403,6 +447,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "transactions_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "transactions_category_id_fkey"
             columns: ["category_id"]

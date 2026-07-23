@@ -1,6 +1,6 @@
 -- pgTAP: RLS の cross-household 分離 + per-member 書込強制 + confirm_balance_checkpoint RPC
 begin;
-select plan(135);
+select plan(142);
 
 -- ============================================================
 -- Block A: ゆるり @ main として認証
@@ -14,6 +14,7 @@ select set_config(
 
 select is((select count(*) from public.profiles)::int, 2, 'ゆるりは 2 件の profile を閲覧できる');
 select is((select count(*) from public.categories)::int, 11, 'seed カテゴリ 11 件が見える（サブスク追加）');
+select is((select count(*) from public.accounts)::int, 5, 'seed アカウント 5 件が見える（#98）');
 
 select lives_ok(
   $$ insert into public.transactions (household_id, owner_member_id, type, amount, category_id, occurred_on)
@@ -256,6 +257,7 @@ select set_config(
 
 select is((select count(*) from public.profiles)::int, 0, '別 household は profile 0 件');
 select is((select count(*) from public.categories)::int, 0, '別 household は category 0 件');
+select is((select count(*) from public.accounts)::int, 0, '別 household は accounts 0 件（#98）');
 select is((select count(*) from public.transactions)::int, 0, '別 household は transaction 0 件');
 -- wishlist は household 共有だが、別 household からは見えない（Realtime も RLS に従う）
 select is((select count(*) from public.wishlist_items)::int, 0, '別 household は wishlist 0 件');
@@ -1244,6 +1246,63 @@ select set_config(
 select lives_ok(
   $$ update public.subscriptions set status = 'considering_cancel' where name = 'StatusOnly' $$,
   '下限より前のサブスクでも、更新日を触らない編集（ステータス変更）は通す'
+);
+
+-- ============================================================
+-- Block O: アカウント（在り処）の RLS / 削除ガード / FK restrict（#98）
+-- ============================================================
+-- accounts は categories と違い is_system/is_default が無い（テンプレも含め自由に消せる）。
+-- ただし取引で使われているものは FK restrict で止まる。他 household のアカウントは付けられない。
+reset role;
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","household_id":"main","member_id":"yururi"}',
+  true
+);
+
+-- 自分の household のアカウントを在り処にした取引は挿入できる
+select lives_ok(
+  $$ insert into public.transactions (household_id, owner_member_id, type, amount, occurred_on, account_id)
+     values ('main', 'yururi', 'expense', 300, public.jst_today(),
+             (select id from public.accounts where household_id = 'main' and name = '現金')) $$,
+  '在り処（現金）を指定した取引を挿入できる'
+);
+
+-- 存在しない（＝自分の household に無い）アカウントは付けられない（RLS with check で弾く）
+select throws_ok(
+  $$ insert into public.transactions (household_id, owner_member_id, type, amount, occurred_on, account_id)
+     values ('main', 'yururi', 'expense', 300, public.jst_today(), gen_random_uuid()) $$,
+  null, null,
+  '自分の household に無いアカウントは取引に付けられない'
+);
+
+-- ユーザー追加アカウント（未使用）は削除できる
+insert into public.accounts (household_id, name, icon) values ('main', '一時口座', 'account_balance');
+delete from public.accounts where name = '一時口座';
+select is(
+  (select count(*)::int from public.accounts where name = '一時口座'),
+  0,
+  '未使用のアカウントは削除できる（system/default 保護なし）'
+);
+
+-- アーカイブ（is_archived=true への更新）はできる
+select lives_ok(
+  $$ update public.accounts set is_archived = true where name = 'PayPay' $$,
+  'アカウントはアーカイブ（ソフト非表示）できる'
+);
+
+-- 取引で使われているアカウントは FK restrict で削除できない
+insert into public.accounts (household_id, name, icon) values ('main', '使用中口座', 'credit_card');
+insert into public.transactions
+  (household_id, owner_member_id, type, amount, occurred_on, account_id)
+  values ('main', 'yururi', 'expense', 500, public.jst_today(),
+    (select id from public.accounts where name = '使用中口座'));
+select throws_ok(
+  $$ delete from public.accounts where name = '使用中口座' $$,
+  '23503',
+  null,
+  '取引で使われているアカウントは FK restrict で削除できない'
 );
 
 -- 「今日」を実時刻に戻す（この先で使う人がいても壊れないように）。DDL なので postgres で撃つ。

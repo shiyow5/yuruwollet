@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { parseAmount } from '../format';
-import { isCategoryIcon } from '../icons/palette';
-import type { TransactionDraft, CategoryDraft } from './types';
+import { isCategoryIcon, isAccountIcon } from '../icons/palette';
+import type { TransactionDraft, CategoryDraft, AccountDraft } from './types';
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -13,8 +13,24 @@ export const transactionDraftSchema = z.object({
     .int('金額は整数で入力してください')
     .positive('金額は1円以上で入力してください'),
   categoryId: z.string().uuid('カテゴリが正しくありません').nullable(),
+  accountId: z.string().uuid('アカウントが正しくありません').nullable(),
   occurredOn: z.string().regex(ISO_DATE, '日付が正しくありません'),
   memo: z.string().max(200, 'メモは200文字以内で入力してください'),
+});
+
+/** 検証後のアカウント（在り処）ドラフトのスキーマ（#98）。 */
+export const accountDraftSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, 'アカウント名を入力してください')
+    .max(20, 'アカウント名は20文字以内です'),
+  // アイコンはアカウントパレットからのみ（カテゴリと同じ理由。フォント未収録名は文字化けする）。
+  icon: z
+    .string()
+    .trim()
+    .default('account_balance_wallet')
+    .refine(isAccountIcon, 'アイコンはパレットから選んでください'),
 });
 
 /** 検証後のカテゴリドラフトのスキーマ。 */
@@ -40,12 +56,19 @@ export interface RawTransactionForm {
   amount: string;
   /** '' は未選択（カテゴリなし） */
   categoryId: string;
+  /** '' は未選択（在り処なし）（#98） */
+  accountId: string;
   occurredOn: string;
   memo: string;
 }
 
 export interface RawCategoryForm {
   kind: string;
+  name: string;
+  icon?: string;
+}
+
+export interface RawAccountForm {
   name: string;
   icon?: string;
 }
@@ -78,6 +101,7 @@ export function validateTransactionForm(
     type: raw.type,
     amount,
     categoryId: raw.categoryId === '' ? null : raw.categoryId,
+    accountId: raw.accountId === '' ? null : raw.accountId,
     occurredOn: raw.occurredOn,
     memo: raw.memo ?? '',
   };
@@ -96,4 +120,15 @@ export function validateCategoryForm(raw: RawCategoryForm): ValidationResult<Cat
   const result = categoryDraftSchema.safeParse(candidate);
   if (result.success) return { ok: true, value: result.data };
   return { ok: false, errors: collectErrors<CategoryDraft>(result.error.issues) };
+}
+
+/** アカウントフォームの生入力を検証し、正規化済みドラフトにする（#98）。 */
+export function validateAccountForm(raw: RawAccountForm): ValidationResult<AccountDraft> {
+  const candidate = {
+    name: raw.name,
+    icon: raw.icon && raw.icon.trim() !== '' ? raw.icon : undefined,
+  };
+  const result = accountDraftSchema.safeParse(candidate);
+  if (result.success) return { ok: true, value: result.data };
+  return { ok: false, errors: collectErrors<AccountDraft>(result.error.issues) };
 }

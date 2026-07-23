@@ -35,6 +35,7 @@ export function makeOptimisticTransaction(
     type: draft.type,
     amount: draft.amount,
     category_id: draft.categoryId,
+    account_id: draft.accountId,
     memo: draft.memo,
     occurred_on: draft.occurredOn,
     is_system_generated: false,

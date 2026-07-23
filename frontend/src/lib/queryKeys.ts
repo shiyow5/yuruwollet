@@ -11,6 +11,10 @@ export const queryKeys = {
   categories: () => ['categories'] as const,
   /** そのカテゴリが取引で何件使われているか（削除ダイアログ用） */
   categoryUsage: (categoryId: string | null) => ['categoryUsage', categoryId] as const,
+  /** household 共有のアカウント（在り処）一覧（#98） */
+  accounts: () => ['accounts'] as const,
+  /** そのアカウントが取引で何件使われているか（削除ダイアログ用）（#98） */
+  accountUsage: (accountId: string | null) => ['accountUsage', accountId] as const,
   /** member×月 の取引一覧（家計簿ページ） */
   transactions: (memberId: string, month?: string) =>
     ['transactions', memberId, month ?? 'all'] as const,

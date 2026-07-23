@@ -134,5 +134,24 @@
       "group": "その他",
       "icons": ["pets", "more_horiz", "label", "category", "star", "favorite", "handshake"]
     }
+  ],
+  "accounts": [
+    {
+      "group": "口座・支払い",
+      "icons": [
+        "payments",
+        "account_balance",
+        "credit_card",
+        "savings",
+        "account_balance_wallet",
+        "wallet",
+        "qr_code_2",
+        "smartphone",
+        "currency_yen",
+        "point_of_sale",
+        "local_atm",
+        "paid"
+      ]
+    }
   ]
 }

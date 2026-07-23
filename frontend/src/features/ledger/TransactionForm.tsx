@@ -3,18 +3,21 @@ import { Button, Input, Select, SegmentedControl } from '../../components/ui';
 import { jstToday } from '../../lib/format';
 import { validateTransactionForm, type FieldErrors } from '../../lib/ledger/schema';
 import { selectableCategories } from '../../lib/ledger/categories';
-import type { Category, TransactionDraft, TxnType } from '../../lib/ledger/types';
+import { selectableAccounts } from '../../lib/ledger/accounts';
+import type { Account, Category, TransactionDraft, TxnType } from '../../lib/ledger/types';
 
 export interface TransactionFormValues {
   type: TxnType;
   amount: string;
   categoryId: string;
+  accountId: string;
   occurredOn: string;
   memo: string;
 }
 
 interface Props {
   categories: Category[];
+  accounts: Account[];
   initial?: Partial<TransactionFormValues>;
   submitting?: boolean;
   submitLabel?: string;
@@ -34,6 +37,7 @@ function initialValues(initial?: Partial<TransactionFormValues>): TransactionFor
     type: initial?.type ?? 'expense',
     amount: initial?.amount ?? '',
     categoryId: initial?.categoryId ?? '',
+    accountId: initial?.accountId ?? '',
     occurredOn: initial?.occurredOn ?? jstToday(),
     memo: initial?.memo ?? '',
   };
@@ -45,6 +49,7 @@ function initialValues(initial?: Partial<TransactionFormValues>): TransactionFor
  */
 export function TransactionForm({
   categories,
+  accounts,
   initial,
   submitting = false,
   submitLabel = '保存',
@@ -64,6 +69,15 @@ export function TransactionForm({
       : undefined;
   const options =
     current && !selectable.some((c) => c.id === current.id) ? [...selectable, current] : selectable;
+
+  // アカウント（在り処）も同様に、編集時アーカイブ済でも選択肢に残す（#98）。
+  const selectableAccts = selectableAccounts(accounts);
+  const currentAccount =
+    values.accountId !== '' ? accounts.find((a) => a.id === values.accountId) : undefined;
+  const accountOptions =
+    currentAccount && !selectableAccts.some((a) => a.id === currentAccount.id)
+      ? [...selectableAccts, currentAccount]
+      : selectableAccts;
 
   function update<K extends keyof TransactionFormValues>(key: K, value: TransactionFormValues[K]) {
     setValues((prev) => ({ ...prev, [key]: value }));
@@ -130,6 +144,26 @@ export function TransactionForm({
           ))}
         </Select>
         {errors.categoryId && <FieldError id="txn-category-error">{errors.categoryId}</FieldError>}
+      </div>
+
+      <div>
+        <Select
+          label="アカウント（任意）"
+          id="txn-account"
+          value={values.accountId}
+          aria-invalid={errors.accountId ? true : undefined}
+          aria-describedby={errors.accountId ? 'txn-account-error' : undefined}
+          onChange={(e) => update('accountId', e.target.value)}
+        >
+          <option value="">未選択</option>
+          {accountOptions.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+              {a.is_archived ? '（アーカイブ済）' : ''}
+            </option>
+          ))}
+        </Select>
+        {errors.accountId && <FieldError id="txn-account-error">{errors.accountId}</FieldError>}
       </div>
 
       <div>

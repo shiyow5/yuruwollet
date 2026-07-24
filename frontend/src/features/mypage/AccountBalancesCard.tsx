@@ -51,6 +51,9 @@ export function AccountBalancesCard({ memberId, canWrite }: Props) {
   }
 
   const accounts = selectableAccounts(accountsQ.data ?? []);
+  // 初期残高が未取得/失敗のまま編集させると、prefill が 0 になり「保存」で本物の
+  // 初期残高を 0 に上書きしてしまう。取得できるまで金額表示と編集導線を伏せる。
+  const openingsReady = !openingsQ.isError && !openingsQ.isLoading;
 
   const balanceFor = (accountId: string): number | null =>
     balancesQ.data?.find((b) => b.account_id === accountId && b.member_id === memberId)?.balance ??
@@ -116,6 +119,7 @@ export function AccountBalancesCard({ memberId, canWrite }: Props) {
                 </div>
 
                 {canWrite &&
+                  openingsReady &&
                   (editing ? (
                     <div className="flex flex-col gap-2">
                       <Input

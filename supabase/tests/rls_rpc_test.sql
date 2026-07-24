@@ -1,6 +1,6 @@
 -- pgTAP: RLS の cross-household 分離 + per-member 書込強制 + confirm_balance_checkpoint RPC
 begin;
-select plan(164);
+select plan(170);
 
 -- ============================================================
 -- Block A: ゆるり @ main として認証
@@ -1539,21 +1539,35 @@ select set_config(
   (select balance::text from public.v_member_balances where member_id = 'shiyowo'),
   true
 );
+-- yururi は Block A/Z で「現金初期残高が手設定済み(45000) ＋ profiles.opening=50000」という
+-- 危険な状態にある。移行でこの 50000 が失われないこと(move と zero の切り離し禁止)を検証する。
+select set_config(
+  'test.ybefore2',
+  (select balance::text from public.v_member_balances where member_id = 'yururi'),
+  true
+);
 
--- --- 移行 1 回目（migration と同じ 3 文。サブスク/system はバケツに残す）---
-update public.transactions t
-  set account_id = a.id from public.accounts a
-  where t.account_id is null and t.subscription_id is null and t.is_system_generated = false
-    and a.household_id = t.household_id and a.name = '現金';
-insert into public.account_openings (household_id, member_id, account_id, opening_balance)
-  select p.household_id, p.member_id, a.id, p.opening_balance
-  from public.profiles p
-  join public.accounts a on a.household_id = p.household_id and a.name = '現金'
-  where p.opening_balance <> 0
-  on conflict (member_id, account_id) do nothing;
-update public.profiles p set opening_balance = 0
-  where p.opening_balance <> 0
-    and exists (select 1 from public.accounts a where a.household_id = p.household_id and a.name = '現金');
+-- 移行 3 文の共通ヘルパ(step1: 未設定ユーザー取引→現金 / step2+3: 移した member だけ 0)。
+-- migration 本体と同じく step2+3 は CTE で「実際に insert した member」だけ 0 にする。
+create or replace procedure pg_temp.run_migration() language sql as $mig$
+  update public.transactions t
+    set account_id = a.id from public.accounts a
+    where t.account_id is null and t.subscription_id is null and t.is_system_generated = false
+      and a.household_id = t.household_id and a.name = '現金';
+  with moved as (
+    insert into public.account_openings (household_id, member_id, account_id, opening_balance)
+      select p.household_id, p.member_id, a.id, p.opening_balance
+      from public.profiles p
+      join public.accounts a on a.household_id = p.household_id and a.name = '現金'
+      where p.opening_balance <> 0
+      on conflict (member_id, account_id) do nothing
+      returning member_id
+  )
+  update public.profiles p set opening_balance = 0 where p.member_id in (select member_id from moved);
+$mig$;
+
+-- --- 移行 1 回目 ---
+call pg_temp.run_migration();
 
 select is(
   (select opening_balance from public.account_openings o
@@ -1580,20 +1594,27 @@ select is(
   '移行: 総残高は移行前後で不変（#102）'
 );
 
--- --- 移行 2 回目（冪等性: 二重計上しない）---
-update public.transactions t
-  set account_id = a.id from public.accounts a
-  where t.account_id is null and t.subscription_id is null and t.is_system_generated = false
-    and a.household_id = t.household_id and a.name = '現金';
-insert into public.account_openings (household_id, member_id, account_id, opening_balance)
-  select p.household_id, p.member_id, a.id, p.opening_balance
-  from public.profiles p
-  join public.accounts a on a.household_id = p.household_id and a.name = '現金'
-  where p.opening_balance <> 0
-  on conflict (member_id, account_id) do nothing;
-update public.profiles p set opening_balance = 0
-  where p.opening_balance <> 0
-    and exists (select 1 from public.accounts a where a.household_id = p.household_id and a.name = '現金');
+-- H1: 現金初期残高が手設定済みの member は、profiles.opening を移行で失わない。
+select is(
+  (select opening_balance from public.profiles where member_id = 'yururi'),
+  50000,
+  'H1移行: 手設定済み member の profiles.opening は失われない（zero と move の切り離し禁止, #102）'
+);
+select is(
+  (select opening_balance from public.account_openings o
+     join public.accounts a on a.id = o.account_id
+     where o.member_id = 'yururi' and a.name = '現金'),
+  45000,
+  'H1移行: 手設定済みの現金初期残高は移行で上書きされない（#102）'
+);
+select is(
+  (select balance from public.v_member_balances where member_id = 'yururi'),
+  current_setting('test.ybefore2')::bigint,
+  'H1移行: 手設定済み member の総残高も移行で不変（#102）'
+);
+
+-- --- 移行 2 回目（冪等性: 二重計上も喪失もしない）---
+call pg_temp.run_migration();
 
 select is(
   (select opening_balance from public.account_openings o
@@ -1606,6 +1627,33 @@ select is(
   (select balance from public.v_member_balances where member_id = 'shiyowo'),
   current_setting('test.sbefore')::bigint,
   '移行(冪等): 総残高は二度流しても不変（#102）'
+);
+select is(
+  (select opening_balance from public.profiles where member_id = 'yururi'),
+  50000,
+  '移行(冪等): 手設定 member の profiles.opening は再実行でも失われない（#102）'
+);
+
+-- --- 現金口座が無い household では profiles.opening を失わない（#102）---
+-- 現金は seed 行にすぎず、ユーザーがリネーム/削除しうる。その household で移行が
+-- profiles.opening を 0 にしてしまうと残高が消える。insert が空振りする以上 zero も走らない。
+update public.accounts set name = '財布' where household_id = 'main' and name = '現金';
+update public.profiles set opening_balance = 12345 where member_id = 'shiyowo';
+select set_config(
+  'test.dbefore',
+  (select balance::text from public.v_member_balances where member_id = 'shiyowo'),
+  true
+);
+call pg_temp.run_migration();
+select is(
+  (select opening_balance from public.profiles where member_id = 'shiyowo'),
+  12345,
+  '現金が無い household では profiles.opening を 0 にしない（#102）'
+);
+select is(
+  (select balance from public.v_member_balances where member_id = 'shiyowo'),
+  current_setting('test.dbefore')::bigint,
+  '現金が無い household でも総残高は不変（#102）'
 );
 
 -- 「今日」を実時刻に戻す（この先で使う人がいても壊れないように）。DDL なので postgres で撃つ。

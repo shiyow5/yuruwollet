@@ -95,7 +95,7 @@ export function ProfileCard({ selfId }: Props) {
           </span>
         </div>
         <p className="text-label-sm text-custom-text/70">
-          現在の残高 = 初期残高 + 口座ごとの残高 + これまでの収入 − 支出。
+          現在の残高 = この初期残高 + 各口座の初期残高 + これまでの収入 − 支出。
           ここの初期残高は、在り処（口座）を選んでいない分です。
         </p>
 

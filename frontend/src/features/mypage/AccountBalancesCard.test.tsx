@@ -9,6 +9,7 @@ vi.mock('../../lib/supabase', () => ({ supabase: {} }));
 
 const state = vi.hoisted(() => ({
   balancesFail: false,
+  openingsFail: false,
   upsertArgs: null as unknown,
 }));
 
@@ -80,16 +81,19 @@ vi.mock('../../lib/data/openings', () => ({
       },
     ];
   }),
-  listAccountOpenings: vi.fn(async () => [
-    {
-      household_id: 'main',
-      member_id: 'yururi',
-      account_id: 'cash',
-      opening_balance: 30000,
-      created_at: '',
-      updated_at: '',
-    },
-  ]),
+  listAccountOpenings: vi.fn(async () => {
+    if (state.openingsFail) throw new Error('boom');
+    return [
+      {
+        household_id: 'main',
+        member_id: 'yururi',
+        account_id: 'cash',
+        opening_balance: 30000,
+        created_at: '',
+        updated_at: '',
+      },
+    ];
+  }),
   upsertAccountOpening: vi.fn(async (_c: unknown, input: unknown) => {
     state.upsertArgs = input;
   }),
@@ -121,6 +125,7 @@ function renderCard(props: { memberId: string; canWrite: boolean }) {
 describe('AccountBalancesCard（口座別残高, #102）', () => {
   beforeEach(() => {
     state.balancesFail = false;
+    state.openingsFail = false;
     state.upsertArgs = null;
     vi.clearAllMocks();
   });
@@ -139,6 +144,22 @@ describe('AccountBalancesCard（口座別残高, #102）', () => {
     // shiyowo の現金残高（相手分も見える）
     expect(await screen.findByText('¥5,000')).toBeInTheDocument();
     expect(screen.queryByLabelText('現金の初期残高を変える')).not.toBeInTheDocument();
+  });
+
+  it('編集を開くと現在の初期残高を prefill する（0 で始めない）', async () => {
+    renderCard({ memberId: 'yururi', canWrite: true });
+    fireEvent.click(await screen.findByLabelText('現金の初期残高を変える'));
+    expect(screen.getByLabelText('現金の初期残高')).toHaveValue('30000');
+  });
+
+  it('初期残高の取得に失敗したら編集させない（0 上書き事故を防ぐ）', async () => {
+    state.openingsFail = true;
+    renderCard({ memberId: 'yururi', canWrite: true });
+    expect(await screen.findByText('現金')).toBeInTheDocument();
+    // 取得できるまで編集導線を出さない
+    await waitFor(() =>
+      expect(screen.queryByLabelText('現金の初期残高を変える')).not.toBeInTheDocument(),
+    );
   });
 
   it('初期残高を編集して保存すると upsert が呼ばれる', async () => {

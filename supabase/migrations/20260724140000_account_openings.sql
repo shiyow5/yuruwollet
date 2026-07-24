@@ -149,22 +149,26 @@ where t.account_id is null
   and a.household_id = t.household_id
   and a.name = '現金';
 
--- 2) profiles.opening_balance を現金口座の初期残高へ(既存の手設定は上書きしない)
-insert into public.account_openings (household_id, member_id, account_id, opening_balance)
-select p.household_id, p.member_id, a.id, p.opening_balance
-from public.profiles p
-join public.accounts a on a.household_id = p.household_id and a.name = '現金'
-where p.opening_balance <> 0
-on conflict (member_id, account_id) do nothing;
-
--- 3) 現金へ移した分の profiles.opening_balance を 0 にする
+-- 2)+3) profiles.opening_balance を現金口座の初期残高へ移し、**実際に移した member だけ**
+-- profiles を 0 にする。ここを 1 文にするのが肝。
+--   - 既に現金の初期残高が手設定されている member は on conflict で insert されず
+--     (returning にも出ない) → profiles も 0 にしない。手設定を残しつつ profiles の
+--     金額を失わない（zero と move を切り離すと、move が空振りしても zero だけ走って
+--     残高を消してしまう）。
+--   - 現金口座が無い household では insert が 0 行 → 何も 0 にしない。
+--   - 再実行時は 2 回目は opening=0 で対象外 → 二重計上も喪失も起きない。
+with moved as (
+  insert into public.account_openings (household_id, member_id, account_id, opening_balance)
+  select p.household_id, p.member_id, a.id, p.opening_balance
+  from public.profiles p
+  join public.accounts a on a.household_id = p.household_id and a.name = '現金'
+  where p.opening_balance <> 0
+  on conflict (member_id, account_id) do nothing
+  returning member_id
+)
 update public.profiles p
 set opening_balance = 0
-where p.opening_balance <> 0
-  and exists (
-    select 1 from public.accounts a
-    where a.household_id = p.household_id and a.name = '現金'
-  );
+where p.member_id in (select member_id from moved);
 
 -- ============================================================
 -- 残高確認 RPC の「計算残高」を口座初期残高込みに直す。

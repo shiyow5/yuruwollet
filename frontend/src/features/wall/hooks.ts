@@ -6,6 +6,7 @@ import {
   getCurrentCheckpoint,
   skipCheckpoint,
   confirmCheckpoint,
+  adjustBalanceNow,
   type ConfirmInput,
 } from '../../lib/data/checkpoints';
 import { getServerToday } from '../../lib/data/serverClock';
@@ -83,6 +84,20 @@ export function useConfirmCheckpoint() {
   const ctx = useWriteContext();
   return useMutation({
     mutationFn: (input: ConfirmInput) => confirmCheckpoint(supabase, input),
+    onSettled: () => invalidateAfterConfirm(qc, ctx?.memberId),
+  });
+}
+
+/**
+ * 任意タイミングの残高数え直し（#99）= adjust_balance_now。
+ * 24日の壁とは独立（checkpoint を触らない）だが、残高調整取引を挿入するので
+ * 台帳系の無効化は confirm と同じ（invalidateAfterConfirm）。
+ */
+export function useAdjustBalanceNow() {
+  const qc = useQueryClient();
+  const ctx = useWriteContext();
+  return useMutation({
+    mutationFn: (input: ConfirmInput) => adjustBalanceNow(supabase, input),
     onSettled: () => invalidateAfterConfirm(qc, ctx?.memberId),
   });
 }

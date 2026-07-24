@@ -1,6 +1,6 @@
 -- pgTAP: RLS の cross-household 分離 + per-member 書込強制 + confirm_balance_checkpoint RPC
 begin;
-select plan(142);
+select plan(149);
 
 -- ============================================================
 -- Block A: ゆるり @ main として認証
@@ -1303,6 +1303,119 @@ select throws_ok(
   '23503',
   null,
   '取引で使われているアカウントは FK restrict で削除できない'
+);
+
+-- ============================================================
+-- Block P: adjust_balance_now（任意タイミングの残高数え直し, #99）
+-- ============================================================
+-- 24日の壁と違い、いつでも呼べて checkpoint を作らない。CAS と引数検証は confirm と共通。
+-- jst_today は Block C で GUC 参照版に差し替え済み。ここは **24日より前** に固定して、
+-- 24日ガードが無いことを示す。
+reset role;
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","household_id":"main","member_id":"yururi"}',
+  true
+);
+select set_config('test.today', '2026-07-10', true); -- 24日より前
+
+-- 現在の computed（全期間累積）と checkpoint 件数を控える
+select set_config(
+  'test.computed',
+  (
+    select (
+      opening_balance + coalesce((
+        select sum(case when type = 'income' then amount else -amount end)
+        from public.transactions
+        where owner_member_id = 'yururi' and household_id = 'main'
+      ), 0)
+    )::text
+    from public.profiles where member_id = 'yururi' and household_id = 'main'
+  ),
+  true
+);
+select set_config(
+  'test.cp_before',
+  (select count(*)::text from public.balance_checkpoints where member_id = 'yururi'),
+  true
+);
+
+-- [1] 24日より前でも数え直せて、差額(+3000)を返す（← 24日ガードが無い証明）
+select is(
+  (
+    select public.adjust_balance_now(
+      current_setting('test.computed')::int + 3000,
+      current_setting('test.computed')::int
+    )
+  ),
+  3000,
+  'adjust_balance_now: 24日より前でも数え直せて差額(+3000)を返す（#99）'
+);
+
+-- [2] 「残高調整（手動）」取引が入る（24日ぶんの「残高調整（24日）」とは別文言）
+select is(
+  (
+    select count(*)::int from public.transactions
+    where owner_member_id = 'yururi' and memo = '残高調整（手動）'
+  ),
+  1,
+  'adjust_balance_now: 残高調整（手動）取引が 1 件入る'
+);
+
+-- [3] checkpoint は作らない（月次の壁の状態に影響しない）
+select is(
+  (select count(*)::int from public.balance_checkpoints where member_id = 'yururi'),
+  current_setting('test.cp_before')::int,
+  'adjust_balance_now: balance_checkpoints を作らない（壁と独立）'
+);
+
+-- [4] CAS: expectedComputed が現在値と食い違えば拒否
+select throws_ok(
+  $$ select public.adjust_balance_now(1, 999999999) $$,
+  'PT412', null,
+  'adjust_balance_now: expectedComputed 不一致は PT412'
+);
+
+-- [5] 引数検証: 負の実残高は拒否（CAS より前で弾く）
+select throws_ok(
+  $$ select public.adjust_balance_now(-1, 0) $$,
+  'PT400', null,
+  'adjust_balance_now: 負の実残高は PT400'
+);
+
+-- [6] ズレ 0 なら 0 を返し、取引を増やさない
+select set_config(
+  'test.computed2',
+  (
+    select (
+      opening_balance + coalesce((
+        select sum(case when type = 'income' then amount else -amount end)
+        from public.transactions
+        where owner_member_id = 'yururi' and household_id = 'main'
+      ), 0)
+    )::text
+    from public.profiles where member_id = 'yururi' and household_id = 'main'
+  ),
+  true
+);
+select is(
+  (
+    select public.adjust_balance_now(
+      current_setting('test.computed2')::int,
+      current_setting('test.computed2')::int
+    )
+  ),
+  0,
+  'adjust_balance_now: ズレ 0 なら 0 を返す'
+);
+select is(
+  (
+    select count(*)::int from public.transactions
+    where owner_member_id = 'yururi' and memo = '残高調整（手動）'
+  ),
+  1,
+  'adjust_balance_now: ズレ 0 では取引を増やさない'
 );
 
 -- 「今日」を実時刻に戻す（この先で使う人がいても壊れないように）。DDL なので postgres で撃つ。

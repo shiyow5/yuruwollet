@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { getCurrentCheckpoint, skipCheckpoint, confirmCheckpoint } from './checkpoints';
+import {
+  getCurrentCheckpoint,
+  skipCheckpoint,
+  confirmCheckpoint,
+  adjustBalanceNow,
+} from './checkpoints';
 import { makeSupabaseMock, argsOf } from '../../test/supabaseMock';
 import type { Checkpoint } from '../wall/types';
 
@@ -105,6 +110,39 @@ describe('confirmCheckpoint', () => {
     );
     await expect(
       confirmCheckpoint(client, { actual: 50000, expectedComputed: 45000 }),
+    ).rejects.toMatchObject({ kind, name: 'ConfirmCheckpointError' });
+  });
+});
+
+describe('adjustBalanceNow（#99）', () => {
+  it('actual と expectedComputed を adjust_balance_now RPC に渡し、差額を返す', async () => {
+    const { client, rpcs } = makeSupabaseMock(
+      {},
+      { adjust_balance_now: { data: 5000, error: null } },
+    );
+    expect(await adjustBalanceNow(client, { actual: 50000, expectedComputed: 45000 })).toBe(5000);
+    expect(rpcs.adjust_balance_now.calls[0]).toEqual({
+      method: 'rpc',
+      args: ['adjust_balance_now', { p_actual: 50000, p_expected_computed: 45000 }],
+    });
+  });
+
+  it('差額 0 でも 0 を返す（取引は挿入されない）', async () => {
+    const { client } = makeSupabaseMock({}, { adjust_balance_now: { data: 0, error: null } });
+    expect(await adjustBalanceNow(client, { actual: 45000, expectedComputed: 45000 })).toBe(0);
+  });
+
+  it.each([
+    ['PT412', 'stale'],
+    ['PT400', 'unknown'],
+    ['P0001', 'unknown'],
+  ])('SQLSTATE %s を種別 %s の ConfirmCheckpointError にする', async (code, kind) => {
+    const { client } = makeSupabaseMock(
+      {},
+      { adjust_balance_now: { data: null, error: { message: 'nope', code } } },
+    );
+    await expect(
+      adjustBalanceNow(client, { actual: 50000, expectedComputed: 45000 }),
     ).rejects.toMatchObject({ kind, name: 'ConfirmCheckpointError' });
   });
 });

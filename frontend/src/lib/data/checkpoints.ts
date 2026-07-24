@@ -75,3 +75,26 @@ export async function confirmCheckpoint(
   }
   return data as Checkpoint;
 }
+
+/**
+ * 任意タイミングの残高数え直し（#99）= adjust_balance_now RPC。
+ *
+ * 24日の壁（confirmCheckpoint）と違い checkpoint を作らず、残高調整取引だけを挿入する。
+ * そのため 24日ガード(PT403)・冪等(PT409) は無く、起き得る拒否は
+ * CAS 不一致(PT412=stale) と引数不正(PT400) のみ。エラー種別は confirm と同じ写像を使う。
+ * 返り値は適用した差額（actual − computed。0 なら取引を挿入していない）。
+ */
+export async function adjustBalanceNow(
+  client: SupabaseClient<Database>,
+  input: ConfirmInput,
+): Promise<number> {
+  const { data, error } = await client.rpc('adjust_balance_now', {
+    p_actual: input.actual,
+    p_expected_computed: input.expectedComputed,
+  });
+  if (error) {
+    const kind = classifyConfirmError(error.code);
+    throw new ConfirmCheckpointError(kind, `${confirmErrorMessage(kind)} (${error.message})`);
+  }
+  return data as number;
+}

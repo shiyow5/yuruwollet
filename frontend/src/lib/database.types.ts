@@ -714,6 +714,10 @@ export type Database = {
       }
     }
     Functions: {
+      adjust_balance_now: {
+        Args: { p_actual: number; p_expected_computed: number }
+        Returns: number
+      }
       confirm_balance_checkpoint: {
         Args: { p_actual: number; p_expected_computed: number }
         Returns: {

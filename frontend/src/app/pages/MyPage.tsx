@@ -3,6 +3,7 @@ import { jstMonthStart, formatMonthLabel } from '../../lib/format';
 import { MemberTabs } from '../../features/shared/MemberTabs';
 import { useMemberOptions } from '../../features/shared/members';
 import { ProfileCard } from '../../features/mypage/ProfileCard';
+import { RecountCard } from '../../features/mypage/RecountCard';
 import { GoalCard } from '../../features/savings/GoalCard';
 
 export function MyPage() {
@@ -32,6 +33,9 @@ export function MyPage() {
       {activeMember !== '' && (
         <GoalCard key={activeMember} memberId={activeMember} month={month} canWrite={canWrite} />
       )}
+
+      {/* 残高の数え直しは自分の分だけ（相手の残高は動かせない）。自分タブのときだけ出す。 */}
+      {canWrite && selfId && <RecountCard selfId={selfId} />}
 
       {selfId && <ProfileCard selfId={selfId} />}
     </section>

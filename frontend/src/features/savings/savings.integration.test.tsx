@@ -187,6 +187,21 @@ describe('MyPage 統合（目標貯金 + プロフィール）', () => {
     expect(screen.queryByRole('button', { name: '目標をやめる' })).toBeNull();
   });
 
+  // 残高の数え直しは自分の分だけ（相手の残高は動かせない）。相手タブでは導線を出さない（#99）。
+  it('自分タブでは数え直しカードを出し、相手タブでは出さない', async () => {
+    renderPage();
+    // 自分タブ: 数え直しの導線がある
+    expect(await screen.findByRole('button', { name: '残高を数え直す' })).toBeInTheDocument();
+
+    // メンバータブは profiles のロード後に出る
+    fireEvent.click(await screen.findByRole('radio', { name: 'しよを' }));
+
+    // 相手タブ: 数え直しの導線は消える
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: '残高を数え直す' })).toBeNull(),
+    );
+  });
+
   // 書込先は常に自分の member_id。相手タブで編集フォームが残ると、
   // 相手の画面を見ながら自分の目標を書き換えてしまう。
   it('編集中に相手タブへ切り替えたら編集フォームを持ち越さない', async () => {
@@ -264,7 +279,9 @@ describe('MyPage 統合（目標貯金 + プロフィール）', () => {
   it('残高の取得に失敗したら現在の残高を — にする', async () => {
     state.balanceFails = true;
     renderPage();
-    await screen.findByText('現在の残高');
-    expect(await screen.findByText('—')).toBeInTheDocument();
+    // ProfileCard の「現在の残高」を対象にする（数え直しカードも失敗時は — を出すため、
+    // 同じラベルの行に限定して曖昧さを避ける, #99）。
+    const label = await screen.findByText('現在の残高');
+    expect(within(label.parentElement as HTMLElement).getByText('—')).toBeInTheDocument();
   });
 });

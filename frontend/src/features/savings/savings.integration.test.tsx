@@ -264,7 +264,9 @@ describe('MyPage 統合（目標貯金 + プロフィール）', () => {
   it('残高の取得に失敗したら現在の残高を — にする', async () => {
     state.balanceFails = true;
     renderPage();
-    await screen.findByText('現在の残高');
-    expect(await screen.findByText('—')).toBeInTheDocument();
+    // ProfileCard の「現在の残高」を対象にする（数え直しカードも失敗時は — を出すため、
+    // 同じラベルの行に限定して曖昧さを避ける, #99）。
+    const label = await screen.findByText('現在の残高');
+    expect(within(label.parentElement as HTMLElement).getByText('—')).toBeInTheDocument();
   });
 });

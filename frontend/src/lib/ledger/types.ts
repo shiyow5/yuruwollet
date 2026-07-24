@@ -8,6 +8,10 @@ export type Profile = Tables<'profiles'>;
 export type MemberBalance = Tables<'v_member_balances'>;
 export type MonthlySummary = Tables<'v_monthly_summary'>;
 export type CategoryBreakdownRow = Tables<'v_category_breakdown'>;
+/** メンバー×口座 ごとの初期残高（#102）。 */
+export type AccountOpening = Tables<'account_openings'>;
+/** メンバー×口座 ごとの現在残高（初期残高 + その口座の収支）（#102）。 */
+export type AccountBalance = Tables<'v_account_balances'>;
 
 export type TxnType = Enums<'txn_type'>;
 export type CategoryKind = Enums<'category_kind'>;

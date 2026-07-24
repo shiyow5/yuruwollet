@@ -7,6 +7,10 @@ export const queryKeys = {
   profiles: () => ['profiles'] as const,
   /** member 別の現在残高 (v_member_balances) */
   memberBalances: () => ['memberBalances'] as const,
+  /** member×口座 の現在残高 (v_account_balances)（#102） */
+  accountBalances: () => ['accountBalances'] as const,
+  /** member×口座 の初期残高 (account_openings)（#102） */
+  accountOpenings: () => ['accountOpenings'] as const,
   /** household 共有のカテゴリ一覧 (非archived) */
   categories: () => ['categories'] as const,
   /** そのカテゴリが取引で何件使われているか（削除ダイアログ用） */

@@ -3,6 +3,7 @@ import { jstMonthStart, formatMonthLabel } from '../../lib/format';
 import { MemberTabs } from '../../features/shared/MemberTabs';
 import { useMemberOptions } from '../../features/shared/members';
 import { ProfileCard } from '../../features/mypage/ProfileCard';
+import { AccountBalancesCard } from '../../features/mypage/AccountBalancesCard';
 import { RecountCard } from '../../features/mypage/RecountCard';
 import { GoalCard } from '../../features/savings/GoalCard';
 
@@ -38,6 +39,16 @@ export function MyPage() {
       {canWrite && selfId && <RecountCard selfId={selfId} />}
 
       {selfId && <ProfileCard selfId={selfId} />}
+
+      {/* 口座ごとの残高（#102）。相手タブでは閲覧のみ。タブ切替で編集状態を持ち越さない。
+          key は GoalCard と衝突しないよう名前空間を付ける（同一 key の兄弟は再マウントを壊す）。 */}
+      {activeMember !== '' && (
+        <AccountBalancesCard
+          key={`account-balances-${activeMember}`}
+          memberId={activeMember}
+          canWrite={canWrite}
+        />
+      )}
     </section>
   );
 }

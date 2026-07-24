@@ -42,6 +42,47 @@ vi.mock('../../lib/data/savings', () => ({
   }),
 }));
 
+// MyPage は口座別残高カード(#102)も描画する。データ層をモックして実 supabase を叩かせない。
+vi.mock('../../lib/data/accounts', () => ({
+  listAccounts: vi.fn(async () => [
+    {
+      id: 'acc-cash',
+      household_id: 'main',
+      name: '現金',
+      icon: 'payments',
+      sort_order: 10,
+      is_archived: false,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    },
+  ]),
+}));
+
+vi.mock('../../lib/data/openings', () => ({
+  getAccountBalances: vi.fn(async () => [
+    {
+      household_id: 'main',
+      member_id: 'yururi',
+      account_id: 'acc-cash',
+      account_name: '現金',
+      account_icon: 'payments',
+      is_archived: false,
+      balance: 35000,
+    },
+  ]),
+  listAccountOpenings: vi.fn(async () => [
+    {
+      household_id: 'main',
+      member_id: 'yururi',
+      account_id: 'acc-cash',
+      opening_balance: 30000,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    },
+  ]),
+  upsertAccountOpening: vi.fn(async () => undefined),
+}));
+
 vi.mock('../../lib/data/aggregates', () => ({
   listProfiles: vi.fn(async () => [
     {

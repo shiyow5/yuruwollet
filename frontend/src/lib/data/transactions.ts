@@ -48,6 +48,7 @@ export async function createTransaction(
       type: draft.type,
       amount: draft.amount,
       category_id: draft.categoryId,
+      account_id: draft.accountId,
       memo: draft.memo,
       occurred_on: draft.occurredOn,
     })
@@ -69,6 +70,7 @@ export async function updateTransaction(
       type: draft.type,
       amount: draft.amount,
       category_id: draft.categoryId,
+      account_id: draft.accountId,
       memo: draft.memo,
       occurred_on: draft.occurredOn,
     })

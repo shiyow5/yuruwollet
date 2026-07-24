@@ -1,4 +1,5 @@
 {
+  "account_balance": "e84f",
   "account_balance_wallet": "e850",
   "add": "e145",
   "archive": "e149",
@@ -23,6 +24,7 @@
   "coffee": "efef",
   "confirmation_number": "e638",
   "content_cut": "e14e",
+  "credit_card": "e8a1",
   "currency_yen": "eafb",
   "delete": "e92e",
   "dentistry": "e0a6",
@@ -47,6 +49,7 @@
   "label": "e893",
   "language": "ea07",
   "link": "e250",
+  "local_atm": "e53e",
   "local_bar": "e540",
   "local_cafe": "eb44",
   "local_fire_department": "ef55",
@@ -71,6 +74,8 @@
   "photo_album": "e411",
   "photo_camera": "e412",
   "place": "f1db",
+  "point_of_sale": "f17e",
+  "qr_code_2": "e00a",
   "ramen_dining": "ea64",
   "receipt_long": "ef6e",
   "redeem": "e8f6",
@@ -95,6 +100,7 @@
   "train": "e570",
   "unarchive": "e169",
   "volunteer_activism": "ea70",
+  "wallet": "f8ff",
   "water_drop": "e798",
   "wifi": "e63e",
   "work": "e943"

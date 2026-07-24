@@ -12,6 +12,7 @@ const draft: TransactionDraft = {
   type: 'expense',
   amount: 4500,
   categoryId: 'c1',
+  accountId: 'a1',
   occurredOn: '2026-07-13',
   memo: 'スーパー',
 };
@@ -44,6 +45,7 @@ describe('makeOptimisticTransaction', () => {
       type: 'expense',
       amount: 4500,
       category_id: 'c1',
+      account_id: 'a1',
       memo: 'スーパー',
       occurred_on: '2026-07-13',
       is_system_generated: false,

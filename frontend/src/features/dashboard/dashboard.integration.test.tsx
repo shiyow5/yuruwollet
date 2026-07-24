@@ -16,6 +16,7 @@ const SEED: Transaction = {
   type: 'expense',
   amount: 1200,
   category_id: 'cafe',
+  account_id: null,
   memo: 'カフェ代',
   occurred_on: '2026-07-12',
   is_system_generated: false,
@@ -59,6 +60,7 @@ vi.mock('../../lib/data/transactions', () => ({
         type: draft.type,
         amount: draft.amount,
         category_id: draft.categoryId,
+        account_id: null,
         memo: draft.memo,
         occurred_on: draft.occurredOn,
         is_system_generated: false,
@@ -92,6 +94,15 @@ vi.mock('../../lib/data/categories', () => ({
   createCategory: vi.fn(),
   archiveCategory: vi.fn(),
   unarchiveCategory: vi.fn(),
+}));
+
+vi.mock('../../lib/data/accounts', () => ({
+  listAccounts: vi.fn(async () => []),
+  createAccount: vi.fn(),
+  archiveAccount: vi.fn(),
+  unarchiveAccount: vi.fn(),
+  deleteAccount: vi.fn(),
+  getAccountUsage: vi.fn(async () => 0),
 }));
 
 vi.mock('../../lib/data/aggregates', () => ({

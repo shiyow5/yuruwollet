@@ -16,6 +16,7 @@ function txn(over: Partial<Transaction> = {}): Transaction {
     type: 'expense',
     amount: 4500,
     category_id: 'c1',
+    account_id: null,
     memo: 'スーパー',
     occurred_on: '2026-07-13',
     is_system_generated: false,
@@ -30,6 +31,7 @@ const draft: TransactionDraft = {
   type: 'expense',
   amount: 4500,
   categoryId: 'c1',
+  accountId: null,
   occurredOn: '2026-07-13',
   memo: 'スーパー',
 };
@@ -94,9 +96,22 @@ describe('createTransaction', () => {
       type: 'expense',
       amount: 4500,
       category_id: 'c1',
+      account_id: null,
       memo: 'スーパー',
       occurred_on: '2026-07-13',
     });
+  });
+
+  it('accountId(在り処)を insert に渡す（#98）', async () => {
+    const { client, queries } = makeSupabaseMock({
+      transactions: { data: txn(), error: null },
+    });
+    await createTransaction(
+      client,
+      { ...draft, accountId: 'a1' },
+      { householdId: 'main', ownerMemberId: 'yururi' },
+    );
+    expect(argsOf(queries.transactions, 'insert')?.[0]).toMatchObject({ account_id: 'a1' });
   });
 
   it('error は投げる', async () => {
@@ -118,7 +133,10 @@ describe('updateTransaction', () => {
     const result = await updateTransaction(client, 't1', { ...draft, amount: 9999 });
     expect(result).toEqual(updated);
     expect(argsOf(queries.transactions, 'eq')).toEqual(['id', 't1']);
-    expect(argsOf(queries.transactions, 'update')?.[0]).toMatchObject({ amount: 9999 });
+    expect(argsOf(queries.transactions, 'update')?.[0]).toMatchObject({
+      amount: 9999,
+      account_id: null,
+    });
   });
 
   it('error は投げる', async () => {

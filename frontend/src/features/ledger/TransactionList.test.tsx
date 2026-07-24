@@ -26,6 +26,7 @@ const txn: Transaction = {
   type: 'expense',
   amount: 4500,
   category_id: 'c1',
+  account_id: null,
   memo: 'スーパー',
   occurred_on: '2026-07-10',
   is_system_generated: false,

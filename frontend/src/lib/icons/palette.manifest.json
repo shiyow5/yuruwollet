@@ -1,4 +1,5 @@
 [
+  "account_balance",
   "account_balance_wallet",
   "add",
   "archive",
@@ -23,6 +24,7 @@
   "coffee",
   "confirmation_number",
   "content_cut",
+  "credit_card",
   "currency_yen",
   "delete",
   "dentistry",
@@ -47,6 +49,7 @@
   "label",
   "language",
   "link",
+  "local_atm",
   "local_bar",
   "local_cafe",
   "local_fire_department",
@@ -71,6 +74,8 @@
   "photo_album",
   "photo_camera",
   "place",
+  "point_of_sale",
+  "qr_code_2",
   "ramen_dining",
   "receipt_long",
   "redeem",
@@ -95,6 +100,7 @@
   "train",
   "unarchive",
   "volunteer_activism",
+  "wallet",
   "water_drop",
   "wifi",
   "work"

@@ -24,9 +24,17 @@ export const CATEGORY_ICONS: readonly string[] = Array.from(
   new Set(CATEGORY_ICON_GROUPS.flatMap((g) => g.icons)),
 );
 
-/** フォントにサブセットする全アイコン（ui ∪ categories、重複除去、ソート）。 */
+/** アカウント（在り処）で選べるアイコン（グループ別）。AccountManager のピッカーが使う（#98）。 */
+export const ACCOUNT_ICON_GROUPS: readonly CategoryIconGroup[] = paletteJson.accounts;
+
+/** アカウントで選べるアイコンの平坦なリスト（重複除去）。 */
+export const ACCOUNT_ICONS: readonly string[] = Array.from(
+  new Set(ACCOUNT_ICON_GROUPS.flatMap((g) => g.icons)),
+);
+
+/** フォントにサブセットする全アイコン（ui ∪ categories ∪ accounts、重複除去、ソート）。 */
 export const SUBSET_ICONS: readonly string[] = Array.from(
-  new Set([...UI_ICONS, ...CATEGORY_ICONS]),
+  new Set([...UI_ICONS, ...CATEGORY_ICONS, ...ACCOUNT_ICONS]),
 ).sort();
 
 const CATEGORY_ICON_SET = new Set(CATEGORY_ICONS);
@@ -38,3 +46,13 @@ export function isCategoryIcon(name: string): boolean {
 
 /** カテゴリアイコンの既定値（パレットの先頭。未指定時のフォールバック）。 */
 export const DEFAULT_CATEGORY_ICON = CATEGORY_ICONS[0];
+
+const ACCOUNT_ICON_SET = new Set(ACCOUNT_ICONS);
+
+/** そのアイコン名がアカウントパレットに含まれるか（アカウント作成時の検証に使う）。 */
+export function isAccountIcon(name: string): boolean {
+  return ACCOUNT_ICON_SET.has(name);
+}
+
+/** アカウントアイコンの既定値（パレットの先頭。未指定時のフォールバック）。 */
+export const DEFAULT_ACCOUNT_ICON = ACCOUNT_ICONS[0];

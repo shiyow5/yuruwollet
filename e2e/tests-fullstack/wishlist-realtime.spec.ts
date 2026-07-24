@@ -1,6 +1,19 @@
 import { test, expect, type Page } from '@playwright/test';
 
 /**
+ * クロックを 24 日より前に固定する（#98）。
+ *
+ * この spec はウィッシュリストの Realtime を見るもので 24日の壁とは無関係だが、
+ * `?now=` を付けずに `/wishlist` を開くと **実行日が 24〜末日のときは残高確認の壁が
+ * 全面に出て操作を遮る**（壁は `?now=` で表示ゲートを判定する seam）。実行日に依存
+ * しないよう、壁の出ない日に固定する。VITE_ALLOW_CLOCK_OVERRIDE=true ビルド前提。
+ */
+const CLOCK = '2026-07-20';
+function at(path: string): string {
+  return path.includes('?') ? `${path}&now=${CLOCK}` : `${path}?now=${CLOCK}`;
+}
+
+/**
  * ウィッシュリストの Realtime 同期（#44）。
  *
  * 手作業だと「2 つの端末（またはウィンドウ）を並べる」必要があり確認が面倒な項目。
@@ -25,7 +38,7 @@ async function addWish(page: Page, title: string) {
  * 「思い出」に移したものは、そのタブから消す。
  */
 async function removeWish(page: Page, title: string, archived = false) {
-  await page.goto('/wishlist');
+  await page.goto(at('/wishlist'));
   if (archived) await page.getByRole('radio', { name: '思い出' }).click();
   // 削除は window.confirm を挟む（#95）。Playwright は既定で拒否するので accept する。
   page.once('dialog', (d) => d.accept());
@@ -42,8 +55,8 @@ test.describe('ウィッシュリストの Realtime', () => {
     const [a, b] = [await browser.newContext(), await browser.newContext()];
     const [pa, pb] = [await a.newPage(), await b.newPage()];
 
-    await pa.goto('/wishlist');
-    await pb.goto('/wishlist');
+    await pa.goto(at('/wishlist'));
+    await pb.goto(at('/wishlist'));
     // 購読が張られるまで待つ（一覧の描画完了を代理に使う）
     await expect(pa.getByRole('button', { name: 'ウィッシュを追加' })).toBeVisible();
     await expect(pb.getByRole('button', { name: 'ウィッシュを追加' })).toBeVisible();
@@ -63,13 +76,13 @@ test.describe('ウィッシュリストの Realtime', () => {
     const [a, b] = [await browser.newContext(), await browser.newContext()];
     const [pa, pb] = [await a.newPage(), await b.newPage()];
 
-    await pa.goto('/wishlist');
+    await pa.goto(at('/wishlist'));
     await expect(pa.getByRole('button', { name: 'ウィッシュを追加' })).toBeVisible();
 
     const title = `消す品 ${Date.now()}`;
     await addWish(pa, title);
 
-    await pb.goto('/wishlist');
+    await pb.goto(at('/wishlist'));
     await expect(pb.getByText(title)).toBeVisible({ timeout: 15_000 });
 
     // replica identity が default だと **DELETE はフィルタ付きチャンネルに届かない**。
@@ -89,13 +102,13 @@ test.describe('ウィッシュリストの Realtime', () => {
     const [a, b] = [await browser.newContext(), await browser.newContext()];
     const [pa, pb] = [await a.newPage(), await b.newPage()];
 
-    await pa.goto('/wishlist');
+    await pa.goto(at('/wishlist'));
     await expect(pa.getByRole('button', { name: 'ウィッシュを追加' })).toBeVisible();
 
     const title = `買う品 ${Date.now()}`;
     await addWish(pa, title);
 
-    await pb.goto('/wishlist');
+    await pb.goto(at('/wishlist'));
     await expect(pb.getByText(title)).toBeVisible({ timeout: 15_000 });
 
     const card = pa.locator('li').filter({ hasText: title });

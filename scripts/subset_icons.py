@@ -2,7 +2,7 @@
 """Material Symbols フォントを、使うアイコンだけにサブセットする（#9）。
 
 全アイコンで約 3.8MB ある material-symbols-outlined.woff2 を、パレット
-（frontend/src/lib/icons/palette.json の ui ∪ categories）に載っているアイコンだけに
+（frontend/src/lib/icons/palette.json の ui ∪ categories ∪ accounts）に載っているアイコンだけに
 削って **十数KB** にする。初回ロードを大幅に軽くするのが目的。
 
 ## なぜ ligature ではなく codepoint で描画するのか
@@ -47,7 +47,11 @@ OUT_MANIFEST = ROOT / "frontend" / "src" / "lib" / "icons" / "palette.manifest.j
 
 def palette_names() -> list[str]:
     data = json.loads(PALETTE.read_text(encoding="utf-8"))
-    names = list(data["ui"]) + [i for g in data["categories"] for i in g["icons"]]
+    names = (
+        list(data["ui"])
+        + [i for g in data["categories"] for i in g["icons"]]
+        + [i for g in data.get("accounts", []) for i in g["icons"]]
+    )
     return sorted(set(names))  # SUBSET_ICONS（palette.ts）と同じ順
 
 

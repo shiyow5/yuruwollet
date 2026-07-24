@@ -16,6 +16,14 @@ import {
   deleteCategory,
   getCategoryUsage,
 } from '../../lib/data/categories';
+import {
+  listAccounts,
+  createAccount,
+  archiveAccount,
+  unarchiveAccount,
+  deleteAccount,
+  getAccountUsage,
+} from '../../lib/data/accounts';
 import { getMonthlySummary, getCategoryBreakdown } from '../../lib/data/aggregates';
 import {
   makeOptimisticTransaction,
@@ -23,7 +31,12 @@ import {
   prependTransaction,
   keyAcceptsTransaction,
 } from '../../lib/ledger/optimistic';
-import type { Transaction, TransactionDraft, CategoryDraft } from '../../lib/ledger/types';
+import type {
+  Transaction,
+  TransactionDraft,
+  CategoryDraft,
+  AccountDraft,
+} from '../../lib/ledger/types';
 
 /**
  * 台帳系（残高・月次・カテゴリ内訳・取引一覧）を無効化する。
@@ -61,6 +74,10 @@ export function invalidateLedger(qc: QueryClient, memberId?: string): void {
 
 export function useCategories() {
   return useQuery({ queryKey: queryKeys.categories(), queryFn: () => listCategories(supabase) });
+}
+
+export function useAccounts() {
+  return useQuery({ queryKey: queryKeys.accounts(), queryFn: () => listAccounts(supabase) });
 }
 
 export function useMonthlySummary(memberId: string, month: string) {
@@ -215,6 +232,66 @@ export function useCategoryUsage(categoryId: string | null) {
     queryKey: queryKeys.categoryUsage(categoryId),
     queryFn: () => getCategoryUsage(supabase, categoryId as string),
     enabled: categoryId !== null,
+    staleTime: 0,
+    refetchOnMount: 'always',
+  });
+}
+
+// ---- アカウント（在り処, #98）: カテゴリと同型 ----
+
+export function useCreateAccount() {
+  const qc = useQueryClient();
+  const ctx = useWriteContext();
+  return useMutation({
+    mutationFn: (draft: AccountDraft) => {
+      if (!ctx) throw new Error('セッションが確立していません');
+      return createAccount(supabase, draft, { householdId: ctx.householdId });
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.accounts() });
+    },
+  });
+}
+
+export function useArchiveAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => archiveAccount(supabase, id),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.accounts() });
+    },
+  });
+}
+
+export function useUnarchiveAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => unarchiveAccount(supabase, id),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.accounts() });
+    },
+  });
+}
+
+export function useDeleteAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteAccount(supabase, id),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.accounts() });
+    },
+  });
+}
+
+/**
+ * そのアカウントを在り処にした取引の件数（削除ダイアログで見せる, #98）。
+ * カテゴリ使用数と同じ方針（staleTime: 0 で毎回取り直す）。
+ */
+export function useAccountUsage(accountId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.accountUsage(accountId),
+    queryFn: () => getAccountUsage(supabase, accountId as string),
+    enabled: accountId !== null,
     staleTime: 0,
     refetchOnMount: 'always',
   });

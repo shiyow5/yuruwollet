@@ -1,6 +1,20 @@
 import { test, expect, type Page } from '@playwright/test';
 
 /**
+ * クロックを 24 日より前に固定する（#98）。
+ *
+ * この spec は 24日の残高確認の壁とは無関係だが、`?now=` を付けずに素の `/` を開くと
+ * **実行日が 24〜末日のときは壁（今月の残高確認ダイアログ）が全面に出て操作を遮る**。
+ * 壁はサーバ実時刻ではなく `?now=` で表示ゲートを判定する（wall.spec と同じ seam）ので、
+ * ここでは常に壁の出ない日に固定して、実行日に依存せず決定的にする。
+ * VITE_ALLOW_CLOCK_OVERRIDE=true でビルドしているので `?now=` が効く。
+ */
+const CLOCK = '2026-07-20';
+function at(path: string): string {
+  return path.includes('?') ? `${path}&now=${CLOCK}` : `${path}?now=${CLOCK}`;
+}
+
+/**
  * 収支の追加・編集・削除と、それが残高へ伝わるか（#44）。
  *
  * ここは**楽観更新とサーバの実データが食い違わないか**を見るのが主眼。
@@ -43,7 +57,7 @@ async function addTransaction(
  * ハンドラを付けないと削除が黙って実行されない（それで最初このテストが落ちた）。
  */
 async function removeTransaction(page: Page, memo: string) {
-  await page.goto('/ledger');
+  await page.goto(at('/ledger'));
   page.once('dialog', (d) => d.accept());
   const row = page.getByRole('listitem').filter({ hasText: memo }).first();
   await row.getByRole('button', { name: '削除' }).click();
@@ -53,7 +67,7 @@ async function removeTransaction(page: Page, memo: string) {
 test.describe('収支の CRUD と残高への反映', () => {
   test('収入を追加すると残高がそのぶん増え、消すと戻る', async ({ page }) => {
     const memo = `E2E 収入 ${Date.now()}`;
-    await page.goto('/');
+    await page.goto(at('/'));
     const start = await balance(page);
 
     await addTransaction(page, '収入', 12345, memo);
@@ -62,7 +76,7 @@ test.describe('収支の CRUD と残高への反映', () => {
     );
 
     await removeTransaction(page, memo);
-    await page.goto('/');
+    await page.goto(at('/'));
     await expect(page.getByTestId('current-balance')).toHaveText(
       `¥${start.toLocaleString('ja-JP')}`,
     );
@@ -70,7 +84,7 @@ test.describe('収支の CRUD と残高への反映', () => {
 
   test('追加 → 編集 → 削除を通しで行い、残高が追随する', async ({ page }) => {
     const memo = `E2E 一周 ${Date.now()}`;
-    await page.goto('/');
+    await page.goto(at('/'));
     const start = await balance(page);
 
     // 追加（-1,000）
@@ -82,7 +96,7 @@ test.describe('収支の CRUD と残高への反映', () => {
     await expect(page.getByRole('listitem').filter({ hasText: memo })).toHaveCount(1);
 
     // 編集（1,000 → 3,000 なので更に -2,000）
-    await page.goto('/ledger');
+    await page.goto(at('/ledger'));
     await page
       .getByRole('listitem')
       .filter({ hasText: memo })
@@ -94,21 +108,21 @@ test.describe('収支の CRUD と残高への反映', () => {
       .getByRole('button', { name: /保存|更新/ })
       .last()
       .click();
-    await page.goto('/');
+    await page.goto(at('/'));
     await expect(page.getByTestId('current-balance')).toHaveText(
       `¥${(start - 3000).toLocaleString('ja-JP')}`,
     );
 
     // 削除（元に戻る）
     await removeTransaction(page, memo);
-    await page.goto('/');
+    await page.goto(at('/'));
     await expect(page.getByTestId('current-balance')).toHaveText(
       `¥${start.toLocaleString('ja-JP')}`,
     );
   });
 
   test('月切替で過去の月を遡れる', async ({ page }) => {
-    await page.goto('/ledger');
+    await page.goto(at('/ledger'));
     const heading = page.getByText(/\d{4}年\d{1,2}月の記録/);
     const first = await heading.textContent();
 
@@ -120,7 +134,7 @@ test.describe('収支の CRUD と残高への反映', () => {
   });
 
   test('自分/相手タブで相手の残高に切り替わり、相手の分は書けない', async ({ page }) => {
-    await page.goto('/');
+    await page.goto(at('/'));
     const mine = await balance(page);
 
     await page

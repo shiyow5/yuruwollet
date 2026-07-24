@@ -1,7 +1,7 @@
 import { Modal } from '../../components/ui';
 import type { TransactionDraft, TxnType } from '../../lib/ledger/types';
 import { TransactionForm } from './TransactionForm';
-import { useCategories, useCreateTransaction } from './hooks';
+import { useAccounts, useCategories, useCreateTransaction } from './hooks';
 
 interface Props {
   open: boolean;
@@ -29,6 +29,7 @@ export function AddTransactionModal({
   initialType = 'expense',
 }: Props) {
   const { data: categories = [] } = useCategories();
+  const { data: accounts = [] } = useAccounts();
   const createTransaction = useCreateTransaction();
 
   // 閉じるときに mutation の状態を捨てる。捨てないと、失敗 → 閉じる → 開き直す で
@@ -47,6 +48,7 @@ export function AddTransactionModal({
       <h3 className="mb-6 font-headline-md text-headline-md text-custom-text">収支を追加</h3>
       <TransactionForm
         categories={categories}
+        accounts={accounts}
         initial={{ occurredOn: defaultDate, type: initialType }}
         submitLabel="追加"
         submitting={createTransaction.isPending}

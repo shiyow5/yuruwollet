@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { formatMonthDay } from '../../lib/format';
 import { WishlistItemDetail } from './WishlistItemDetail';
 import type { WishlistItem } from '../../lib/wishlist/types';
 
@@ -63,5 +64,24 @@ describe('WishlistItemDetail（#105）', () => {
       />,
     );
     expect(screen.queryByRole('link')).toBeNull();
+  });
+
+  it('登録日は JST の暦日で出す（UTC 深夜のズレを直す, #105）', () => {
+    // 2026-07-13T15:30:00Z = JST 2026-07-14 00:30 → 登録日は 7/14
+    render(
+      <WishlistItemDetail
+        item={item({ created_at: '2026-07-13T15:30:00Z' })}
+        registrantName="ゆるり"
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('dialog')).toHaveTextContent(formatMonthDay('2026-07-14'));
+  });
+
+  it('閉じるで onClose を呼ぶ', () => {
+    const onClose = vi.fn();
+    render(<WishlistItemDetail item={item()} registrantName="ゆるり" onClose={onClose} />);
+    fireEvent.click(screen.getByRole('button', { name: '閉じる' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

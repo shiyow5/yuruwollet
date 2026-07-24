@@ -1,4 +1,4 @@
-import { Modal } from '../../components/ui';
+import { Button, Modal } from '../../components/ui';
 import { formatSignedYen, formatMonthDay } from '../../lib/format';
 import { resolveCategory } from '../../lib/ledger/categories';
 import { resolveAccount } from '../../lib/ledger/accounts';
@@ -56,6 +56,10 @@ export function TransactionDetail({ txn, categories, accounts, onClose }: Props)
           {txn.memo.trim() !== '' && <DetailRow label="メモ" value={txn.memo} />}
           <DetailRow label="記録の種類" value={kindLabel(txn)} />
         </dl>
+
+        <Button variant="secondary" fullWidth onClick={onClose}>
+          閉じる
+        </Button>
       </div>
     </Modal>
   );

@@ -1,5 +1,5 @@
-import { Chip, Icon, Modal } from '../../components/ui';
-import { formatMonthDay } from '../../lib/format';
+import { Button, Chip, Icon, Modal } from '../../components/ui';
+import { formatMonthDay, jstToday } from '../../lib/format';
 import { isSafeUrl } from '../../lib/wishlist/schema';
 import { genreLabel, statusLabel, statusTone } from '../../lib/wishlist/labels';
 import type { WishlistItem } from '../../lib/wishlist/types';
@@ -36,7 +36,9 @@ export function WishlistItemDetail({ item, registrantName, onClose }: Props) {
           <DetailRow label="ジャンル" value={genreLabel(item.genre)} />
           <DetailRow label="登録者" value={registrantName} />
           {item.memo.trim() !== '' && <DetailRow label="メモ" value={item.memo} />}
-          <DetailRow label="登録日" value={formatMonthDay(item.created_at.slice(0, 10))} />
+          {/* created_at は UTC。JST の暦日に直してから表示する（naive な slice だと
+              JST 0〜9時に作った分が前日にずれる, #105 レビュー）。 */}
+          <DetailRow label="登録日" value={formatMonthDay(jstToday(new Date(item.created_at)))} />
         </dl>
 
         {safeUrl && (
@@ -50,6 +52,10 @@ export function WishlistItemDetail({ item, registrantName, onClose }: Props) {
             <span className="break-all">{safeUrl}</span>
           </a>
         )}
+
+        <Button variant="secondary" fullWidth onClick={onClose}>
+          閉じる
+        </Button>
       </div>
     </Modal>
   );

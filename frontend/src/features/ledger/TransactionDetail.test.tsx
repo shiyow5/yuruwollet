@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { TransactionDetail } from './TransactionDetail';
 import type { Account, Category, Transaction } from '../../lib/ledger/types';
 
@@ -105,5 +105,19 @@ describe('TransactionDetail（#105）', () => {
       />,
     );
     expect(screen.getByRole('dialog')).toHaveTextContent('残高調整（自動）');
+  });
+
+  it('閉じるで onClose を呼ぶ', () => {
+    const onClose = vi.fn();
+    render(
+      <TransactionDetail
+        txn={txn()}
+        categories={categories}
+        accounts={accounts}
+        onClose={onClose}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: '閉じる' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 });

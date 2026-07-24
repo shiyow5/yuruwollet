@@ -56,7 +56,10 @@ function invalidateAfterConfirm(qc: QueryClient, memberId?: string): void {
   });
 }
 
-/** 「後で数える」= skipped を upsert（当日は再表示されない）。 */
+/**
+ * skipped を upsert するフック。**現在未使用（#106）。**
+ * 「後で数える」は DB に残さないローカル操作に変えた。#104 で壁再構築時に掃除予定。
+ */
 export function useSkipCheckpoint() {
   const qc = useQueryClient();
   const ctx = useWriteContext();

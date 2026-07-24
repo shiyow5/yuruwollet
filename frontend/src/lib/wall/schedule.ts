@@ -17,17 +17,15 @@ export function dayOfMonth(today: string): number {
  * 表示ゲートの判定にクライアントの日付を使わない。
  *
  * - JST 24日未満は表示しない
- * - 当月の checkpoint が無ければ表示
- * - confirmed なら表示しない（その月は確認済み）
- * - skipped: その skip が「今日」なら表示しない。前日以前の skip なら再表示（25日以降も催促）
+ * - **confirmed（その月を確定済み）なら表示しない。それ以外は表示する。**
+ *
+ * 「後で数える」は DB に skipped を残さず、その場で閉じるだけの一時操作にした（#106）。
+ * 一度スキップしても、確定するまではその月内（24日〜月末）はアプリを開くたび／日をまたぐ
+ * たびに壁を出す。壁を閉じている間の抑制は BalanceWall のローカル state が担う。
  */
 export function shouldShowWall(today: string, checkpoint: Checkpoint | null): boolean {
   if (dayOfMonth(today) < WALL_DAY) return false;
-  if (!checkpoint) return true;
-  if (checkpoint.status === 'confirmed') return false;
-  // skipped: スキップした JST 日付が今日より前なら再表示
-  const skippedOn = jstToday(new Date(checkpoint.updated_at));
-  return skippedOn < today;
+  return checkpoint?.status !== 'confirmed';
 }
 
 /**

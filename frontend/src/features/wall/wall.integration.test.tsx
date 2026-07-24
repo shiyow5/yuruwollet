@@ -264,11 +264,26 @@ describe('BalanceWall 統合', () => {
     expect(confirmCheckpoint).not.toHaveBeenCalled();
   });
 
-  it('「後で数える」でスキップを保存し当日は閉じる', async () => {
+  // #106: 「後で数える」は DB に残さず、その場で閉じるだけ。確定するまで
+  // 月内は開き直すたびに再び出る（再表示自体は shouldShowWall の単体テストが担保）。
+  it('「後で数える」は保存せずその場で閉じる（#106）', async () => {
     renderWall();
     fireEvent.click(await screen.findByRole('button', { name: '後で数える' }));
-    await waitFor(() => expect(skipCheckpoint).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(skipCheckpoint).not.toHaveBeenCalled();
+  });
+
+  it('「後で数える」で閉じても、開き直すと再び出る（月内は毎日, #106）', async () => {
+    const { unmount } = renderWall();
+    fireEvent.click(await screen.findByRole('button', { name: '後で数える' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+
+    // アプリを開き直す（再マウント）→ ローカルの一時抑制がリセットされ、
+    // 確定していないので同じ月でも再び壁が出る。
+    unmount();
+    renderWall();
+    expect(await screen.findByRole('dialog', { name: '今月の残高確認' })).toBeInTheDocument();
+    expect(screen.getByText('明日は給料日！')).toBeInTheDocument();
   });
 
   it('未入力で決定すると検証エラー', async () => {
@@ -348,7 +363,6 @@ describe('BalanceWall 統合', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: '後で数える' })).toBeDisabled());
     release();
     await screen.findByText(/ズレています/);
-    expect(skipCheckpoint).not.toHaveBeenCalled();
   });
 
   it('確定中は「いいえ」で取り消せない（RPC は止まらない）', async () => {

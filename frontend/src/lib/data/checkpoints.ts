@@ -26,9 +26,11 @@ export interface SkipContext {
 }
 
 /**
- * 「後で数える」= status='skipped' を upsert する。
- * RLS 上、checkpoint への直接書込は skipped のみ許可（confirmed は RPC 経由のみ）。
- * 既存の skipped 行は updated_at が更新され、当日は再表示されなくなる。
+ * status='skipped' を upsert する（`skipped` 用の RLS 直接書込経路）。
+ *
+ * **現在アプリからは未使用（#106）。** 「後で数える」は DB に skipped を残さない
+ * ローカルな一時操作に変えた（BalanceWall）。この関数と `skipped` ステータス・RLS は
+ * 壁の口座別化（#104）で壁を作り直す際にまとめて掃除する予定。
  */
 export async function skipCheckpoint(
   client: SupabaseClient<Database>,

@@ -57,15 +57,21 @@ describe('shouldShowWall', () => {
     expect(shouldShowWall(on26, cp({ status: 'confirmed' }))).toBe(false);
   });
 
-  it('今日スキップ済みなら当日は表示しない', () => {
-    // JST 7/24 にスキップ、今も 7/24
-    const skippedToday = cp({ status: 'skipped', updated_at: '2026-07-24T01:00:00Z' }); // JST 7/24 10:00
-    expect(shouldShowWall(on24, skippedToday)).toBe(false);
+  // #106: 「後で数える」は DB に skipped を残さない一時操作にしたので、
+  // skipped が残っていても（＝確定していなければ）壁は出す。月内は毎日催促する。
+  it('skipped でも当日から表示する（後で数えるは一時的な操作, #106）', () => {
+    const skippedToday = cp({ status: 'skipped', updated_at: '2026-07-24T01:00:00Z' });
+    expect(shouldShowWall(on24, skippedToday)).toBe(true);
   });
 
-  it('前日以前のスキップなら再表示（25日以降も催促）', () => {
+  it('skipped でも翌日以降ずっと表示する（月末まで毎日, #106）', () => {
     const skippedOn24 = cp({ status: 'skipped', updated_at: '2026-07-24T01:00:00Z' });
     expect(shouldShowWall(on26, skippedOn24)).toBe(true);
+  });
+
+  it('confirmed だけが壁を止める', () => {
+    expect(shouldShowWall(on26, cp({ status: 'skipped' }))).toBe(true);
+    expect(shouldShowWall(on26, cp({ status: 'confirmed' }))).toBe(false);
   });
 });
 

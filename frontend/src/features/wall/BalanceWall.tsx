@@ -16,12 +16,7 @@ import {
 } from '../../lib/wall/schedule';
 import { validateActualBalance } from '../../lib/wall/validate';
 import { confirmErrorMessage, kindOfConfirmError } from '../../lib/wall/errors';
-import {
-  useServerToday,
-  useCurrentCheckpoint,
-  useSkipCheckpoint,
-  useConfirmCheckpoint,
-} from './hooks';
+import { useServerToday, useCurrentCheckpoint, useConfirmCheckpoint } from './hooks';
 
 interface Props {
   /**
@@ -54,6 +49,11 @@ export function BalanceWall({ now: injectedNow }: Props) {
   const [clock, setClock] = useState<Date>(() => fixed ?? new Date());
   const now = fixed ?? clock;
 
+  // 「後で数える」で閉じたことを表すローカル state（#106）。
+  // DB には残さないので、アプリを開き直す（＝再マウント）と false に戻り、
+  // 確定するまで月内は毎日／毎回、壁が再び出る。日をまたいだときも下の effect で解除する。
+  const [dismissed, setDismissed] = useState(false);
+
   // JST の日付境界で、端末時計とサーバ日付の両方を取り直す。
   // サーバ日付を取り直さないと、23日をキャッシュしたタブが 24日になっても
   // 定期再取得/フォーカスまで壁を出さないままになる。
@@ -63,6 +63,8 @@ export function BalanceWall({ now: injectedNow }: Props) {
     const timer = setTimeout(
       () => {
         setClock(new Date());
+        // 日をまたいだら「後で数える」の一時抑制も解除して、新しい日の催促を出す（#106）。
+        setDismissed(false);
         void qc.invalidateQueries({ queryKey: queryKeys.serverToday() });
       },
       msUntilNextJstDay(now) + 1000,
@@ -93,6 +95,7 @@ export function BalanceWall({ now: injectedNow }: Props) {
   // 差額判定は WallDialog 側で必ず最新残高を取り直して行う。
   if (
     selfId === '' ||
+    dismissed ||
     serverToday.isLoading ||
     cpLoading ||
     cpError ||
@@ -103,12 +106,11 @@ export function BalanceWall({ now: injectedNow }: Props) {
 
   // 可視のときだけマウントし、月が変わったら key で作り直す
   // → 閉じたとき・月をまたいだときに入力/確認 state が必ず初期化される
-  return <WallDialog key={month} selfId={selfId} month={month} />;
+  return <WallDialog key={month} selfId={selfId} onSkip={() => setDismissed(true)} />;
 }
 
-function WallDialog({ selfId, month }: { selfId: string; month: string }) {
+function WallDialog({ selfId, onSkip }: { selfId: string; onSkip: () => void }) {
   const { isError: balError, refetch } = useMemberBalances();
-  const skip = useSkipCheckpoint();
   const confirm = useConfirmCheckpoint();
 
   const [step, setStep] = useState<'input' | 'confirm'>('input');
@@ -212,23 +214,14 @@ function WallDialog({ selfId, month }: { selfId: string; month: string }) {
               {confirmError}
             </p>
           )}
-          {skip.isError && (
-            <p role="alert" className="text-label-sm text-error">
-              スキップを保存できませんでした。再度お試しください。
-            </p>
-          )}
 
           <div className="flex gap-3 pt-1">
-            {/* 決定の残高再取得中にスキップされると、確定と競合するため両方を排他にする */}
-            <Button
-              variant="secondary"
-              fullWidth
-              disabled={skip.isPending || busy}
-              onClick={() => skip.mutate(month)}
-            >
-              {skip.isPending ? '保存中…' : '後で数える'}
+            {/* 「後で数える」は閉じるだけ（#106）。DB には残さないので、確定するまで
+                月内はアプリを開くたび／日をまたぐたびに再び出る。 */}
+            <Button variant="secondary" fullWidth disabled={busy} onClick={onSkip}>
+              後で数える
             </Button>
-            <Button fullWidth disabled={busy || skip.isPending} onClick={handleDecide}>
+            <Button fullWidth disabled={busy} onClick={handleDecide}>
               {busy ? '確認中…' : '決定'}
             </Button>
           </div>

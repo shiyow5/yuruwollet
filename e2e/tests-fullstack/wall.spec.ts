@@ -45,6 +45,19 @@ test.describe('24日の壁（表示ゲート）', () => {
     await expect(wall(page)).toBeVisible();
   });
 
+  // #106: 「後で数える」は閉じるだけ。DB に残さないので、確定するまで
+  // 同じ月でも開き直すたびに再び出る（毎日催促）。
+  test('「後で数える」で閉じても、開き直すと再び出る（#106）', async ({ page }) => {
+    await page.goto('/?now=2026-07-24');
+    await expect(wall(page)).toBeVisible();
+    await wall(page).getByRole('button', { name: '後で数える' }).click();
+    await expect(wall(page)).toHaveCount(0);
+
+    // 開き直す（再読み込み）→ 確定していないので再び出る
+    await page.goto('/?now=2026-07-24');
+    await expect(wall(page)).toBeVisible();
+  });
+
   test('全画面ロックで、裏の操作をさせない', async ({ page }) => {
     await page.goto('/?now=2026-07-24');
     await expect(wall(page)).toBeVisible();

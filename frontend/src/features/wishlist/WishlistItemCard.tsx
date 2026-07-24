@@ -8,6 +8,7 @@ interface Props {
   /** 登録者の表示名（ゆるり / しよを）。解決できなければ member_id を出す。 */
   registrantName: string;
   busy?: boolean;
+  onSelect?: (item: WishlistItem) => void;
   onComplete: (id: string) => void;
   onRestore: (id: string) => void;
   onDelete: (id: string) => void;
@@ -17,6 +18,7 @@ export function WishlistItemCard({
   item,
   registrantName,
   busy,
+  onSelect,
   onComplete,
   onRestore,
   onDelete,
@@ -33,9 +35,21 @@ export function WishlistItemCard({
 
       <div className="flex min-w-0 flex-grow flex-col gap-3">
         <div className="flex items-start justify-between gap-3">
-          <h3 className="min-w-0 break-words font-headline-md text-body-lg font-medium text-custom-text">
-            {item.title}
-          </h3>
+          {onSelect ? (
+            // タイトルをタップすると詳細を開く（#105）
+            <button
+              type="button"
+              aria-label={`${item.title} の詳細`}
+              onClick={() => onSelect(item)}
+              className="min-w-0 break-words rounded text-left font-headline-md text-body-lg font-medium text-custom-text transition hover:text-primary"
+            >
+              {item.title}
+            </button>
+          ) : (
+            <h3 className="min-w-0 break-words font-headline-md text-body-lg font-medium text-custom-text">
+              {item.title}
+            </h3>
+          )}
           <Chip tone={statusTone(item.status)}>{statusLabel(item.genre, item.status)}</Chip>
         </div>
 

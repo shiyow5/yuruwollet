@@ -8,6 +8,7 @@ interface Props {
   loading?: boolean;
   error?: boolean;
   emptyMessage?: string;
+  onSelect?: (txn: Transaction) => void;
   onEdit?: (txn: Transaction) => void;
   onDelete?: (txn: Transaction) => void;
   now?: Date;
@@ -20,6 +21,7 @@ export function TransactionList({
   loading = false,
   error = false,
   emptyMessage = 'まだ記録がありません',
+  onSelect,
   onEdit,
   onDelete,
   now,
@@ -55,6 +57,7 @@ export function TransactionList({
           <TransactionItem
             txn={txn}
             categories={categories}
+            onSelect={onSelect}
             onEdit={onEdit}
             onDelete={onDelete}
             now={now}

@@ -7,13 +7,14 @@ import type { Category, Transaction } from '../../lib/ledger/types';
 interface Props {
   txn: Transaction;
   categories: Category[];
+  onSelect?: (txn: Transaction) => void;
   onEdit?: (txn: Transaction) => void;
   onDelete?: (txn: Transaction) => void;
   now?: Date;
 }
 
 /** 取引 1 件の行表示。onEdit/onDelete が渡されたときのみ操作ボタンを出す。 */
-export function TransactionItem({ txn, categories, onEdit, onDelete, now }: Props) {
+export function TransactionItem({ txn, categories, onSelect, onEdit, onDelete, now }: Props) {
   const { name, icon } = resolveCategory(categories, txn.category_id);
   const title = txn.memo.trim() !== '' ? txn.memo : name;
   const isIncome = txn.type === 'income';
@@ -24,21 +25,35 @@ export function TransactionItem({ txn, categories, onEdit, onDelete, now }: Prop
   //     消されると二度と復活しない。DB 側でも更新はトリガ、削除は RLS が拒否する
   const actionable = !pending && !txn.is_system_generated && txn.subscription_id === null;
 
+  // 行の本体（アイコン＋タイトル）をタップすると詳細を開く（#105）。編集/削除は右のボタン。
+  const body = (
+    <>
+      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-custom-accent/10 text-custom-accent">
+        <Icon name={icon} />
+      </div>
+      <div className="flex min-w-0 flex-col gap-1 text-left">
+        <h4 className="truncate font-body-md text-body-md font-medium text-custom-text">{title}</h4>
+        <span className="font-label-sm text-label-sm text-custom-text/70">
+          {pending ? '保存中…' : `${name} · ${relativeDay(txn.occurred_on, now)}`}
+        </span>
+      </div>
+    </>
+  );
+
   return (
     <div className="flex items-center justify-between gap-4">
-      <div className="flex min-w-0 items-center gap-4">
-        <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-custom-accent/10 text-custom-accent">
-          <Icon name={icon} />
-        </div>
-        <div className="flex min-w-0 flex-col gap-1">
-          <h4 className="truncate font-body-md text-body-md font-medium text-custom-text">
-            {title}
-          </h4>
-          <span className="font-label-sm text-label-sm text-custom-text/70">
-            {pending ? '保存中…' : `${name} · ${relativeDay(txn.occurred_on, now)}`}
-          </span>
-        </div>
-      </div>
+      {onSelect && !pending ? (
+        <button
+          type="button"
+          aria-label={`${title} の詳細`}
+          onClick={() => onSelect(txn)}
+          className="flex min-w-0 flex-grow items-center gap-4 rounded-2xl text-left transition hover:bg-black/5"
+        >
+          {body}
+        </button>
+      ) : (
+        <div className="flex min-w-0 items-center gap-4">{body}</div>
+      )}
 
       <div className="flex shrink-0 items-center gap-2">
         <span

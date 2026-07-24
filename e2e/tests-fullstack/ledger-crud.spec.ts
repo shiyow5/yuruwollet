@@ -121,6 +121,16 @@ test.describe('収支の CRUD と残高への反映', () => {
     );
   });
 
+  test('記録をタップすると詳細が出る（#105）', async ({ page }) => {
+    await page.goto(at('/ledger'));
+    // seed の記録を 1 件タップ（詳細ボタンは「… の詳細」）。読み取り専用なので後始末不要。
+    await page
+      .getByRole('button', { name: / の詳細$/ })
+      .first()
+      .click();
+    await expect(page.getByRole('dialog', { name: '取引の詳細' })).toBeVisible();
+  });
+
   test('月切替で過去の月を遡れる', async ({ page }) => {
     await page.goto(at('/ledger'));
     const heading = page.getByText(/\d{4}年\d{1,2}月の記録/);

@@ -235,6 +235,18 @@ describe('LedgerPage 統合', () => {
     expect(screen.getByRole('button', { name: '収支を追加' })).toBeInTheDocument();
   });
 
+  it('記録をタップすると詳細（在り処含む）が出る（#105）', async () => {
+    state.rows = [row({ id: 'seed-1', memo: 'カフェ代', category_id: CATEGORY_ID })];
+    renderLedger();
+    fireEvent.click(await screen.findByRole('button', { name: 'カフェ代 の詳細' }));
+
+    const dialog = await screen.findByRole('dialog', { name: '取引の詳細' });
+    expect(within(dialog).getByText('食費')).toBeInTheDocument(); // カテゴリ
+    expect(within(dialog).getByText('カフェ代')).toBeInTheDocument(); // メモ
+    // account_id=null の行なので在り処は「未設定」
+    expect(within(dialog).getByText('未設定')).toBeInTheDocument();
+  });
+
   it('収支を追加するとフォームが閉じ一覧に反映される', async () => {
     renderLedger();
     fireEvent.click(await screen.findByRole('button', { name: '収支を追加' }));

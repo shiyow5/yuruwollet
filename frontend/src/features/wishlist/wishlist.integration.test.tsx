@@ -151,6 +151,17 @@ describe('WishlistBoard 統合', () => {
     expect(await screen.findByText('しよを')).toBeInTheDocument();
   });
 
+  it('タイトルをタップすると詳細が出る（#105）', async () => {
+    state.rows = [item({ registrant_id: 'shiyowo', memo: '全自動がいい' })];
+    renderBoard();
+    fireEvent.click(await screen.findByRole('button', { name: 'コーヒーメーカー の詳細' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'ウィッシュの詳細' });
+    expect(within(dialog).getByText('ほしい物')).toBeInTheDocument(); // ジャンル
+    expect(within(dialog).getByText('しよを')).toBeInTheDocument(); // 登録者
+    expect(within(dialog).getByText('全自動がいい')).toBeInTheDocument(); // メモ
+  });
+
   it('ステータス文言はジャンルで変わる', async () => {
     state.rows = [item(), item({ id: 'p1', genre: 'place', title: 'カフェ' })];
     renderBoard();

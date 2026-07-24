@@ -8,6 +8,7 @@ import { MemberTabs } from '../../features/shared/MemberTabs';
 import { useMemberOptions } from '../../features/shared/members';
 import { TransactionForm, type TransactionFormValues } from '../../features/ledger/TransactionForm';
 import { TransactionList } from '../../features/ledger/TransactionList';
+import { TransactionDetail } from '../../features/ledger/TransactionDetail';
 import { AddTransactionModal } from '../../features/ledger/AddTransactionModal';
 import {
   useCategories,
@@ -30,6 +31,8 @@ export function LedgerPage() {
   );
   const [month, setMonth] = useState(() => jstMonthStart());
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
+  // タップで開く取引詳細（#105）。編集/作成モーダルとは独立。
+  const [detail, setDetail] = useState<Transaction | null>(null);
 
   const activeMember = viewMemberId ?? selfId ?? '';
   const canWrite = activeMember !== '' && activeMember === selfId;
@@ -88,6 +91,7 @@ export function LedgerPage() {
         <TransactionList
           transactions={transactions}
           categories={categories}
+          onSelect={setDetail}
           loading={isLoading}
           error={isError}
           emptyMessage={
@@ -99,6 +103,13 @@ export function LedgerPage() {
       </Card>
 
       {canWrite && <Fab label="収支を追加" onClick={() => setModal({ kind: 'create' })} />}
+
+      <TransactionDetail
+        txn={detail}
+        categories={categories}
+        accounts={accounts}
+        onClose={() => setDetail(null)}
+      />
 
       <AddTransactionModal
         open={modal.kind === 'create' && canWrite}

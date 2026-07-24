@@ -1,8 +1,11 @@
+import { useState } from 'react';
 import { Link } from 'react-router';
 import { Card } from '../../components/ui';
 import { cn } from '../../lib/cn';
+import type { Transaction } from '../../lib/ledger/types';
 import { TransactionList } from '../../features/ledger/TransactionList';
-import { useCategories, useRecentTransactions } from '../../features/ledger/hooks';
+import { TransactionDetail } from '../../features/ledger/TransactionDetail';
+import { useAccounts, useCategories, useRecentTransactions } from '../../features/ledger/hooks';
 
 interface Props {
   memberId: string;
@@ -10,10 +13,12 @@ interface Props {
   limit?: number;
 }
 
-/** 直近の履歴（読み取り専用。編集は家計簿ページで）。 */
+/** 直近の履歴（編集は家計簿ページで。行タップで詳細だけ見られる, #105）。 */
 export function RecentTransactions({ memberId, className, limit = 5 }: Props) {
   const { data: transactions = [], isLoading, isError } = useRecentTransactions(memberId, limit);
   const { data: categories = [] } = useCategories();
+  const { data: accounts = [] } = useAccounts();
+  const [detail, setDetail] = useState<Transaction | null>(null);
 
   return (
     <Card className={cn('flex flex-col gap-8', className)}>
@@ -29,9 +34,16 @@ export function RecentTransactions({ memberId, className, limit = 5 }: Props) {
       <TransactionList
         transactions={transactions}
         categories={categories}
+        onSelect={setDetail}
         loading={isLoading}
         error={isError}
         emptyMessage="まだ記録がありません"
+      />
+      <TransactionDetail
+        txn={detail}
+        categories={categories}
+        accounts={accounts}
+        onClose={() => setDetail(null)}
       />
     </Card>
   );

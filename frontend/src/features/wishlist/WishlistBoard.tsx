@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react';
 import { EmptyState, Fab, Modal, SegmentedControl, Skeleton } from '../../components/ui';
 import { GENRES, tabLabel } from '../../lib/wishlist/labels';
-import type { WishTab, WishGenre } from '../../lib/wishlist/types';
+import type { WishTab, WishGenre, WishlistItem } from '../../lib/wishlist/types';
 import { useProfiles } from '../shared/members';
 import { WishlistForm } from './WishlistForm';
 import { WishlistItemCard } from './WishlistItemCard';
+import { WishlistItemDetail } from './WishlistItemDetail';
 import {
   useWishlist,
   useWishlistRealtime,
@@ -32,6 +33,8 @@ const EMPTY: Record<WishTab, { title: string; description: string }> = {
 export function WishlistBoard() {
   const [tab, setTab] = useState<WishTab>('want');
   const [formOpen, setFormOpen] = useState(false);
+  // タップで開くウィッシュ詳細（#105）
+  const [detail, setDetail] = useState<WishlistItem | null>(null);
 
   const archived = tab === 'archive';
   const list = useWishlist(archived);
@@ -111,6 +114,7 @@ export function WishlistBoard() {
               item={item}
               registrantName={nameOf(item.registrant_id)}
               busy={mutating}
+              onSelect={setDetail}
               onComplete={complete.mutate}
               onRestore={restore.mutate}
               onDelete={handleDelete}
@@ -118,6 +122,12 @@ export function WishlistBoard() {
           ))}
         </ul>
       )}
+
+      <WishlistItemDetail
+        item={detail}
+        registrantName={detail ? nameOf(detail.registrant_id) : ''}
+        onClose={() => setDetail(null)}
+      />
 
       <Fab icon="add" label="ウィッシュを追加" onClick={() => setFormOpen(true)} />
 

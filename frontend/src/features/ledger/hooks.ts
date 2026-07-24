@@ -49,6 +49,9 @@ export function invalidateLedger(qc: QueryClient, memberId?: string): void {
     queryKey: memberId ? ['transactions', memberId] : ['transactions'],
   });
   void qc.invalidateQueries({ queryKey: queryKeys.memberBalances() });
+  // 口座別残高（v_account_balances）も取引で動く。memberBalances と同じく 1 クエリで
+  // 両者・全口座を返すため常に全体を無効化する。落とすと口座別カードだけ古い残高になる（#102）。
+  void qc.invalidateQueries({ queryKey: queryKeys.accountBalances() });
   void qc.invalidateQueries({
     queryKey: memberId ? ['monthlySummary', memberId] : ['monthlySummary'],
   });

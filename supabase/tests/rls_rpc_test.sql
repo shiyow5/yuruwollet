@@ -1,6 +1,6 @@
 -- pgTAP: RLS の cross-household 分離 + per-member 書込強制 + confirm_balance_checkpoint RPC
 begin;
-select plan(149);
+select plan(170);
 
 -- ============================================================
 -- Block A: ゆるり @ main として認証
@@ -1416,6 +1416,244 @@ select is(
   ),
   1,
   'adjust_balance_now: ズレ 0 では取引を増やさない'
+);
+
+-- ============================================================
+-- Block Z: 口座別残高 account_openings / v_account_balances (#102)
+-- ============================================================
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"role":"authenticated","household_id":"main","member_id":"yururi"}',
+  true
+);
+
+-- 現金口座に yururi の取引(+5000)を 1 件足す（口座別残高の材料）
+insert into public.transactions (household_id, owner_member_id, type, amount, occurred_on, account_id)
+values ('main', 'yururi', 'income', 5000, '2026-07-05',
+        (select id from public.accounts where household_id = 'main' and name = '現金'));
+
+-- 口座初期残高を足す前の総残高／現金残高を控える（初期残高が効くことの検証用・delta で見る）
+select set_config(
+  'test.ybefore',
+  (select balance::text from public.v_member_balances where member_id = 'yururi'),
+  true
+);
+select set_config(
+  'test.cash_before',
+  (select balance::text from public.v_account_balances
+     where member_id = 'yururi' and account_name = '現金'),
+  true
+);
+
+-- [RLS] 自分名義の口座初期残高は挿入できる
+select lives_ok(
+  $$ insert into public.account_openings (household_id, member_id, account_id, opening_balance)
+     values ('main', 'yururi',
+             (select id from public.accounts where household_id = 'main' and name = '現金'),
+             30000) $$,
+  'account_openings を自分名義で挿入できる（#102）'
+);
+
+-- [RLS] 相手名義(member_id=shiyowo)での挿入は with check に一致せず拒否
+select throws_ok(
+  $$ insert into public.account_openings (household_id, member_id, account_id, opening_balance)
+     values ('main', 'shiyowo',
+             (select id from public.accounts where household_id = 'main' and name = '銀行口座'),
+             1000) $$,
+  '42501', null,
+  'account_openings: 相手名義の初期残高は挿入できない（#102）'
+);
+
+-- [RLS] 他 household の account_id を差し込む挿入は exists 検証で拒否
+select throws_ok(
+  $$ insert into public.account_openings (household_id, member_id, account_id, opening_balance)
+     values ('main', 'yururi', gen_random_uuid(), 1000) $$,
+  null, null,
+  'account_openings: household 外の account は差し込めない（#102）'
+);
+
+-- [VIEW] 口座別残高 = 口座初期残高 + その口座の収支。初期残高 30000 を足したぶんだけ増える
+select is(
+  (select balance from public.v_account_balances
+     where member_id = 'yururi' and account_name = '現金'),
+  (current_setting('test.cash_before')::bigint + 30000),
+  'v_account_balances: 現金(yururi) が初期残高30000ぶん増える（#102）'
+);
+
+-- [VIEW] per-member 分離: 現金(shiyowo) は yururi の初期残高/取引を含まない
+select is(
+  (select balance from public.v_account_balances
+     where member_id = 'shiyowo' and account_name = '現金'),
+  0::bigint,
+  'v_account_balances: 現金(shiyowo) は yururi 分を含まない（per-member 分離, #102）'
+);
+
+-- [VIEW] 初期残高を選んでいない口座は 0（取引も無ければ）
+select is(
+  (select balance from public.v_account_balances
+     where member_id = 'yururi' and account_name = '楽天ペイ'),
+  0::bigint,
+  'v_account_balances: 未使用口座は 0（#102）'
+);
+
+-- [INVARIANT] 口座初期残高(30000)は総残高(v_member_balances)に効く
+select is(
+  (select balance from public.v_member_balances where member_id = 'yururi'),
+  (current_setting('test.ybefore')::bigint + 30000),
+  'v_member_balances: 口座初期残高が総残高に加算される（#102）'
+);
+
+-- [RLS] 自分の口座初期残高は更新できる
+select lives_ok(
+  $$ update public.account_openings set opening_balance = 45000
+     where member_id = 'yururi'
+       and account_id = (select id from public.accounts where household_id = 'main' and name = '現金') $$,
+  'account_openings を自分名義で更新できる（#102）'
+);
+select is(
+  (select balance from public.v_account_balances
+     where member_id = 'yururi' and account_name = '現金'),
+  (current_setting('test.cash_before')::bigint + 45000),
+  'v_account_balances: 初期残高更新(45000)が口座残高に効く（#102）'
+);
+
+-- ============================================================
+-- Block Z2: 本番データ移行の正しさと冪等性 (#102)
+-- 未選択取引→現金 / profiles.opening→現金初期残高 / profiles.opening=0。
+-- 総残高は不変。二度流しても二重計上しない。postgres(migration と同権限)で検証する。
+-- ============================================================
+reset role;
+
+-- shiyowo をクリーンな移行対象に整える: 初期残高 20000、現金初期残高は未設定。
+-- ユーザー取引(現金へ移る対象)を 1 件足す。既存の system 調整取引(account_id NULL)は
+-- 「未設定」バケツに残る想定。
+update public.profiles set opening_balance = 20000 where member_id = 'shiyowo';
+delete from public.account_openings where member_id = 'shiyowo';
+insert into public.transactions (household_id, owner_member_id, type, amount, occurred_on)
+  values ('main', 'shiyowo', 'income', 8000, '2026-07-06');
+
+-- 移行前の総残高を控える
+select set_config(
+  'test.sbefore',
+  (select balance::text from public.v_member_balances where member_id = 'shiyowo'),
+  true
+);
+-- yururi は Block A/Z で「現金初期残高が手設定済み(45000) ＋ profiles.opening=50000」という
+-- 危険な状態にある。移行でこの 50000 が失われないこと(move と zero の切り離し禁止)を検証する。
+select set_config(
+  'test.ybefore2',
+  (select balance::text from public.v_member_balances where member_id = 'yururi'),
+  true
+);
+
+-- 移行 3 文の共通ヘルパ(step1: 未設定ユーザー取引→現金 / step2+3: 移した member だけ 0)。
+-- migration 本体と同じく step2+3 は CTE で「実際に insert した member」だけ 0 にする。
+create or replace procedure pg_temp.run_migration() language sql as $mig$
+  update public.transactions t
+    set account_id = a.id from public.accounts a
+    where t.account_id is null and t.subscription_id is null and t.is_system_generated = false
+      and a.household_id = t.household_id and a.name = '現金';
+  with moved as (
+    insert into public.account_openings (household_id, member_id, account_id, opening_balance)
+      select p.household_id, p.member_id, a.id, p.opening_balance
+      from public.profiles p
+      join public.accounts a on a.household_id = p.household_id and a.name = '現金'
+      where p.opening_balance <> 0
+      on conflict (member_id, account_id) do nothing
+      returning member_id
+  )
+  update public.profiles p set opening_balance = 0 where p.member_id in (select member_id from moved);
+$mig$;
+
+-- --- 移行 1 回目 ---
+call pg_temp.run_migration();
+
+select is(
+  (select opening_balance from public.account_openings o
+     join public.accounts a on a.id = o.account_id
+     where o.member_id = 'shiyowo' and a.name = '現金'),
+  20000,
+  '移行: profiles.opening(20000) が現金口座の初期残高へ移る（#102）'
+);
+select is(
+  (select opening_balance from public.profiles where member_id = 'shiyowo'),
+  0,
+  '移行: profiles.opening は 0 になる（#102）'
+);
+select is(
+  (select count(*)::int from public.transactions
+     where owner_member_id = 'shiyowo' and account_id is null
+       and subscription_id is null and is_system_generated = false),
+  0,
+  '移行: 未選択のユーザー取引が残らない（現金へ付け替え）（#102）'
+);
+select is(
+  (select balance from public.v_member_balances where member_id = 'shiyowo'),
+  current_setting('test.sbefore')::bigint,
+  '移行: 総残高は移行前後で不変（#102）'
+);
+
+-- H1: 現金初期残高が手設定済みの member は、profiles.opening を移行で失わない。
+select is(
+  (select opening_balance from public.profiles where member_id = 'yururi'),
+  50000,
+  'H1移行: 手設定済み member の profiles.opening は失われない（zero と move の切り離し禁止, #102）'
+);
+select is(
+  (select opening_balance from public.account_openings o
+     join public.accounts a on a.id = o.account_id
+     where o.member_id = 'yururi' and a.name = '現金'),
+  45000,
+  'H1移行: 手設定済みの現金初期残高は移行で上書きされない（#102）'
+);
+select is(
+  (select balance from public.v_member_balances where member_id = 'yururi'),
+  current_setting('test.ybefore2')::bigint,
+  'H1移行: 手設定済み member の総残高も移行で不変（#102）'
+);
+
+-- --- 移行 2 回目（冪等性: 二重計上も喪失もしない）---
+call pg_temp.run_migration();
+
+select is(
+  (select opening_balance from public.account_openings o
+     join public.accounts a on a.id = o.account_id
+     where o.member_id = 'shiyowo' and a.name = '現金'),
+  20000,
+  '移行(冪等): 二度流しても現金初期残高は 20000 のまま（#102）'
+);
+select is(
+  (select balance from public.v_member_balances where member_id = 'shiyowo'),
+  current_setting('test.sbefore')::bigint,
+  '移行(冪等): 総残高は二度流しても不変（#102）'
+);
+select is(
+  (select opening_balance from public.profiles where member_id = 'yururi'),
+  50000,
+  '移行(冪等): 手設定 member の profiles.opening は再実行でも失われない（#102）'
+);
+
+-- --- 現金口座が無い household では profiles.opening を失わない（#102）---
+-- 現金は seed 行にすぎず、ユーザーがリネーム/削除しうる。その household で移行が
+-- profiles.opening を 0 にしてしまうと残高が消える。insert が空振りする以上 zero も走らない。
+update public.accounts set name = '財布' where household_id = 'main' and name = '現金';
+update public.profiles set opening_balance = 12345 where member_id = 'shiyowo';
+select set_config(
+  'test.dbefore',
+  (select balance::text from public.v_member_balances where member_id = 'shiyowo'),
+  true
+);
+call pg_temp.run_migration();
+select is(
+  (select opening_balance from public.profiles where member_id = 'shiyowo'),
+  12345,
+  '現金が無い household では profiles.opening を 0 にしない（#102）'
+);
+select is(
+  (select balance from public.v_member_balances where member_id = 'shiyowo'),
+  current_setting('test.dbefore')::bigint,
+  '現金が無い household でも総残高は不変（#102）'
 );
 
 -- 「今日」を実時刻に戻す（この先で使う人がいても壊れないように）。DDL なので postgres で撃つ。

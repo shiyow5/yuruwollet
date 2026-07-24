@@ -34,6 +34,76 @@ export type Database = {
   }
   public: {
     Tables: {
+      account_openings: {
+        Row: {
+          account_id: string
+          created_at: string
+          household_id: string
+          member_id: string
+          opening_balance: number
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          household_id: string
+          member_id: string
+          opening_balance?: number
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          household_id?: string
+          member_id?: string
+          opening_balance?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_openings_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_openings_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "v_account_balances"
+            referencedColumns: ["account_id"]
+          },
+          {
+            foreignKeyName: "account_openings_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "account_openings_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["member_id"]
+          },
+          {
+            foreignKeyName: "account_openings_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "v_account_balances"
+            referencedColumns: ["member_id"]
+          },
+          {
+            foreignKeyName: "account_openings_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "v_member_balances"
+            referencedColumns: ["member_id"]
+          },
+        ]
+      }
       accounts: {
         Row: {
           created_at: string
@@ -125,6 +195,13 @@ export type Database = {
             columns: ["member_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["member_id"]
+          },
+          {
+            foreignKeyName: "balance_checkpoints_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "v_account_balances"
             referencedColumns: ["member_id"]
           },
           {
@@ -316,6 +393,13 @@ export type Database = {
             foreignKeyName: "savings_goals_member_id_fkey"
             columns: ["member_id"]
             isOneToOne: false
+            referencedRelation: "v_account_balances"
+            referencedColumns: ["member_id"]
+          },
+          {
+            foreignKeyName: "savings_goals_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
             referencedRelation: "v_member_balances"
             referencedColumns: ["member_id"]
           },
@@ -395,6 +479,13 @@ export type Database = {
             foreignKeyName: "subscriptions_owner_member_id_fkey"
             columns: ["owner_member_id"]
             isOneToOne: false
+            referencedRelation: "v_account_balances"
+            referencedColumns: ["member_id"]
+          },
+          {
+            foreignKeyName: "subscriptions_owner_member_id_fkey"
+            columns: ["owner_member_id"]
+            isOneToOne: false
             referencedRelation: "v_member_balances"
             referencedColumns: ["member_id"]
           },
@@ -455,6 +546,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "transactions_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "v_account_balances"
+            referencedColumns: ["account_id"]
+          },
+          {
             foreignKeyName: "transactions_category_id_fkey"
             columns: ["category_id"]
             isOneToOne: false
@@ -473,6 +571,13 @@ export type Database = {
             columns: ["owner_member_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["member_id"]
+          },
+          {
+            foreignKeyName: "transactions_owner_member_id_fkey"
+            columns: ["owner_member_id"]
+            isOneToOne: false
+            referencedRelation: "v_account_balances"
             referencedColumns: ["member_id"]
           },
           {
@@ -550,6 +655,13 @@ export type Database = {
             foreignKeyName: "wishlist_items_registrant_id_fkey"
             columns: ["registrant_id"]
             isOneToOne: false
+            referencedRelation: "v_account_balances"
+            referencedColumns: ["member_id"]
+          },
+          {
+            foreignKeyName: "wishlist_items_registrant_id_fkey"
+            columns: ["registrant_id"]
+            isOneToOne: false
             referencedRelation: "v_member_balances"
             referencedColumns: ["member_id"]
           },
@@ -557,6 +669,26 @@ export type Database = {
       }
     }
     Views: {
+      v_account_balances: {
+        Row: {
+          account_icon: string | null
+          account_id: string | null
+          account_name: string | null
+          balance: number | null
+          household_id: string | null
+          is_archived: boolean | null
+          member_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "accounts_household_id_fkey"
+            columns: ["household_id"]
+            isOneToOne: false
+            referencedRelation: "households"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       v_category_breakdown: {
         Row: {
           category_icon: string | null
@@ -594,6 +726,13 @@ export type Database = {
             foreignKeyName: "transactions_owner_member_id_fkey"
             columns: ["member_id"]
             isOneToOne: false
+            referencedRelation: "v_account_balances"
+            referencedColumns: ["member_id"]
+          },
+          {
+            foreignKeyName: "transactions_owner_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
             referencedRelation: "v_member_balances"
             referencedColumns: ["member_id"]
           },
@@ -605,6 +744,18 @@ export type Database = {
           display_name: string | null
           household_id: string | null
           member_id: string | null
+        }
+        Insert: {
+          balance?: never
+          display_name?: string | null
+          household_id?: string | null
+          member_id?: string | null
+        }
+        Update: {
+          balance?: never
+          display_name?: string | null
+          household_id?: string | null
+          member_id?: string | null
         }
         Relationships: [
           {
@@ -644,6 +795,13 @@ export type Database = {
             foreignKeyName: "transactions_owner_member_id_fkey"
             columns: ["member_id"]
             isOneToOne: false
+            referencedRelation: "v_account_balances"
+            referencedColumns: ["member_id"]
+          },
+          {
+            foreignKeyName: "transactions_owner_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
             referencedRelation: "v_member_balances"
             referencedColumns: ["member_id"]
           },
@@ -677,6 +835,13 @@ export type Database = {
             foreignKeyName: "savings_goals_member_id_fkey"
             columns: ["member_id"]
             isOneToOne: false
+            referencedRelation: "v_account_balances"
+            referencedColumns: ["member_id"]
+          },
+          {
+            foreignKeyName: "savings_goals_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
             referencedRelation: "v_member_balances"
             referencedColumns: ["member_id"]
           },
@@ -701,6 +866,13 @@ export type Database = {
             columns: ["member_id"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["member_id"]
+          },
+          {
+            foreignKeyName: "subscriptions_owner_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "v_account_balances"
             referencedColumns: ["member_id"]
           },
           {
